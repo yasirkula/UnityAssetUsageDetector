@@ -1,4 +1,4 @@
-﻿// Asset Usage Detector
+// Asset Usage Detector
 // Original code by: Suleyman Yasir KULA (yasirkula@yahoo.com)
 // Finds objects that refer to selected asset (or GameObject)
 // 
