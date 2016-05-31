@@ -8,7 +8,7 @@
 // - "static" variables are not searched
 // - also "transform", "rectTransform", "gameObject" and "attachedRigidbody" properties in components
 //   are not searched (to yield more relevant results)
-// - found a bug? Let me know on Unity forums!
+// - found a bug? Let me know on Unity forums! 
 
 using UnityEngine;
 using UnityEditor;
