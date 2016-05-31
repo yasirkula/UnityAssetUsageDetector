@@ -78,7 +78,7 @@ public class SceneObjectReferences
 public class AssetUsageDetector : EditorWindow
 {
 	private Object assetToSearch;
-    private List<Sprite> assetToSearchMultipleSprite; // Stores each sprite of the asset if it is a multiple sprite
+	private List<Sprite> assetToSearchMultipleSprite; // Stores each sprite of the asset if it is a multiple sprite
 	private AssetType assetType;
 	private System.Type assetClass; // Class of the object (like GameObject, Material, custom MonoBehaviour etc.)
 
@@ -89,13 +89,13 @@ public class AssetUsageDetector : EditorWindow
 
 	private Dictionary<System.Type, FieldInfo[]> typeToVariables; // An optimization to fetch & filter fields of a class only once
 	private Dictionary<System.Type, PropertyInfo[]> typeToProperties; // An optimization to fetch & filter properties of a class only once
-    private Dictionary<AnimationClip, bool> searchedAnimationClips; // An optimization to search keyframes of animation clips only once
+	private Dictionary<AnimationClip, bool> searchedAnimationClips; // An optimization to search keyframes of animation clips only once
 
 	private bool searchInOpenScenes = true; // Scenes currently open in Hierarchy view
 	private bool searchInScenesInBuild = false; // Scenes in build (ticked in Build Settings)
 	private bool searchInAllScenes = false; // All scenes (including scenes that are not in build)
 	private bool searchInAssetsFolder = false; // Assets in Project view
-	
+
 	private bool stopAtFirstOccurrence = false; // Stop as soon as a reference is found
 	private bool restoreInitialSceneSetup = true; // Close the additively loaded scenes that were not part of the initial scene setup
 
@@ -106,7 +106,7 @@ public class AssetUsageDetector : EditorWindow
 	private Vector2 scrollPosition = Vector2.zero;
 
 	// Initial scene setup (which scenes were open and/or loaded)
-	private SceneSetup[] sceneInitialSetup; 
+	private SceneSetup[] sceneInitialSetup;
 
 	// Fetch public, protected and private non-static variables (fields) from objects
 	// Fetch only public non-static properties from objects
@@ -120,7 +120,7 @@ public class AssetUsageDetector : EditorWindow
 		// Get existing open window or if none, make a new one
 		AssetUsageDetector window = (AssetUsageDetector) EditorWindow.GetWindow( typeof( AssetUsageDetector ) );
 		window.titleContent = new GUIContent( "Asset Usage" );
-		
+
 		boxGUIStyle = new GUIStyle( EditorStyles.helpBox );
 		boxGUIStyle.alignment = TextAnchor.MiddleCenter;
 		boxGUIStyle.font = EditorStyles.label.font;
@@ -211,7 +211,7 @@ public class AssetUsageDetector : EditorWindow
 
 					// Start searching
 					ExecuteQuery();
-					
+
 					return;
 				}
 			}
@@ -237,7 +237,7 @@ public class AssetUsageDetector : EditorWindow
 						RestoreInitialSceneSetup();
 				}
 			}
-			
+
 			Color c = GUI.color;
 			GUI.color = Color.green;
 			GUILayout.Box( "Don't forget to save scene(s) if you made any changes!", GUILayout.ExpandWidth( true ) );
@@ -251,78 +251,78 @@ public class AssetUsageDetector : EditorWindow
 			}
 			else
 			{
-                GUILayout.BeginHorizontal();
+				GUILayout.BeginHorizontal();
 
-                // Select all the references without filtering them (i.e. without
-                // getting gameObject's of components)
-                if( GUILayout.Button( "Select All\n(Component-wise)", GUILayout.Height( 35 ) ) )
-                {
-                    // Find the number of references first
-                    int referenceCount = 0;
-                    for( int i = 0; i < searchResult.Count; i++ )
-                    {
-                        // Ping the first element of the references (either in Project view
-                        // or Hierarchy view) to force both views to scroll to a proper position
-                        // (setting Selection.objects does not scroll automatically)
-                        EditorGUIUtility.PingObject( searchResult[i].references[0] );
+				// Select all the references without filtering them (i.e. without
+				// getting gameObject's of components)
+				if( GUILayout.Button( "Select All\n(Component-wise)", GUILayout.Height( 35 ) ) )
+				{
+					// Find the number of references first
+					int referenceCount = 0;
+					for( int i = 0; i < searchResult.Count; i++ )
+					{
+						// Ping the first element of the references (either in Project view
+						// or Hierarchy view) to force both views to scroll to a proper position
+						// (setting Selection.objects does not scroll automatically)
+						EditorGUIUtility.PingObject( searchResult[i].references[0] );
 
-                        referenceCount += searchResult[i].references.Count;
-                    }
+						referenceCount += searchResult[i].references.Count;
+					}
 
-                    Object[] allReferences = new Object[referenceCount];
-                    int currIndex = 0;
-                    for( int i = 0; i < searchResult.Count; i++ )
-                    {
-                        for( int j = 0; j < searchResult[i].references.Count; j++ )
-                        {
-                            allReferences[currIndex] = searchResult[i].references[j];
-                            currIndex++;
-                        }
-                    }
-                    
-                    Selection.objects = allReferences;
-                }
+					Object[] allReferences = new Object[referenceCount];
+					int currIndex = 0;
+					for( int i = 0; i < searchResult.Count; i++ )
+					{
+						for( int j = 0; j < searchResult[i].references.Count; j++ )
+						{
+							allReferences[currIndex] = searchResult[i].references[j];
+							currIndex++;
+						}
+					}
 
-                // Select all the references after filtering them (i.e. do not select components
-                // but their gameObject's)
-                if( GUILayout.Button( "Select All\n(GameObject-wise)", GUILayout.Height( 35 ) ) )
-                {
-                    HashSet<GameObject> uniqueGameObjects = new HashSet<GameObject>();
-                    List<Object> resultList = new List<Object>();
-                    for( int i = 0; i < searchResult.Count; i++ )
-                    {
-                        // Ping the first element of the references (either in Project view
-                        // or Hierarchy view) to force both views to scroll to a proper position
-                        // (setting Selection.objects does not scroll automatically)
-                        EditorGUIUtility.PingObject( searchResult[i].references[0] );
+					Selection.objects = allReferences;
+				}
 
-                        for( int j = 0; j < searchResult[i].references.Count; j++ )
-                        {
-                            Component currReferenceAsComponent = searchResult[i].references[j] as Component;
-                            if( currReferenceAsComponent != null )
-                            {
-                                if( !uniqueGameObjects.Contains( currReferenceAsComponent.gameObject ) )
-                                {
-                                    uniqueGameObjects.Add( currReferenceAsComponent.gameObject );
-                                    resultList.Add( currReferenceAsComponent.gameObject );
-                                }
-                            }
-                            else
-                            {
-                                resultList.Add( searchResult[i].references[j] );
-                            }
-                        }
-                    }
+				// Select all the references after filtering them (i.e. do not select components
+				// but their gameObject's)
+				if( GUILayout.Button( "Select All\n(GameObject-wise)", GUILayout.Height( 35 ) ) )
+				{
+					HashSet<GameObject> uniqueGameObjects = new HashSet<GameObject>();
+					List<Object> resultList = new List<Object>();
+					for( int i = 0; i < searchResult.Count; i++ )
+					{
+						// Ping the first element of the references (either in Project view
+						// or Hierarchy view) to force both views to scroll to a proper position
+						// (setting Selection.objects does not scroll automatically)
+						EditorGUIUtility.PingObject( searchResult[i].references[0] );
 
-                    Selection.activeObject = resultList[0];
-                    Selection.objects = resultList.ToArray();
-                }
+						for( int j = 0; j < searchResult[i].references.Count; j++ )
+						{
+							Component currReferenceAsComponent = searchResult[i].references[j] as Component;
+							if( currReferenceAsComponent != null )
+							{
+								if( !uniqueGameObjects.Contains( currReferenceAsComponent.gameObject ) )
+								{
+									uniqueGameObjects.Add( currReferenceAsComponent.gameObject );
+									resultList.Add( currReferenceAsComponent.gameObject );
+								}
+							}
+							else
+							{
+								resultList.Add( searchResult[i].references[j] );
+							}
+						}
+					}
 
-                GUILayout.EndHorizontal();
+					Selection.activeObject = resultList[0];
+					Selection.objects = resultList.ToArray();
+				}
 
-                GUILayout.Space( 10 );
+				GUILayout.EndHorizontal();
 
-                for( int i = 0; i < searchResult.Count; i++ )
+				GUILayout.Space( 10 );
+
+				for( int i = 0; i < searchResult.Count; i++ )
 				{
 					searchResult[i].DrawOnGUI();
 				}
@@ -342,75 +342,75 @@ public class AssetUsageDetector : EditorWindow
 		searchResult = new List<SceneObjectReferences>();
 		typeToVariables = new Dictionary<System.Type, FieldInfo[]>();
 		typeToProperties = new Dictionary<System.Type, PropertyInfo[]>();
-        searchedAnimationClips = new Dictionary<AnimationClip, bool>();
+		searchedAnimationClips = new Dictionary<AnimationClip, bool>();
 
-        assetType = AssetType.Other;
+		assetType = AssetType.Other;
 
-        // Special case: if asset is a Sprite, but its Texture2D file is given, grab the correct asset
-        // (if it is a multiple sprite, store all sprites in a list)
-        if( assetToSearch is Texture2D )
-        {
-            string assetPath = AssetDatabase.GetAssetPath( assetToSearch );
-            TextureImporter importSettings = (TextureImporter) TextureImporter.GetAtPath( assetPath );
-            if( importSettings.spriteImportMode == SpriteImportMode.Multiple )
-            {
-                // If it is a multiple sprite asset, store all sprites in a list
-                assetToSearchMultipleSprite = new List<Sprite>();
+		// Special case: if asset is a Sprite, but its Texture2D file is given, grab the correct asset
+		// (if it is a multiple sprite, store all sprites in a list)
+		if( assetToSearch is Texture2D )
+		{
+			string assetPath = AssetDatabase.GetAssetPath( assetToSearch );
+			TextureImporter importSettings = (TextureImporter) TextureImporter.GetAtPath( assetPath );
+			if( importSettings.spriteImportMode == SpriteImportMode.Multiple )
+			{
+				// If it is a multiple sprite asset, store all sprites in a list
+				assetToSearchMultipleSprite = new List<Sprite>();
 
-                Object[] sprites = AssetDatabase.LoadAllAssetRepresentationsAtPath( assetPath );
-                for( int i = 0; i < sprites.Length; i++ )
-                {
-                    if( sprites[i] is Sprite )
-                    {
-                        assetToSearchMultipleSprite.Add( (Sprite) sprites[i] );
-                    }
-                }
-                
-                // If there is, in fact, multiple sprites extracted,
-                // set the asset type accordingly
-                // Otherwise (only 1 sprite is extracted), simply change the
-                // searched asset to that sprite
-                if( assetToSearchMultipleSprite.Count > 1 )
-                {
-                    assetType = AssetType.MultipleSprite;
-                    assetClass = typeof( Sprite );
-                }
-                else if( assetToSearchMultipleSprite.Count == 1 )
-                {
-                    assetToSearch = assetToSearchMultipleSprite[0];
-                }
-            }
-            else if( importSettings.spriteImportMode != SpriteImportMode.None )
-            {
-                // If it is a single sprite, try to extract
-                // the sprite from the asset
-                Sprite spriteRepresentation = AssetDatabase.LoadAssetAtPath<Sprite>( assetPath );
-                if( spriteRepresentation != null )
-                    assetToSearch = spriteRepresentation;
-            }
-        }
+				Object[] sprites = AssetDatabase.LoadAllAssetRepresentationsAtPath( assetPath );
+				for( int i = 0; i < sprites.Length; i++ )
+				{
+					if( sprites[i] is Sprite )
+					{
+						assetToSearchMultipleSprite.Add( (Sprite) sprites[i] );
+					}
+				}
 
-        if( assetType != AssetType.MultipleSprite )
-        {
-            if( assetToSearch is Texture )
-                assetType = AssetType.Texture;
-            else if( assetToSearch is Material )
-                assetType = AssetType.Material;
-            else if( assetToSearch is MonoScript )
-                assetType = AssetType.Script;
-            else if( assetToSearch is Shader )
-                assetType = AssetType.Shader;
-            else if( assetToSearch is AnimationClip )
-                assetType = AssetType.Animation;
-            else if( assetToSearch is GameObject )
-                assetType = AssetType.GameObject;
-            else
-                assetType = AssetType.Other;
+				// If there is, in fact, multiple sprites extracted,
+				// set the asset type accordingly
+				// Otherwise (only 1 sprite is extracted), simply change the
+				// searched asset to that sprite
+				if( assetToSearchMultipleSprite.Count > 1 )
+				{
+					assetType = AssetType.MultipleSprite;
+					assetClass = typeof( Sprite );
+				}
+				else if( assetToSearchMultipleSprite.Count == 1 )
+				{
+					assetToSearch = assetToSearchMultipleSprite[0];
+				}
+			}
+			else if( importSettings.spriteImportMode != SpriteImportMode.None )
+			{
+				// If it is a single sprite, try to extract
+				// the sprite from the asset
+				Sprite spriteRepresentation = AssetDatabase.LoadAssetAtPath<Sprite>( assetPath );
+				if( spriteRepresentation != null )
+					assetToSearch = spriteRepresentation;
+			}
+		}
 
-            assetClass = assetToSearch.GetType();
-        }
+		if( assetType != AssetType.MultipleSprite )
+		{
+			if( assetToSearch is Texture )
+				assetType = AssetType.Texture;
+			else if( assetToSearch is Material )
+				assetType = AssetType.Material;
+			else if( assetToSearch is MonoScript )
+				assetType = AssetType.Script;
+			else if( assetToSearch is Shader )
+				assetType = AssetType.Shader;
+			else if( assetToSearch is AnimationClip )
+				assetType = AssetType.Animation;
+			else if( assetToSearch is GameObject )
+				assetType = AssetType.GameObject;
+			else
+				assetType = AssetType.Other;
 
-        Debug.Log( "Asset type: " + assetType );
+			assetClass = assetToSearch.GetType();
+		}
+
+		Debug.Log( "Asset type: " + assetType );
 
 		// Find the scenes to search for references
 		HashSet<string> scenesToSearch = new HashSet<string>();
@@ -449,7 +449,7 @@ public class AssetUsageDetector : EditorWindow
 				}
 			}
 		}
-		
+
 		if( searchInAssetsFolder )
 		{
 			currentSceneReferences = new SceneObjectReferences();
@@ -484,54 +484,54 @@ public class AssetUsageDetector : EditorWindow
 				}
 			}
 
-            // Search through all AnimatorController's and AnimationClip's in the project
-            if( !stopAtFirstOccurrence || currentSceneReferences.references.Count == 0 )
+			// Search through all AnimatorController's and AnimationClip's in the project
+			if( !stopAtFirstOccurrence || currentSceneReferences.references.Count == 0 )
 			{
-                if( assetType != AssetType.Animation )
-                {
-                    // Search through animation clip keyframes for references to searched asset
-                    pathsToAssets = AssetDatabase.FindAssets( "t:AnimationClip" );
-                    for( int i = 0; i < pathsToAssets.Length; i++ )
-                    {
-                        AnimationClip animClip = AssetDatabase.LoadAssetAtPath<AnimationClip>( AssetDatabase.GUIDToAssetPath( pathsToAssets[i] ) );
-                        if( CheckAnimationForAsset( animClip ) )
-                        {
-                            currentSceneReferences.references.Add( animClip );
+				if( assetType != AssetType.Animation )
+				{
+					// Search through animation clip keyframes for references to searched asset
+					pathsToAssets = AssetDatabase.FindAssets( "t:AnimationClip" );
+					for( int i = 0; i < pathsToAssets.Length; i++ )
+					{
+						AnimationClip animClip = AssetDatabase.LoadAssetAtPath<AnimationClip>( AssetDatabase.GUIDToAssetPath( pathsToAssets[i] ) );
+						if( CheckAnimationForAsset( animClip ) )
+						{
+							currentSceneReferences.references.Add( animClip );
 
-                            if( stopAtFirstOccurrence )
-                                break;
-                        }
-                    }
-                }
+							if( stopAtFirstOccurrence )
+								break;
+						}
+					}
+				}
 
-                if( !stopAtFirstOccurrence || currentSceneReferences.references.Count == 0 )
-                {
-                    // Search through all animator controllers
-                    pathsToAssets = AssetDatabase.FindAssets( "t:AnimatorController" );
-                    for( int i = 0; i < pathsToAssets.Length; i++ )
-                    {
-                        AnimatorController animController = AssetDatabase.LoadAssetAtPath<AnimatorController>( AssetDatabase.GUIDToAssetPath( pathsToAssets[i] ) );
-                        AnimationClip[] animClips = animController.animationClips;
-                        bool foundAsset = false;
-                        for( int j = 0; j < animClips.Length; j++ )
-                        {
-                            if( CheckAnimationForAsset( animClips[j] ) )
-                            {
-                                foundAsset = true;
-                                break;
-                            }
-                        }
+				if( !stopAtFirstOccurrence || currentSceneReferences.references.Count == 0 )
+				{
+					// Search through all animator controllers
+					pathsToAssets = AssetDatabase.FindAssets( "t:AnimatorController" );
+					for( int i = 0; i < pathsToAssets.Length; i++ )
+					{
+						AnimatorController animController = AssetDatabase.LoadAssetAtPath<AnimatorController>( AssetDatabase.GUIDToAssetPath( pathsToAssets[i] ) );
+						AnimationClip[] animClips = animController.animationClips;
+						bool foundAsset = false;
+						for( int j = 0; j < animClips.Length; j++ )
+						{
+							if( CheckAnimationForAsset( animClips[j] ) )
+							{
+								foundAsset = true;
+								break;
+							}
+						}
 
-                        if( foundAsset )
-                        {
-                            currentSceneReferences.references.Add( animController );
+						if( foundAsset )
+						{
+							currentSceneReferences.references.Add( animController );
 
-                            if( stopAtFirstOccurrence )
-                                break;
-                        }
-                    }
-                }
-            }
+							if( stopAtFirstOccurrence )
+								break;
+						}
+					}
+				}
+			}
 
 			// If a reference is found in the Project view, save the result(s)
 			if( currentSceneReferences.references.Count > 0 )
@@ -600,11 +600,11 @@ public class AssetUsageDetector : EditorWindow
 	// and then search through its children recursively
 	private void CheckGameObjectForAssetRecursive( GameObject go )
 	{
-        if( stopAtFirstOccurrence && currentSceneReferences.references.Count > 0 )
-            return;
+		if( stopAtFirstOccurrence && currentSceneReferences.references.Count > 0 )
+			return;
 
-        // Check if this GameObject's prefab is the selected asset
-        if( assetType == AssetType.GameObject && PrefabUtility.GetPrefabParent( go ) == assetToSearch )
+		// Check if this GameObject's prefab is the selected asset
+		if( assetType == AssetType.GameObject && PrefabUtility.GetPrefabParent( go ) == assetToSearch )
 		{
 			currentSceneReferences.references.Add( go );
 
@@ -667,10 +667,10 @@ public class AssetUsageDetector : EditorWindow
 				}
 				else if( component is Animation || component is Animator )
 				{
-                    // If this component is an Animation or Animator, perform a special search for references
-                    // in its animation clips (and keyframes in these animations)
+					// If this component is an Animation or Animator, perform a special search for references
+					// in its animation clips (and keyframes in these animations)
 
-                    bool foundAsset = false;
+					bool foundAsset = false;
 					if( component is Animation )
 					{
 						foreach( AnimationState anim in (Animation) component )
@@ -721,7 +721,7 @@ public class AssetUsageDetector : EditorWindow
 					// filter and cache its fields
 					System.Type componentType = component.GetType();
 					variables = componentType.GetFields( FIELD_MODIFIERS );
-					
+
 					// Filter the fields
 					if( variables.Length > 0 )
 					{
@@ -765,7 +765,7 @@ public class AssetUsageDetector : EditorWindow
 					// Cache the filtered fields
 					typeToVariables.Add( componentType, variables );
 				}
-					
+
 				// Search through all the filtered fields
 				for( int j = 0; j < variables.Length; j++ )
 				{
@@ -813,7 +813,7 @@ public class AssetUsageDetector : EditorWindow
 						}
 					}
 				}
-				
+
 				PropertyInfo[] properties;
 				if( !typeToProperties.TryGetValue( component.GetType(), out properties ) )
 				{
@@ -821,7 +821,7 @@ public class AssetUsageDetector : EditorWindow
 					// filter and cache its properties
 					System.Type componentType = component.GetType();
 					properties = componentType.GetProperties( PROPERTY_MODIFIERS );
-					
+
 					// Filter the properties
 					if( properties.Length > 0 )
 					{
@@ -843,7 +843,7 @@ public class AssetUsageDetector : EditorWindow
 							if( ( IsTypeDerivedFrom( propertyType, typeof( Object ) ) && IsTypeDerivedFrom( assetClass, propertyType ) ) ||
 								( IsTypeDerivedFrom( propertyType, typeof( Component ) ) && assetType == AssetType.GameObject ) ||
 								IsTypeDerivedFrom( propertyType, typeof( ArrayList ) ) ||
-								( propertyType.IsArray && ( IsTypeDerivedFrom( assetClass, propertyType.GetElementType() ) || 
+								( propertyType.IsArray && ( IsTypeDerivedFrom( assetClass, propertyType.GetElementType() ) ||
 									( IsTypeDerivedFrom( propertyType.GetElementType(), typeof( Component ) ) && assetType == AssetType.GameObject ) ) ) ||
 								( propertyType.IsGenericType && ( IsTypeDerivedFrom( assetClass, propertyType.GetGenericArguments()[0] ) ||
 									( IsTypeDerivedFrom( propertyType.GetGenericArguments()[0], typeof( Component ) ) && assetType == AssetType.GameObject ) ) ) )
@@ -853,7 +853,7 @@ public class AssetUsageDetector : EditorWindow
 								// and get more relevant results
 								// 2- Ignore "canvasRenderer" and "canvas" properties of Graphic components
 								// 3 & 4- Prevent accessing properties of Unity that instantiate an existing resource (causing leak)
-								if( properties[j].Name.Equals( "gameObject" ) || properties[j].Name.Equals( "transform" ) || 
+								if( properties[j].Name.Equals( "gameObject" ) || properties[j].Name.Equals( "transform" ) ||
 									properties[j].Name.Equals( "attachedRigidbody" ) || properties[j].Name.Equals( "rectTransform" ) )
 									invalidProperties++;
 								else if( ( properties[j].Name.Equals( "canvasRenderer" ) || properties[j].Name.Equals( "canvas" ) ) &&
@@ -894,7 +894,7 @@ public class AssetUsageDetector : EditorWindow
 						if( CheckVariableValueForAsset( propertyValue ) )
 						{
 							currentSceneReferences.references.Add( component );
-							
+
 							if( stopAtFirstOccurrence )
 								return;
 							else
@@ -912,7 +912,7 @@ public class AssetUsageDetector : EditorWindow
 									if( CheckVariableValueForAsset( arrayItem ) )
 									{
 										currentSceneReferences.references.Add( component );
-										
+
 										if( stopAtFirstOccurrence )
 											return;
 										else
@@ -983,74 +983,74 @@ public class AssetUsageDetector : EditorWindow
 		return false;
 	}
 
-    // Check if asset is used in this animation clip (and its keyframes)
-    private bool CheckAnimationForAsset( AnimationClip clip )
-    {
-        // If this AnimationClip is already searched, return the cached result
-        bool result;
-        if( !searchedAnimationClips.TryGetValue( clip, out result ) )
-        {
-            if( clip == assetToSearch )
-            {
-                searchedAnimationClips.Add( clip, true );
-                return true;
-            }
+	// Check if asset is used in this animation clip (and its keyframes)
+	private bool CheckAnimationForAsset( AnimationClip clip )
+	{
+		// If this AnimationClip is already searched, return the cached result
+		bool result;
+		if( !searchedAnimationClips.TryGetValue( clip, out result ) )
+		{
+			if( clip == assetToSearch )
+			{
+				searchedAnimationClips.Add( clip, true );
+				return true;
+			}
 
-            // Don't search for animation clip references inside an animation clip's keyframes!
-            if( assetType == AssetType.Animation )
-            {
-                searchedAnimationClips.Add( clip, false );
-                return false;
-            }
+			// Don't search for animation clip references inside an animation clip's keyframes!
+			if( assetType == AssetType.Animation )
+			{
+				searchedAnimationClips.Add( clip, false );
+				return false;
+			}
 
-            // Get all curves from animation clip
-            EditorCurveBinding[] objectCurves = AnimationUtility.GetObjectReferenceCurveBindings( clip );
-            for( int i = 0; i < objectCurves.Length; i++ )
-            {
-                // Search through all the keyframes in this curve
-                ObjectReferenceKeyframe[] keyframes = AnimationUtility.GetObjectReferenceCurve( clip, objectCurves[i] );
-                Object objectAtKeyframe;
-                for( int j = 0; j < keyframes.Length; j++ )
-                {
-                    objectAtKeyframe = keyframes[j].value;
-                    if( assetType == AssetType.MultipleSprite )
-                    {
-                        for( int k = 0; k < assetToSearchMultipleSprite.Count; k++ )
-                        {
-                            if( objectAtKeyframe == assetToSearchMultipleSprite[k] )
-                            {
-                                searchedAnimationClips.Add( clip, true );
-                                return true;
-                            }
-                        }
-                    }
-                    else
-                    {
-                        if( objectAtKeyframe == assetToSearch )
-                        {
-                            searchedAnimationClips.Add( clip, true );
-                            return true;
-                        }
-                        else if( objectAtKeyframe is Component && assetType == AssetType.GameObject )
-                        {
-                            // If keyframe value is a component, and selected asset is a GameObject,
-                            // check if it is a component of the selected asset
-                            if( ( (Component) objectAtKeyframe ).gameObject == assetToSearch )
-                            {
-                                searchedAnimationClips.Add( clip, true );
-                                return true;
-                            }
-                        }
-                    }
-                }
-            }
+			// Get all curves from animation clip
+			EditorCurveBinding[] objectCurves = AnimationUtility.GetObjectReferenceCurveBindings( clip );
+			for( int i = 0; i < objectCurves.Length; i++ )
+			{
+				// Search through all the keyframes in this curve
+				ObjectReferenceKeyframe[] keyframes = AnimationUtility.GetObjectReferenceCurve( clip, objectCurves[i] );
+				Object objectAtKeyframe;
+				for( int j = 0; j < keyframes.Length; j++ )
+				{
+					objectAtKeyframe = keyframes[j].value;
+					if( assetType == AssetType.MultipleSprite )
+					{
+						for( int k = 0; k < assetToSearchMultipleSprite.Count; k++ )
+						{
+							if( objectAtKeyframe == assetToSearchMultipleSprite[k] )
+							{
+								searchedAnimationClips.Add( clip, true );
+								return true;
+							}
+						}
+					}
+					else
+					{
+						if( objectAtKeyframe == assetToSearch )
+						{
+							searchedAnimationClips.Add( clip, true );
+							return true;
+						}
+						else if( objectAtKeyframe is Component && assetType == AssetType.GameObject )
+						{
+							// If keyframe value is a component, and selected asset is a GameObject,
+							// check if it is a component of the selected asset
+							if( ( (Component) objectAtKeyframe ).gameObject == assetToSearch )
+							{
+								searchedAnimationClips.Add( clip, true );
+								return true;
+							}
+						}
+					}
+				}
+			}
 
-            searchedAnimationClips.Add( clip, false );
-            return false;
-        }
+			searchedAnimationClips.Add( clip, false );
+			return false;
+		}
 
-        return result;
-    }
+		return result;
+	}
 
 	// Check if this variable is a refence to the asset
 	private bool CheckVariableValueForAsset( object variableValue )
@@ -1058,37 +1058,37 @@ public class AssetUsageDetector : EditorWindow
 		if( variableValue == null )
 			return false;
 
-        if( assetType == AssetType.MultipleSprite )
-        {
-            for( int i = 0; i < assetToSearchMultipleSprite.Count; i++ )
-            {
-                if( variableValue == assetToSearchMultipleSprite[i] )
-                    return true;
-            }
-        }
-        else
-        {
-            if( variableValue == assetToSearch )
-            {
-                return true;
-            }
-            else if( variableValue is Component && assetType == AssetType.GameObject )
-            {
-                // If variable is a component, and selected asset is a GameObject,
-                // check if it is a component of the selected asset
-                try
-                {
-                    if( ( (Component) variableValue ).gameObject == assetToSearch )
-                    {
-                        return true;
-                    }
-                }
-                catch( UnassignedReferenceException )
-                { }
-                catch( MissingReferenceException )
-                { }
-            }
-        }
+		if( assetType == AssetType.MultipleSprite )
+		{
+			for( int i = 0; i < assetToSearchMultipleSprite.Count; i++ )
+			{
+				if( variableValue == assetToSearchMultipleSprite[i] )
+					return true;
+			}
+		}
+		else
+		{
+			if( variableValue == assetToSearch )
+			{
+				return true;
+			}
+			else if( variableValue is Component && assetType == AssetType.GameObject )
+			{
+				// If variable is a component, and selected asset is a GameObject,
+				// check if it is a component of the selected asset
+				try
+				{
+					if( ( (Component) variableValue ).gameObject == assetToSearch )
+					{
+						return true;
+					}
+				}
+				catch( UnassignedReferenceException )
+				{ }
+				catch( MissingReferenceException )
+				{ }
+			}
+		}
 
 		return false;
 	}
