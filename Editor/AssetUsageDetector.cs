@@ -619,7 +619,10 @@ public class AssetUsageDetector : EditorWindow
 			for( int i = 0; i < components.Length; i++ )
 			{
 				Component component = components[i];
-
+				
+				if( component == null )
+					continue;
+					
 				// Ignore Transform component (no object field to search for)
 				if( component is Transform )
 					continue;
