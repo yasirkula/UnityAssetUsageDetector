@@ -14,7 +14,6 @@ using UnityEngine;
 using UnityEditor;
 using UnityEngine.SceneManagement;
 using UnityEditor.SceneManagement;
-using UnityEditor.Animations;
 using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
@@ -26,17 +25,13 @@ public enum Phase { Setup, Processing, Complete };
 public class SceneObjectReferences
 {
 	public string scenePath;
+	public bool clickable;
 	public List<Object> references;
 	
-	public SceneObjectReferences()
-	{
-		scenePath = null; // Project View (Assets)
-		references = new List<Object>();
-	}
-
-	public SceneObjectReferences( string scenePath )
+	public SceneObjectReferences( string scenePath, bool clickable )
 	{
 		this.scenePath = scenePath;
+		this.clickable = clickable;
 		references = new List<Object>();
 	}
 
@@ -46,8 +41,8 @@ public class SceneObjectReferences
 		Color c = GUI.color;
 		GUI.color = Color.cyan;
 
-		if( scenePath == null )
-			GUILayout.Box( "Project View (Assets)", AssetUsageDetector.boxGUIStyle, GUILayout.ExpandWidth( true ), GUILayout.Height( 40 ) );
+		if( !clickable )
+			GUILayout.Box( scenePath, AssetUsageDetector.boxGUIStyle, GUILayout.ExpandWidth( true ), GUILayout.Height( 40 ) );
 		else if( GUILayout.Button( scenePath, AssetUsageDetector.boxGUIStyle, GUILayout.ExpandWidth( true ), GUILayout.Height( 40 ) ) )
 		{
 			// If scene name is clicked, highlight it on Project view
@@ -102,7 +97,21 @@ public class AssetUsageDetector : EditorWindow
 	private string errorMessage = "";
 
 	private Color32 ORANGE_COLOR = new Color32( 235, 185, 140, 255 );
-	public static GUIStyle boxGUIStyle; // GUIStyle used to draw the results of the search
+	private static GUIStyle m_boxGUIStyle; // GUIStyle used to draw the results of the search
+	public static GUIStyle boxGUIStyle
+	{
+		get
+		{
+			if( m_boxGUIStyle == null )
+			{
+				m_boxGUIStyle = new GUIStyle( EditorStyles.helpBox );
+				m_boxGUIStyle.alignment = TextAnchor.MiddleCenter;
+				m_boxGUIStyle.font = EditorStyles.label.font;
+			}
+
+			return m_boxGUIStyle;
+		}
+	}
 	private Vector2 scrollPosition = Vector2.zero;
 
 	// Initial scene setup (which scenes were open and/or loaded)
@@ -120,11 +129,7 @@ public class AssetUsageDetector : EditorWindow
 		// Get existing open window or if none, make a new one
 		AssetUsageDetector window = (AssetUsageDetector) EditorWindow.GetWindow( typeof( AssetUsageDetector ) );
 		window.titleContent = new GUIContent( "Asset Usage" );
-
-		boxGUIStyle = new GUIStyle( EditorStyles.helpBox );
-		boxGUIStyle.alignment = TextAnchor.MiddleCenter;
-		boxGUIStyle.font = EditorStyles.label.font;
-
+		
 		window.Show();
 	}
 
@@ -161,13 +166,27 @@ public class AssetUsageDetector : EditorWindow
 
 			GUILayout.Box( "SCENES TO SEARCH", GUILayout.ExpandWidth( true ) );
 
-			if( searchInAllScenes )
+			if( EditorApplication.isPlaying )
+			{
+				searchInAllScenes = false;
+				searchInScenesInBuild = false;
+			}
+			else if( searchInAllScenes )
 				GUI.enabled = false;
 
 			searchInOpenScenes = EditorGUILayout.ToggleLeft( "Currently open (loaded) scene(s)", searchInOpenScenes );
+
+			if( EditorApplication.isPlaying )
+				GUI.enabled = false;
+
 			searchInScenesInBuild = EditorGUILayout.ToggleLeft( "Scenes in Build Settings (ticked)", searchInScenesInBuild );
-			GUI.enabled = true;
+
+			if( !EditorApplication.isPlaying )
+				GUI.enabled = true;
+
 			searchInAllScenes = EditorGUILayout.ToggleLeft( "All scenes in project (including scenes not in build)", searchInAllScenes );
+
+			GUI.enabled = true;
 
 			GUILayout.Space( 10 );
 
@@ -194,7 +213,7 @@ public class AssetUsageDetector : EditorWindow
 				{
 					errorMessage = "SELECT AN ASSET FIRST!";
 				}
-				else if( !AreScenesSaved() )
+				else if( !EditorApplication.isPlaying && !AreScenesSaved() )
 				{
 					// Don't start the search if at least one scene is currently dirty (not saved)
 					errorMessage = "SAVE OPEN SCENES FIRST!";
@@ -206,9 +225,16 @@ public class AssetUsageDetector : EditorWindow
 					errorMessage = "";
 					currentPhase = Phase.Processing;
 
-					// Get the scenes that are open right now
-					sceneInitialSetup = EditorSceneManager.GetSceneManagerSetup();
-
+					if( !EditorApplication.isPlaying )
+					{
+						// Get the scenes that are open right now
+						sceneInitialSetup = EditorSceneManager.GetSceneManagerSetup();
+					}
+					else
+					{
+						sceneInitialSetup = null;
+					}
+					
 					// Start searching
 					ExecuteQuery();
 
@@ -228,7 +254,7 @@ public class AssetUsageDetector : EditorWindow
 
 			if( GUILayout.Button( "Reset Search", GUILayout.Height( 30 ) ) )
 			{
-				if( !restoreInitialSceneSetup || EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo() )
+				if( EditorApplication.isPlaying || !restoreInitialSceneSetup || sceneInitialSetup == null || EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo() )
 				{
 					errorMessage = "";
 					currentPhase = Phase.Setup;
@@ -452,7 +478,7 @@ public class AssetUsageDetector : EditorWindow
 
 		if( searchInAssetsFolder )
 		{
-			currentSceneReferences = new SceneObjectReferences();
+			currentSceneReferences = new SceneObjectReferences( "Project View( Assets )", false );
 
 			// Search through all prefabs and imported models
 			string[] pathsToAssets = AssetDatabase.FindAssets( "t:GameObject" );
@@ -507,10 +533,10 @@ public class AssetUsageDetector : EditorWindow
 				if( !stopAtFirstOccurrence || currentSceneReferences.references.Count == 0 )
 				{
 					// Search through all animator controllers
-					pathsToAssets = AssetDatabase.FindAssets( "t:AnimatorController" );
+					pathsToAssets = AssetDatabase.FindAssets( "t:RuntimeAnimatorController" );
 					for( int i = 0; i < pathsToAssets.Length; i++ )
 					{
-						AnimatorController animController = AssetDatabase.LoadAssetAtPath<AnimatorController>( AssetDatabase.GUIDToAssetPath( pathsToAssets[i] ) );
+						RuntimeAnimatorController animController = AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>( AssetDatabase.GUIDToAssetPath( pathsToAssets[i] ) );
 						AnimationClip[] animClips = animController.animationClips;
 						bool foundAsset = false;
 						for( int j = 0; j < animClips.Length; j++ )
@@ -540,16 +566,76 @@ public class AssetUsageDetector : EditorWindow
 			}
 		}
 
-		foreach( string scenePath in scenesToSearch )
+		if( !stopAtFirstOccurrence || searchResult.Count == 0 )
 		{
-			if( scenePath != null )
+			foreach( string scenePath in scenesToSearch )
 			{
-				// Open the scene additively (to access its objects)
-				Scene scene = EditorSceneManager.OpenScene( scenePath, OpenSceneMode.Additive );
-				currentSceneReferences = new SceneObjectReferences( scenePath );
+				if( scenePath != null )
+				{
+					// Open the scene additively (to access its objects)
+					Scene scene;
+					if( EditorApplication.isPlaying )
+						scene = EditorSceneManager.GetSceneByPath( scenePath );
+					else
+						scene = EditorSceneManager.OpenScene( scenePath, OpenSceneMode.Additive );
 
-				// Search through all GameObjects in the scene
-				GameObject[] rootGameObjects = scene.GetRootGameObjects();
+					currentSceneReferences = new SceneObjectReferences( scenePath, true );
+
+					// Search through all GameObjects in the scene
+					GameObject[] rootGameObjects = scene.GetRootGameObjects();
+					for( int i = 0; i < rootGameObjects.Length; i++ )
+					{
+						CheckGameObjectForAssetRecursive( rootGameObjects[i] );
+
+						if( stopAtFirstOccurrence && currentSceneReferences.references.Count > 0 )
+							break;
+					}
+
+					// If no reference is found in this scene
+					// and the scene is not part of the initial scene setup,
+					// close it
+					if( currentSceneReferences.references.Count == 0 )
+					{
+						if( !EditorApplication.isPlaying )
+						{
+							bool sceneIsOneOfInitials = false;
+							for( int i = 0; i < sceneInitialSetup.Length; i++ )
+							{
+								if( sceneInitialSetup[i].path == scenePath )
+								{
+									if( !sceneInitialSetup[i].isLoaded )
+										EditorSceneManager.CloseScene( scene, false );
+
+									sceneIsOneOfInitials = true;
+									break;
+								}
+							}
+
+							if( !sceneIsOneOfInitials )
+								EditorSceneManager.CloseScene( scene, true );
+						}
+					}
+					else
+					{
+						// Some references are found in this scene,
+						// save the results
+						searchResult.Add( currentSceneReferences );
+
+						if( stopAtFirstOccurrence )
+							break;
+					}
+				}
+			}
+		}
+
+		if( !stopAtFirstOccurrence || searchResult.Count == 0 )
+		{
+			if( EditorApplication.isPlaying )
+			{
+				currentSceneReferences = new SceneObjectReferences( "DontDestroyOnLoad", false );
+
+				// Search through all GameObjects under the DontDestroyOnLoad scene
+				GameObject[] rootGameObjects = GetDontDestroyOnLoadObjects().ToArray();
 				for( int i = 0; i < rootGameObjects.Length; i++ )
 				{
 					CheckGameObjectForAssetRecursive( rootGameObjects[i] );
@@ -558,35 +644,11 @@ public class AssetUsageDetector : EditorWindow
 						break;
 				}
 
-				// If no reference is found in this scene
-				// and the scene is not part of the initial scene setup,
-				// close it
-				if( currentSceneReferences.references.Count == 0 )
-				{
-					bool sceneIsOneOfInitials = false;
-					for( int i = 0; i < sceneInitialSetup.Length; i++ )
-					{
-						if( sceneInitialSetup[i].path == scenePath )
-						{
-							if( !sceneInitialSetup[i].isLoaded )
-								EditorSceneManager.CloseScene( scene, false );
-
-							sceneIsOneOfInitials = true;
-							break;
-						}
-					}
-
-					if( !sceneIsOneOfInitials )
-						EditorSceneManager.CloseScene( scene, true );
-				}
-				else
+				if( currentSceneReferences.references.Count > 0 )
 				{
 					// Some references are found in this scene,
 					// save the results
 					searchResult.Add( currentSceneReferences );
-
-					if( stopAtFirstOccurrence )
-						break;
 				}
 			}
 		}
@@ -619,13 +681,23 @@ public class AssetUsageDetector : EditorWindow
 			for( int i = 0; i < components.Length; i++ )
 			{
 				Component component = components[i];
-				
+
 				if( component == null )
 					continue;
-					
+
 				// Ignore Transform component (no object field to search for)
 				if( component is Transform )
 					continue;
+
+				if( component == assetToSearch )
+				{
+					currentSceneReferences.references.Add( component );
+
+					if( stopAtFirstOccurrence )
+						return;
+					else
+						continue;
+				}
 
 				if( assetType == AssetType.Script && component is MonoBehaviour )
 				{
@@ -1118,10 +1190,44 @@ public class AssetUsageDetector : EditorWindow
 		return false;
 	}
 
+	// Get the GameObject's listed under the DontDestroyOnLoad scene runtime
+	private List<GameObject> GetDontDestroyOnLoadObjects()
+	{
+		List<GameObject> result = new List<GameObject>();
+
+		List<GameObject> rootGameObjectsExceptDontDestroyOnLoad = new List<GameObject>();
+		for( int i = 0; i < SceneManager.sceneCount; i++ )
+		{
+			rootGameObjectsExceptDontDestroyOnLoad.AddRange( SceneManager.GetSceneAt( i ).GetRootGameObjects() );
+		}
+
+		List<GameObject> rootGameObjects = new List<GameObject>();
+		Transform[] allTransforms = Resources.FindObjectsOfTypeAll<Transform>();
+		for( int i = 0; i < allTransforms.Length; i++ )
+		{
+			Transform root = allTransforms[i].root;
+			if( root.hideFlags == HideFlags.None && !rootGameObjects.Contains( root.gameObject ) )
+			{
+				rootGameObjects.Add( root.gameObject );
+			}
+		}
+
+		for( int i = 0; i < rootGameObjects.Count; i++ )
+		{
+			if( !rootGameObjectsExceptDontDestroyOnLoad.Contains( rootGameObjects[i] ) )
+				result.Add( rootGameObjects[i] );
+		}
+
+		//foreach( GameObject obj in result )
+		//    Debug.Log( obj );
+
+		return result;
+	}
+
 	// Close the scenes that were not part of the initial scene setup
 	private void RestoreInitialSceneSetup()
 	{
-		if( sceneInitialSetup == null )
+		if( EditorApplication.isPlaying || sceneInitialSetup == null )
 			return;
 
 		SceneSetup[] sceneFinalSetup = EditorSceneManager.GetSceneManagerSetup();
