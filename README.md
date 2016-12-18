@@ -1,11 +1,12 @@
 # Asset Usage Detector for Unity 3D
 
-![Before search](https://yasirkula.files.wordpress.com/2016/05/assetdetectorbefore.png) 
-![After search](https://yasirkula.files.wordpress.com/2016/05/assetdetectorafter.png)
+![img1](https://yasirkula.files.wordpress.com/2016/12/assetusagedetector_11.png) 
+![img2](https://yasirkula.files.wordpress.com/2016/12/assetusagedetector_2.png)
+![img3](https://yasirkula.files.wordpress.com/2016/12/assetusagedetector_3.png)
 
 ### A. ABOUT
 
-This editor extension helps you figure out at which places an asset or GameObject is used, i.e. lists the objects that refer to the asset. It is possible to search for references in Project view and/or Hierarchy view (searching in multiple scenes is also possible).
+This editor extension helps you figure out at which places an asset or GameObject is used, i.e. lists the objects that refer to the asset. It is possible to search for references in Project view and/or Hierarchy view (searching in multiple scenes is also possible). Note that Asset Usage Detector also works in Play mode!
 
 ### B. FEATURES
 
