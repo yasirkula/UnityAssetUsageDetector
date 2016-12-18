@@ -1,6 +1,5 @@
-// Asset Usage Detector
-// Original code by: Suleyman Yasir KULA (yasirkula@yahoo.com)
-// Finds objects that refer to selected asset (or GameObject)
+// Asset Usage Detector - by Suleyman Yasir KULA (yasirkula@yahoo.com)
+// Finds references to an asset or GameObject
 // 
 // Limitations:
 // - GUIText materials can not be searched (could not find a property that does not leak material)
@@ -17,56 +16,109 @@ using UnityEditor.SceneManagement;
 using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
+using AssetUsageDetectorExtras;
 
-public enum AssetType { Texture, MultipleSprite, Material, Script, Shader, Animation, GameObject, Other };
-public enum Phase { Setup, Processing, Complete };
-
-// Custom class to hold the results for a single scene (or Assets folder)
-public class SceneObjectReferences
+// Package for helper classes to avoid possible name collisions
+namespace AssetUsageDetectorExtras
 {
-	public string scenePath;
-	public bool clickable;
-	public List<Object> references;
-	
-	public SceneObjectReferences( string scenePath, bool clickable )
+	public enum AssetType { Texture, MultipleSprite, Material, Script, Shader, Animation, GameObject, Other };
+	public enum Phase { Setup, Processing, Complete };
+
+	// Custom class to hold the results for a single scene (or Assets folder)
+	public class SceneObjectReferences
 	{
-		this.scenePath = scenePath;
-		this.clickable = clickable;
-		references = new List<Object>();
-	}
-
-	// Draw the results found for this scene
-	public void DrawOnGUI()
-	{
-		Color c = GUI.color;
-		GUI.color = Color.cyan;
-
-		if( !clickable )
-			GUILayout.Box( scenePath, AssetUsageDetector.boxGUIStyle, GUILayout.ExpandWidth( true ), GUILayout.Height( 40 ) );
-		else if( GUILayout.Button( scenePath, AssetUsageDetector.boxGUIStyle, GUILayout.ExpandWidth( true ), GUILayout.Height( 40 ) ) )
+		// Custom class to hold a single result (reference) and its ToString representation
+		private class SceneObjectReference
 		{
-			// If scene name is clicked, highlight it on Project view
-			EditorGUIUtility.PingObject( AssetDatabase.LoadAssetAtPath<SceneAsset>( scenePath ) );
-			Selection.activeObject = AssetDatabase.LoadAssetAtPath<SceneAsset>( scenePath );
-		}
+			public Object reference;
+			public string description;
 
-		GUI.color = Color.yellow;
-
-		for( int i = 0; i < references.Count; i++ )
-		{
-			GUILayout.Space( 5 );
-
-			if( GUILayout.Button( references[i].ToString(), AssetUsageDetector.boxGUIStyle, GUILayout.ExpandWidth( true ) ) )
+			public SceneObjectReference( Object reference, string additionalInfo = null )
 			{
-				// If a reference is clicked, highlight it (either on Hierarchy view or Project view)
-				EditorGUIUtility.PingObject( references[i] );
-				Selection.activeObject = references[i];
+				this.reference = reference;
+				description = reference.name + " (" + reference.GetType() + ")";
+
+				if( additionalInfo != null )
+					description += "\n" + additionalInfo;
 			}
 		}
 
-		GUI.color = c;
+		private string scenePath;
+		private bool clickable;
+		private List<SceneObjectReference> references;
 
-		GUILayout.Space( 10 );
+		public int Count { get { return references.Count; } }
+		public Object this[int index] { get { return references[index].reference; } }
+
+		public SceneObjectReferences( string scenePath, bool clickable )
+		{
+			this.scenePath = scenePath;
+			this.clickable = clickable;
+			references = new List<SceneObjectReference>();
+		}
+
+		// Add a reference to the list
+		public void AddReference( Object reference, string additionalInfo = null )
+		{
+			references.Add( new SceneObjectReference( reference, additionalInfo ) );
+		}
+
+		// Ping the first element of the references (either in Project view
+		// or Hierarchy view) to force both views to scroll to a proper position
+		public void PingFirstReference()
+		{
+			if( references.Count > 0 && references[0].reference != null )
+				EditorGUIUtility.PingObject( references[0].reference );
+		}
+
+		// Draw the results found for this scene
+		public void DrawOnGUI()
+		{
+			Color c = GUI.color;
+			GUI.color = Color.cyan;
+
+			if( !clickable )
+				GUILayout.Box( scenePath, AssetUsageDetector.boxGUIStyle, GUILayout.ExpandWidth( true ), GUILayout.Height( 40 ) );
+			else if( GUILayout.Button( scenePath, AssetUsageDetector.boxGUIStyle, GUILayout.ExpandWidth( true ), GUILayout.Height( 40 ) ) )
+			{
+				// If scene name is clicked, highlight it on Project view
+				EditorGUIUtility.PingObject( AssetDatabase.LoadAssetAtPath<SceneAsset>( scenePath ) );
+				Selection.activeObject = AssetDatabase.LoadAssetAtPath<SceneAsset>( scenePath );
+			}
+
+			GUI.color = Color.yellow;
+
+			for( int i = 0; i < references.Count; i++ )
+			{
+				if( references[i].reference == null )
+					continue;
+
+				GUILayout.Space( 5 );
+
+				if( GUILayout.Button( references[i].description, AssetUsageDetector.boxGUIStyle, GUILayout.ExpandWidth( true ) ) )
+				{
+					// If a reference is clicked, highlight it (either on Hierarchy view or Project view)
+					EditorGUIUtility.PingObject( references[i].reference );
+					Selection.activeObject = references[i].reference;
+				}
+			}
+
+			GUI.color = c;
+
+			GUILayout.Space( 10 );
+		}
+	}
+
+	public class AnimationClipSearchResult
+	{
+		public bool isFound;
+		public string additionalInfo;
+
+		public AnimationClipSearchResult( bool isFound, string additionalInfo = null )
+		{
+			this.isFound = isFound;
+			this.additionalInfo = additionalInfo;
+		}
 	}
 }
 
@@ -82,9 +134,11 @@ public class AssetUsageDetector : EditorWindow
 	private List<SceneObjectReferences> searchResult = new List<SceneObjectReferences>(); // Overall search results
 	private SceneObjectReferences currentSceneReferences; // Results for the scene currently being searched
 
+	private bool ShouldContinueSearching { get { return !stopAtFirstOccurrence || currentSceneReferences.Count == 0; } }
+
 	private Dictionary<System.Type, FieldInfo[]> typeToVariables; // An optimization to fetch & filter fields of a class only once
 	private Dictionary<System.Type, PropertyInfo[]> typeToProperties; // An optimization to fetch & filter properties of a class only once
-	private Dictionary<AnimationClip, bool> searchedAnimationClips; // An optimization to search keyframes of animation clips only once
+	private Dictionary<AnimationClip, AnimationClipSearchResult> searchedAnimationClips; // An optimization to search keyframes of animation clips only once
 
 	private bool searchInOpenScenes = true; // Scenes currently open in Hierarchy view
 	private bool searchInScenesInBuild = false; // Scenes in build (ticked in Build Settings)
@@ -129,7 +183,7 @@ public class AssetUsageDetector : EditorWindow
 		// Get existing open window or if none, make a new one
 		AssetUsageDetector window = (AssetUsageDetector) EditorWindow.GetWindow( typeof( AssetUsageDetector ) );
 		window.titleContent = new GUIContent( "Asset Usage" );
-		
+
 		window.Show();
 	}
 
@@ -234,7 +288,7 @@ public class AssetUsageDetector : EditorWindow
 					{
 						sceneInitialSetup = null;
 					}
-					
+
 					// Start searching
 					ExecuteQuery();
 
@@ -290,18 +344,18 @@ public class AssetUsageDetector : EditorWindow
 						// Ping the first element of the references (either in Project view
 						// or Hierarchy view) to force both views to scroll to a proper position
 						// (setting Selection.objects does not scroll automatically)
-						EditorGUIUtility.PingObject( searchResult[i].references[0] );
+						searchResult[i].PingFirstReference();
 
-						referenceCount += searchResult[i].references.Count;
+						referenceCount += searchResult[i].Count;
 					}
 
 					Object[] allReferences = new Object[referenceCount];
 					int currIndex = 0;
 					for( int i = 0; i < searchResult.Count; i++ )
 					{
-						for( int j = 0; j < searchResult[i].references.Count; j++ )
+						for( int j = 0; j < searchResult[i].Count; j++ )
 						{
-							allReferences[currIndex] = searchResult[i].references[j];
+							allReferences[currIndex] = searchResult[i][j];
 							currIndex++;
 						}
 					}
@@ -320,11 +374,11 @@ public class AssetUsageDetector : EditorWindow
 						// Ping the first element of the references (either in Project view
 						// or Hierarchy view) to force both views to scroll to a proper position
 						// (setting Selection.objects does not scroll automatically)
-						EditorGUIUtility.PingObject( searchResult[i].references[0] );
+						searchResult[i].PingFirstReference();
 
-						for( int j = 0; j < searchResult[i].references.Count; j++ )
+						for( int j = 0; j < searchResult[i].Count; j++ )
 						{
-							Component currReferenceAsComponent = searchResult[i].references[j] as Component;
+							Component currReferenceAsComponent = searchResult[i][j] as Component;
 							if( currReferenceAsComponent != null )
 							{
 								if( !uniqueGameObjects.Contains( currReferenceAsComponent.gameObject ) )
@@ -335,7 +389,7 @@ public class AssetUsageDetector : EditorWindow
 							}
 							else
 							{
-								resultList.Add( searchResult[i].references[j] );
+								resultList.Add( searchResult[i][j] );
 							}
 						}
 					}
@@ -365,10 +419,13 @@ public class AssetUsageDetector : EditorWindow
 	// Search for references!
 	private void ExecuteQuery()
 	{
+		// Additional infoes received from found references (like names of variables storing the searched asset)
+		string additionalInfo = null;
+
 		searchResult = new List<SceneObjectReferences>();
 		typeToVariables = new Dictionary<System.Type, FieldInfo[]>();
 		typeToProperties = new Dictionary<System.Type, PropertyInfo[]>();
-		searchedAnimationClips = new Dictionary<AnimationClip, bool>();
+		searchedAnimationClips = new Dictionary<AnimationClip, AnimationClipSearchResult>();
 
 		assetType = AssetType.Other;
 
@@ -478,7 +535,7 @@ public class AssetUsageDetector : EditorWindow
 
 		if( searchInAssetsFolder )
 		{
-			currentSceneReferences = new SceneObjectReferences( "Project View( Assets )", false );
+			currentSceneReferences = new SceneObjectReferences( "Project View (Assets)", false );
 
 			// Search through all prefabs and imported models
 			string[] pathsToAssets = AssetDatabase.FindAssets( "t:GameObject" );
@@ -486,11 +543,11 @@ public class AssetUsageDetector : EditorWindow
 			{
 				CheckGameObjectForAssetRecursive( AssetDatabase.LoadAssetAtPath<GameObject>( AssetDatabase.GUIDToAssetPath( pathsToAssets[i] ) ) );
 
-				if( stopAtFirstOccurrence && currentSceneReferences.references.Count > 0 )
+				if( !ShouldContinueSearching )
 					break;
 			}
 
-			if( !stopAtFirstOccurrence || currentSceneReferences.references.Count == 0 )
+			if( ShouldContinueSearching )
 			{
 				// If asset is shader or texture, search through all materials in the project
 				if( assetType == AssetType.Shader || assetType == AssetType.Texture )
@@ -499,9 +556,9 @@ public class AssetUsageDetector : EditorWindow
 					for( int i = 0; i < pathsToAssets.Length; i++ )
 					{
 						Material mat = AssetDatabase.LoadAssetAtPath<Material>( AssetDatabase.GUIDToAssetPath( pathsToAssets[i] ) );
-						if( CheckMaterialForAsset( mat ) )
+						if( CheckMaterialForAsset( mat, out additionalInfo ) )
 						{
-							currentSceneReferences.references.Add( mat );
+							currentSceneReferences.AddReference( mat, additionalInfo );
 
 							if( stopAtFirstOccurrence )
 								break;
@@ -511,7 +568,7 @@ public class AssetUsageDetector : EditorWindow
 			}
 
 			// Search through all AnimatorController's and AnimationClip's in the project
-			if( !stopAtFirstOccurrence || currentSceneReferences.references.Count == 0 )
+			if( ShouldContinueSearching )
 			{
 				if( assetType != AssetType.Animation )
 				{
@@ -520,9 +577,9 @@ public class AssetUsageDetector : EditorWindow
 					for( int i = 0; i < pathsToAssets.Length; i++ )
 					{
 						AnimationClip animClip = AssetDatabase.LoadAssetAtPath<AnimationClip>( AssetDatabase.GUIDToAssetPath( pathsToAssets[i] ) );
-						if( CheckAnimationForAsset( animClip ) )
+						if( CheckAnimationForAsset( animClip, out additionalInfo ) )
 						{
-							currentSceneReferences.references.Add( animClip );
+							currentSceneReferences.AddReference( animClip, additionalInfo );
 
 							if( stopAtFirstOccurrence )
 								break;
@@ -530,7 +587,7 @@ public class AssetUsageDetector : EditorWindow
 					}
 				}
 
-				if( !stopAtFirstOccurrence || currentSceneReferences.references.Count == 0 )
+				if( ShouldContinueSearching )
 				{
 					// Search through all animator controllers
 					pathsToAssets = AssetDatabase.FindAssets( "t:RuntimeAnimatorController" );
@@ -541,8 +598,11 @@ public class AssetUsageDetector : EditorWindow
 						bool foundAsset = false;
 						for( int j = 0; j < animClips.Length; j++ )
 						{
-							if( CheckAnimationForAsset( animClips[j] ) )
+							if( CheckAnimationForAsset( animClips[j], out additionalInfo ) )
 							{
+								if( additionalInfo != null )
+									additionalInfo = "Animation clip: " + animClips[j].name + "\n" + additionalInfo;
+
 								foundAsset = true;
 								break;
 							}
@@ -550,7 +610,7 @@ public class AssetUsageDetector : EditorWindow
 
 						if( foundAsset )
 						{
-							currentSceneReferences.references.Add( animController );
+							currentSceneReferences.AddReference( animController, additionalInfo );
 
 							if( stopAtFirstOccurrence )
 								break;
@@ -560,13 +620,13 @@ public class AssetUsageDetector : EditorWindow
 			}
 
 			// If a reference is found in the Project view, save the result(s)
-			if( currentSceneReferences.references.Count > 0 )
+			if( currentSceneReferences.Count > 0 )
 			{
 				searchResult.Add( currentSceneReferences );
 			}
 		}
 
-		if( !stopAtFirstOccurrence || searchResult.Count == 0 )
+		if( ShouldContinueSearching )
 		{
 			foreach( string scenePath in scenesToSearch )
 			{
@@ -587,14 +647,14 @@ public class AssetUsageDetector : EditorWindow
 					{
 						CheckGameObjectForAssetRecursive( rootGameObjects[i] );
 
-						if( stopAtFirstOccurrence && currentSceneReferences.references.Count > 0 )
+						if( !ShouldContinueSearching )
 							break;
 					}
 
 					// If no reference is found in this scene
 					// and the scene is not part of the initial scene setup,
 					// close it
-					if( currentSceneReferences.references.Count == 0 )
+					if( currentSceneReferences.Count == 0 )
 					{
 						if( !EditorApplication.isPlaying )
 						{
@@ -640,11 +700,11 @@ public class AssetUsageDetector : EditorWindow
 				{
 					CheckGameObjectForAssetRecursive( rootGameObjects[i] );
 
-					if( stopAtFirstOccurrence && currentSceneReferences.references.Count > 0 )
+					if( !ShouldContinueSearching )
 						break;
 				}
 
-				if( currentSceneReferences.references.Count > 0 )
+				if( currentSceneReferences.Count > 0 )
 				{
 					// Some references are found in this scene,
 					// save the results
@@ -662,19 +722,21 @@ public class AssetUsageDetector : EditorWindow
 	// and then search through its children recursively
 	private void CheckGameObjectForAssetRecursive( GameObject go )
 	{
-		if( stopAtFirstOccurrence && currentSceneReferences.references.Count > 0 )
+		if( !ShouldContinueSearching )
 			return;
 
 		// Check if this GameObject's prefab is the selected asset
 		if( assetType == AssetType.GameObject && PrefabUtility.GetPrefabParent( go ) == assetToSearch )
 		{
-			currentSceneReferences.references.Add( go );
+			currentSceneReferences.AddReference( go );
 
 			if( stopAtFirstOccurrence )
 				return;
 		}
 		else
 		{
+			string additionalInfo = null;
+
 			Component[] components = go.GetComponents<Component>();
 
 			// Search through all the components of the object
@@ -691,7 +753,7 @@ public class AssetUsageDetector : EditorWindow
 
 				if( component == assetToSearch )
 				{
-					currentSceneReferences.references.Add( component );
+					currentSceneReferences.AddReference( component );
 
 					if( stopAtFirstOccurrence )
 						return;
@@ -705,7 +767,7 @@ public class AssetUsageDetector : EditorWindow
 
 					if( MonoScript.FromMonoBehaviour( (MonoBehaviour) component ) == assetToSearch )
 					{
-						currentSceneReferences.references.Add( component );
+						currentSceneReferences.AddReference( component );
 
 						if( stopAtFirstOccurrence )
 							return;
@@ -723,8 +785,11 @@ public class AssetUsageDetector : EditorWindow
 					bool foundAsset = false;
 					for( int j = 0; j < materials.Length; j++ )
 					{
-						if( CheckMaterialForAsset( materials[j] ) )
+						if( CheckMaterialForAsset( materials[j], out additionalInfo ) )
 						{
+							if( additionalInfo != null )
+								additionalInfo = "Material: " + materials[j].name + "\n" + additionalInfo;
+
 							foundAsset = true;
 							break;
 						}
@@ -732,7 +797,7 @@ public class AssetUsageDetector : EditorWindow
 
 					if( foundAsset )
 					{
-						currentSceneReferences.references.Add( component );
+						currentSceneReferences.AddReference( component, additionalInfo );
 
 						if( stopAtFirstOccurrence )
 							return;
@@ -750,8 +815,11 @@ public class AssetUsageDetector : EditorWindow
 					{
 						foreach( AnimationState anim in (Animation) component )
 						{
-							if( CheckAnimationForAsset( anim.clip ) )
+							if( CheckAnimationForAsset( anim.clip, out additionalInfo ) )
 							{
+								if( additionalInfo != null )
+									additionalInfo = "Animation clip: " + anim.clip.name + "\n" + additionalInfo;
+
 								foundAsset = true;
 								break;
 							}
@@ -765,8 +833,11 @@ public class AssetUsageDetector : EditorWindow
 							AnimationClip[] animClips = animController.animationClips;
 							for( int j = 0; j < animClips.Length; j++ )
 							{
-								if( CheckAnimationForAsset( animClips[j] ) )
+								if( CheckAnimationForAsset( animClips[j], out additionalInfo ) )
 								{
+									if( additionalInfo != null )
+										additionalInfo = "Animation clip: " + animClips[j].name + "\n" + additionalInfo;
+
 									foundAsset = true;
 									break;
 								}
@@ -776,7 +847,7 @@ public class AssetUsageDetector : EditorWindow
 
 					if( foundAsset )
 					{
-						currentSceneReferences.references.Add( component );
+						currentSceneReferences.AddReference( component, additionalInfo );
 
 						if( stopAtFirstOccurrence )
 							return;
@@ -847,17 +918,18 @@ public class AssetUsageDetector : EditorWindow
 					object variableValue = variables[j].GetValue( component );
 					if( CheckVariableValueForAsset( variableValue ) )
 					{
-						currentSceneReferences.references.Add( component );
+						currentSceneReferences.AddReference( component, "Variable: " + variables[j].Name );
 
 						if( stopAtFirstOccurrence )
 							return;
 						else
 							break;
 					}
-					else if( variableValue is IEnumerable )
+					else if( variableValue is IEnumerable && !( variableValue is Transform ) )
 					{
 						// If the field is IEnumerable (possibly an array or collection),
 						// search through members of it (not recursive)
+						// Note that Transform IEnumerable (children of the transform) is not iterated
 						bool assetFoundInArray = false;
 						try
 						{
@@ -865,7 +937,7 @@ public class AssetUsageDetector : EditorWindow
 							{
 								if( CheckVariableValueForAsset( arrayItem ) )
 								{
-									currentSceneReferences.references.Add( component );
+									currentSceneReferences.AddReference( component, "Variable (IEnumerable): " + variables[j].Name );
 
 									if( stopAtFirstOccurrence )
 										return;
@@ -968,17 +1040,18 @@ public class AssetUsageDetector : EditorWindow
 
 						if( CheckVariableValueForAsset( propertyValue ) )
 						{
-							currentSceneReferences.references.Add( component );
+							currentSceneReferences.AddReference( component, "Property: " + properties[j].Name );
 
 							if( stopAtFirstOccurrence )
 								return;
 							else
 								break;
 						}
-						else if( propertyValue is IEnumerable )
+						else if( propertyValue is IEnumerable && !( propertyValue is Transform ) )
 						{
 							// If the property is IEnumerable (possibly an array or collection),
 							// search through members of it (not recursive)
+							// Note that Transform IEnumerable (children of the transform) is not iterated
 							bool assetFoundInArray = false;
 							try
 							{
@@ -986,7 +1059,7 @@ public class AssetUsageDetector : EditorWindow
 								{
 									if( CheckVariableValueForAsset( arrayItem ) )
 									{
-										currentSceneReferences.references.Add( component );
+										currentSceneReferences.AddReference( component, "Property (IEnumerable): " + properties[j].Name );
 
 										if( stopAtFirstOccurrence )
 											return;
@@ -1024,8 +1097,10 @@ public class AssetUsageDetector : EditorWindow
 	}
 
 	// Chech if asset is used in this material
-	private bool CheckMaterialForAsset( Material material )
+	private bool CheckMaterialForAsset( Material material, out string additionalInfo )
 	{
+		additionalInfo = null;
+
 		if( material == null )
 			return false;
 
@@ -1047,8 +1122,10 @@ public class AssetUsageDetector : EditorWindow
 			{
 				if( ShaderUtil.GetPropertyType( shader, k ) == ShaderUtil.ShaderPropertyType.TexEnv )
 				{
-					if( material.GetTexture( ShaderUtil.GetPropertyName( shader, k ) ) == assetToSearch )
+					string propertyName = ShaderUtil.GetPropertyName( shader, k );
+					if( material.GetTexture( propertyName ) == assetToSearch )
 					{
+						additionalInfo = "Shader property: " + propertyName;
 						return true;
 					}
 				}
@@ -1059,22 +1136,24 @@ public class AssetUsageDetector : EditorWindow
 	}
 
 	// Check if asset is used in this animation clip (and its keyframes)
-	private bool CheckAnimationForAsset( AnimationClip clip )
+	private bool CheckAnimationForAsset( AnimationClip clip, out string additionalInfo )
 	{
+		additionalInfo = null;
+
 		// If this AnimationClip is already searched, return the cached result
-		bool result;
+		AnimationClipSearchResult result;
 		if( !searchedAnimationClips.TryGetValue( clip, out result ) )
 		{
 			if( clip == assetToSearch )
 			{
-				searchedAnimationClips.Add( clip, true );
+				searchedAnimationClips.Add( clip, new AnimationClipSearchResult( true ) );
 				return true;
 			}
 
 			// Don't search for animation clip references inside an animation clip's keyframes!
 			if( assetType == AssetType.Animation )
 			{
-				searchedAnimationClips.Add( clip, false );
+				searchedAnimationClips.Add( clip, new AnimationClipSearchResult( false ) );
 				return false;
 			}
 
@@ -1088,72 +1167,47 @@ public class AssetUsageDetector : EditorWindow
 				for( int j = 0; j < keyframes.Length; j++ )
 				{
 					objectAtKeyframe = keyframes[j].value;
-					if( assetType == AssetType.MultipleSprite )
+					if( CheckObjectForAsset( objectAtKeyframe ) )
 					{
-						for( int k = 0; k < assetToSearchMultipleSprite.Count; k++ )
-						{
-							if( objectAtKeyframe == assetToSearchMultipleSprite[k] )
-							{
-								searchedAnimationClips.Add( clip, true );
-								return true;
-							}
-						}
-					}
-					else
-					{
-						if( objectAtKeyframe == assetToSearch )
-						{
-							searchedAnimationClips.Add( clip, true );
-							return true;
-						}
-						else if( objectAtKeyframe is Component && assetType == AssetType.GameObject )
-						{
-							// If keyframe value is a component, and selected asset is a GameObject,
-							// check if it is a component of the selected asset
-							if( ( (Component) objectAtKeyframe ).gameObject == assetToSearch )
-							{
-								searchedAnimationClips.Add( clip, true );
-								return true;
-							}
-						}
+						additionalInfo = "Keyframe: " + keyframes[j].time;
+						searchedAnimationClips.Add( clip, new AnimationClipSearchResult( true, additionalInfo ) );
+						return true;
 					}
 				}
 			}
 
-			searchedAnimationClips.Add( clip, false );
+			searchedAnimationClips.Add( clip, new AnimationClipSearchResult( false ) );
 			return false;
 		}
 
-		return result;
+		additionalInfo = result.additionalInfo;
+		return result.isFound;
 	}
 
-	// Check if this variable is a refence to the asset
-	private bool CheckVariableValueForAsset( object variableValue )
+	private bool CheckObjectForAsset( Object obj )
 	{
-		if( variableValue == null )
+		if( obj == null )
 			return false;
 
 		if( assetType == AssetType.MultipleSprite )
 		{
 			for( int i = 0; i < assetToSearchMultipleSprite.Count; i++ )
 			{
-				if( variableValue == assetToSearchMultipleSprite[i] )
+				if( obj == assetToSearchMultipleSprite[i] )
 					return true;
 			}
 		}
 		else
 		{
-			if( variableValue == assetToSearch )
-			{
+			if( obj == assetToSearch )
 				return true;
-			}
-			else if( variableValue is Component && assetType == AssetType.GameObject )
+			else if( obj is Component && assetType == AssetType.GameObject )
 			{
-				// If variable is a component, and selected asset is a GameObject,
+				// If Object is a component, and selected asset is a GameObject,
 				// check if it is a component of the selected asset
 				try
 				{
-					if( ( (Component) variableValue ).gameObject == assetToSearch )
+					if( ( (Component) obj ).gameObject == assetToSearch )
 					{
 						return true;
 					}
@@ -1166,6 +1220,15 @@ public class AssetUsageDetector : EditorWindow
 		}
 
 		return false;
+	}
+
+	// Check if this variable is a refence to the asset
+	private bool CheckVariableValueForAsset( object variableValue )
+	{
+		if( variableValue == null || !( variableValue is Object ) )
+			return false;
+
+		return CheckObjectForAsset( (Object) variableValue );
 	}
 
 	// Check if all open scenes are saved (not dirty)
@@ -1217,9 +1280,6 @@ public class AssetUsageDetector : EditorWindow
 			if( !rootGameObjectsExceptDontDestroyOnLoad.Contains( rootGameObjects[i] ) )
 				result.Add( rootGameObjects[i] );
 		}
-
-		//foreach( GameObject obj in result )
-		//    Debug.Log( obj );
 
 		return result;
 	}
