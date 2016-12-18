@@ -1,8 +1,8 @@
 # Asset Usage Detector for Unity 3D
 
-![img1](https://yasirkula.files.wordpress.com/2016/12/assetusagedetector_11.png) 
-![img2](https://yasirkula.files.wordpress.com/2016/12/assetusagedetector_2.png)
-![img3](https://yasirkula.files.wordpress.com/2016/12/assetusagedetector_3.png)
+<img src="https://yasirkula.files.wordpress.com/2016/12/assetusagedetector_11.png" height="360"></img>
+<img src="https://yasirkula.files.wordpress.com/2016/12/assetusagedetector_2.png" height="360"></img>
+<img src="https://yasirkula.files.wordpress.com/2016/12/assetusagedetector_3.png" height="360"></img>
 
 ### A. ABOUT
 
