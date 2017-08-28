@@ -17,6 +17,7 @@ using Object = UnityEngine.Object;
 namespace AssetUsageDetectorNamespace
 {
 	public enum Phase { Setup, Processing, Complete };
+	public enum PathDrawingMode { Full, ShortRelevantParts, Shortest }
 
 	// Delegate to get the value of a variable (either field or property)
 	public delegate object VariableGetVal( object obj );
@@ -41,7 +42,8 @@ namespace AssetUsageDetectorNamespace
 		private string title;
 		private bool clickable;
 		private List<ReferenceNode> references;
-		private List<ReferencePath> shortestPathsToReferences;
+		private List<ReferencePath> referencePathsShortUnique;
+		private List<ReferencePath> referencePathsShortest;
 
 		public int NumberOfReferences { get { return references.Count; } }
 
@@ -50,7 +52,8 @@ namespace AssetUsageDetectorNamespace
 			this.title = title;
 			this.clickable = clickable;
 			references = new List<ReferenceNode>();
-			shortestPathsToReferences = null;
+			referencePathsShortUnique = null;
+			referencePathsShortest = null;
 		}
 
 		// Add a reference to the list
@@ -59,14 +62,26 @@ namespace AssetUsageDetectorNamespace
 			references.Add( node );
 		}
 
+		// Check if node exists in this results set
+		public bool Contains( ReferenceNode node )
+		{
+			for( int i = 0; i < references.Count; i++ )
+			{
+				if( references[i] == node )
+					return true;
+			}
+
+			return false;
+		}
+
 		// Add all the Object's in this container to the set
 		public void AddObjectsTo( HashSet<Object> objectsSet )
 		{
 			CalculateShortestPathsToReferences();
 
-			for( int i = 0; i < shortestPathsToReferences.Count; i++ )
+			for( int i = 0; i < referencePathsShortUnique.Count; i++ )
 			{
-				Object obj = shortestPathsToReferences[i].startNode.nodeObject as Object;
+				Object obj = referencePathsShortUnique[i].startNode.nodeObject as Object;
 				if( obj != null )
 					objectsSet.Add( obj );
 			}
@@ -77,9 +92,9 @@ namespace AssetUsageDetectorNamespace
 		{
 			CalculateShortestPathsToReferences();
 
-			for( int i = 0; i < shortestPathsToReferences.Count; i++ )
+			for( int i = 0; i < referencePathsShortUnique.Count; i++ )
 			{
-				Object obj = shortestPathsToReferences[i].startNode.nodeObject as Object;
+				Object obj = referencePathsShortUnique[i].startNode.nodeObject as Object;
 				if( obj != null )
 				{
 					if( obj is GameObject )
@@ -90,19 +105,45 @@ namespace AssetUsageDetectorNamespace
 			}
 		}
 
-		// Calculate shortest unique paths to the references
+		// Calculate short unique paths to the references
 		public void CalculateShortestPathsToReferences()
 		{
-			if( shortestPathsToReferences != null )
+			if( referencePathsShortUnique != null )
 				return;
 
-			shortestPathsToReferences = new List<ReferencePath>( 32 );
+			referencePathsShortUnique = new List<ReferencePath>( 32 );
 			for( int i = 0; i < references.Count; i++ )
-				references[i].CalculateShortestPaths( shortestPathsToReferences );
+				references[i].CalculateShortUniquePaths( referencePathsShortUnique );
+
+			referencePathsShortest = new List<ReferencePath>( referencePathsShortUnique.Count );
+			for( int i = 0; i < referencePathsShortUnique.Count; i++ )
+			{
+				int[] linksToFollow = referencePathsShortUnique[i].pathLinksToFollow;
+
+				// Find the last two nodes in this path
+				ReferenceNode nodeBeforeLast = referencePathsShortUnique[i].startNode;
+				for( int j = 0; j < linksToFollow.Length - 1; j++ )
+					nodeBeforeLast = nodeBeforeLast[linksToFollow[j]].targetNode;
+
+				// Check if these two nodes are unique
+				bool isUnique = true;
+				for( int j = 0; j < referencePathsShortest.Count; j++ )
+				{
+					ReferencePath path = referencePathsShortest[j];
+					if( path.startNode == nodeBeforeLast && path.pathLinksToFollow[0] == linksToFollow[linksToFollow.Length - 1] )
+					{
+						isUnique = false;
+						break;
+					}
+				}
+
+				if( isUnique )
+					referencePathsShortest.Add( new ReferencePath( nodeBeforeLast, new int[1] { linksToFollow[linksToFollow.Length - 1] } ) );
+			}
 		}
 
 		// Draw the results found for this container
-		public void DrawOnGUI( bool drawFullPaths )
+		public void DrawOnGUI( PathDrawingMode pathDrawingMode )
 		{
 			Color c = GUI.color;
 			GUI.color = Color.cyan;
@@ -110,13 +151,13 @@ namespace AssetUsageDetectorNamespace
 			if( GUILayout.Button( title, AssetUsageDetector.BoxGUIStyle, AssetUsageDetector.GL_EXPAND_WIDTH, AssetUsageDetector.GL_HEIGHT_40 ) && clickable )
 			{
 				// If the container (scene, usually) is clicked, highlight it on Project view
-				EditorGUIUtility.PingObject( AssetDatabase.LoadAssetAtPath<SceneAsset>( title ) );
+				AssetDatabase.LoadAssetAtPath<SceneAsset>( title ).PingInEditor();
 				Selection.activeObject = AssetDatabase.LoadAssetAtPath<SceneAsset>( title );
 			}
 
 			GUI.color = Color.yellow;
 
-			if( drawFullPaths )
+			if( pathDrawingMode == PathDrawingMode.Full )
 			{
 				for( int i = 0; i < references.Count; i++ )
 				{
@@ -130,12 +171,18 @@ namespace AssetUsageDetectorNamespace
 			}
 			else
 			{
-				if( shortestPathsToReferences == null )
+				if( referencePathsShortUnique == null )
 					CalculateShortestPathsToReferences();
 
-				for( int i = 0; i < shortestPathsToReferences.Count; i++ )
+				List<ReferencePath> pathsToDraw;
+				if( pathDrawingMode == PathDrawingMode.ShortRelevantParts )
+					pathsToDraw = referencePathsShortUnique;
+				else
+					pathsToDraw = referencePathsShortest;
+
+				for( int i = 0; i < pathsToDraw.Count; i++ )
 				{
-					ReferencePath path = shortestPathsToReferences[i];
+					ReferencePath path = pathsToDraw[i];
 					if( path.startNode.nodeObject == null )
 						continue;
 
@@ -213,14 +260,14 @@ namespace AssetUsageDetectorNamespace
 			links.Clear();
 		}
 
-		// Calculate shortest unique paths that start with this node
-		public void CalculateShortestPaths( List<ReferenceHolder.ReferencePath> currentPaths )
+		// Calculate short unique paths that start with this node
+		public void CalculateShortUniquePaths( List<ReferenceHolder.ReferencePath> currentPaths )
 		{
-			CalculateShortestPaths( currentPaths, new List<ReferenceNode>( 8 ), new List<int>( 8 ) { -1 }, 0 );
+			CalculateShortUniquePaths( currentPaths, new List<ReferenceNode>( 8 ), new List<int>( 8 ) { -1 }, 0 );
 		}
 
-		// Just some boring calculations to find the shortest unique paths recursively
-		private void CalculateShortestPaths( List<ReferenceHolder.ReferencePath> shortestPaths, List<ReferenceNode> currentPath, List<int> currentPathIndices, int latestObjectIndexInPath )
+		// Just some boring calculations to find the short unique paths recursively
+		private void CalculateShortUniquePaths( List<ReferenceHolder.ReferencePath> shortestPaths, List<ReferenceNode> currentPath, List<int> currentPathIndices, int latestObjectIndexInPath )
 		{
 			if( nodeObject == null )
 				return;
@@ -251,7 +298,7 @@ namespace AssetUsageDetectorNamespace
 					}
 				}
 
-				// Don't allow duplicate shortest paths
+				// Don't allow duplicate short paths
 				if( isUnique )
 				{
 					int[] pathIndices = new int[currentPathIndices.Count - latestObjectIndexInPath - 1];
@@ -269,7 +316,7 @@ namespace AssetUsageDetectorNamespace
 				for( int i = 0; i < links.Count; i++ )
 				{
 					currentPathIndices.Add( i );
-					links[i].targetNode.CalculateShortestPaths( shortestPaths, currentPath, currentPathIndices, latestObjectIndexInPath );
+					links[i].targetNode.CalculateShortUniquePaths( shortestPaths, currentPath, currentPathIndices, latestObjectIndexInPath );
 					currentPathIndices.RemoveAt( currentIndex + 1 );
 				}
 			}
@@ -311,7 +358,7 @@ namespace AssetUsageDetectorNamespace
 				Object unityObject = nodeObject as Object;
 				if( unityObject != null )
 				{
-					EditorGUIUtility.PingObject( unityObject );
+					unityObject.PingInEditor();
 					Selection.activeObject = unityObject;
 				}
 			}
@@ -334,6 +381,20 @@ namespace AssetUsageDetectorNamespace
 				result += nodeObject.GetType() + " object";
 
 			return result;
+		}
+	}
+
+	// Custom class to hold a sub-asset and its search flag
+	[Serializable]
+	public class SubAssetToSearch
+	{
+		public Object subAsset;
+		public bool shouldSearch;
+
+		public SubAssetToSearch( Object subAsset, bool shouldSearch )
+		{
+			this.subAsset = subAsset;
+			this.shouldSearch = shouldSearch;
 		}
 	}
 
@@ -411,6 +472,34 @@ namespace AssetUsageDetectorNamespace
 					( (Object) obj ).name;
 
 			return obj.GetHashCode() + obj.GetType().Name;
+		}
+
+		// Check if object is an asset or a Scene object
+		public static bool IsAsset( this object obj )
+		{
+			return obj is Object && !string.IsNullOrEmpty( AssetDatabase.GetAssetPath( (Object) obj ) );
+		}
+
+		// Ping an object in either Project view or Hierarchy view
+		public static void PingInEditor( this Object obj )
+		{
+			if( obj is Component )
+				obj = ( (Component) obj ).gameObject;
+
+			// Pinging a prefab only works if the pinged object is the root of the prefab
+			// or a direct child of it. Pinging any grandchildren of the prefab
+			// does not work; in which case, traverse the parent hierarchy until
+			// a pingable parent is reached
+			if( obj.IsAsset() && obj is GameObject)
+			{
+				Transform objTR = ( (GameObject) obj ).transform;
+				while( objTR.parent != null && objTR.parent.parent != null )
+					objTR = objTR.parent;
+
+				obj = objTR.gameObject;
+			}
+			
+			EditorGUIUtility.PingObject( obj );
 		}
 
 		// Check if object depends on any of the references
@@ -539,7 +628,6 @@ namespace AssetUsageDetectorNamespace
 				return true;
 
 			return false;
-
 		}
 	}
 	#endregion
@@ -548,11 +636,13 @@ namespace AssetUsageDetectorNamespace
 	public class AssetUsageDetector : EditorWindow
 	{
 		private Object assetToSearch;
+		private List<SubAssetToSearch> subAssetsToSearch = new List<SubAssetToSearch>();
 
 		private HashSet<Object> assetsSet; // A set that contains the searched asset and its sub-assets (if any)
 		private Type[] assetClasses; // Type's of the searched objects (like GameObject, Material, a custom MonoBehaviour etc.)
 
 		private Phase currentPhase = Phase.Setup;
+		private PathDrawingMode pathDrawingMode = PathDrawingMode.ShortRelevantParts;
 
 		private List<ReferenceHolder> searchResult = new List<ReferenceHolder>(); // Overall search results
 		private ReferenceHolder currentReferenceHolder; // Results for the currently searched scene
@@ -578,14 +668,12 @@ namespace AssetUsageDetectorNamespace
 		private bool searchInScenesInBuildTickedOnly = true; // Scenes in build (ticked only or not)
 		private bool searchInAllScenes = false; // All scenes (including scenes that are not in build)
 		private bool searchInAssetsFolder = false; // Assets in Project view
-
-		private bool includeSubAssetsInSearch = false; // Search sub-assets of a main asset as well
+		
+		private bool showSubAssetsFoldout = true; // Whether or not sub-assets included in search should be shown
 		private bool isSearchingAsset; // Whether we are searching for an asset's references or a scene object's references
 
 		private int searchDepthLimit = 1; // Depth limit for recursively searching variables of objects
 		private int currentDepth = 0;
-
-		private bool showFullPathsToReferences = false; // Draw either the complete paths to the references or only the most relevant parts of the paths
 
 		private bool restoreInitialSceneSetup = true; // Close the additively loaded scenes that were not part of the initial scene setup
 		private SceneSetup[] initialSceneSetup; // Initial scene setup (which scenes were open and/or loaded)
@@ -601,8 +689,6 @@ namespace AssetUsageDetectorNamespace
 		private BindingFlags prevFieldModifiers;
 		private BindingFlags prevPropertyModifiers;
 
-		private static bool assembliesReloaded = true; // An optimization to reinitialize some cached variables only if assemblies are reloaded
-
 		public static string tooltip = null;
 		public static bool showTooltips = true;
 
@@ -611,6 +697,7 @@ namespace AssetUsageDetectorNamespace
 
 		public static GUILayoutOption GL_EXPAND_WIDTH = GUILayout.ExpandWidth( true );
 		public static GUILayoutOption GL_EXPAND_HEIGHT = GUILayout.ExpandHeight( true );
+		public static GUILayoutOption GL_WIDTH_25 = GUILayout.Width( 25 );
 		public static GUILayoutOption GL_WIDTH_100 = GUILayout.Width( 100 );
 		public static GUILayoutOption GL_WIDTH_250 = GUILayout.Width( 250 );
 		public static GUILayoutOption GL_HEIGHT_30 = GUILayout.Height( 30 );
@@ -635,8 +722,8 @@ namespace AssetUsageDetectorNamespace
 			}
 		}
 
-		private GUIStyle m_tooltipGUIStyle; // GUIStyle used to draw the tooltip
-		private GUIStyle TooltipGUIStyle
+		private static GUIStyle m_tooltipGUIStyle; // GUIStyle used to draw the tooltip
+		private static GUIStyle TooltipGUIStyle
 		{
 			get
 			{
@@ -651,8 +738,6 @@ namespace AssetUsageDetectorNamespace
 					Texture2D backgroundTexture = new Texture2D( 1, 1 );
 					backgroundTexture.SetPixel( 0, 0, new Color( 0.88f, 0.88f, 0.88f, 0.85f ) );
 					backgroundTexture.Apply();
-
-					backgroundTexture.hideFlags = HideFlags.HideAndDontSave;
 
 					m_tooltipGUIStyle.normal.background = backgroundTexture;
 					m_tooltipGUIStyle.normal.textColor = Color.black;
@@ -727,17 +812,62 @@ namespace AssetUsageDetectorNamespace
 			}
 			else if( currentPhase == Phase.Setup )
 			{
+				GUI.changed = false;
+
+				Object prevAssetToSearch = assetToSearch;
 				assetToSearch = EditorGUILayout.ObjectField( "Asset: ", assetToSearch, typeof( Object ), true );
 
-				if( assetToSearch != null && AssetDatabase.IsMainAsset( assetToSearch ) )
+				if( GUI.changed && prevAssetToSearch != assetToSearch )
+					OnSearchedAssetChanged();
+
+				if( assetToSearch != null && subAssetsToSearch.Count > 0 )
 				{
 					GUILayout.BeginHorizontal();
 
-					includeSubAssetsInSearch = EditorGUILayout.ToggleLeft( "Include sub-assets in search (if any)", includeSubAssetsInSearch, GL_WIDTH_250 );
-					if( !includeSubAssetsInSearch && assetToSearch is Texture && AssetDatabase.LoadAssetAtPath<Sprite>( AssetDatabase.GetAssetPath( assetToSearch ) ) != null )
-						GUILayout.Label( "  <-- Recommended for sprites!", EditorStyles.boldLabel );
+					// 0-> all toggles off, 1-> mixed, 2-> all toggles on
+					bool toggleAllSubAssets = subAssetsToSearch[0].shouldSearch;
+					bool mixedToggle = false;
+					for( int i = 1; i < subAssetsToSearch.Count; i++ )
+					{
+						if( subAssetsToSearch[i].shouldSearch != toggleAllSubAssets )
+						{
+							mixedToggle = true;
+							break;
+						}
+					}
+
+					if( mixedToggle )
+						EditorGUI.showMixedValue = true;
+
+					GUI.changed = false;
+					toggleAllSubAssets = EditorGUILayout.Toggle( toggleAllSubAssets, GL_WIDTH_25 );
+					if( GUI.changed )
+					{
+						for( int i = 0; i < subAssetsToSearch.Count; i++ )
+							subAssetsToSearch[i].shouldSearch = toggleAllSubAssets;
+					}
+
+					EditorGUI.showMixedValue = false;
+
+					showSubAssetsFoldout = EditorGUILayout.Foldout( showSubAssetsFoldout, "Include sub-assets in search:", true );
 
 					GUILayout.EndHorizontal();
+
+					if( showSubAssetsFoldout )
+					{
+						for( int i = 0; i < subAssetsToSearch.Count; i++ )
+						{
+							GUILayout.BeginHorizontal();
+
+							subAssetsToSearch[i].shouldSearch = EditorGUILayout.Toggle( subAssetsToSearch[i].shouldSearch, GL_WIDTH_25 );
+
+							GUI.enabled = false;
+							EditorGUILayout.ObjectField( string.Empty, subAssetsToSearch[i].subAsset, typeof( Object ), true );
+							GUI.enabled = true;
+
+							GUILayout.EndHorizontal();
+						}
+					}
 				}
 
 				GUILayout.Space( 10 );
@@ -869,7 +999,7 @@ namespace AssetUsageDetectorNamespace
 				// Draw the results of the search
 				GUI.enabled = false;
 
-				assetToSearch = EditorGUILayout.ObjectField( "Asset(s): ", assetToSearch, typeof( Object ), true );
+				EditorGUILayout.ObjectField( "Asset: ", assetToSearch, typeof( Object ), true );
 
 				GUILayout.Space( 10 );
 				GUI.enabled = true;
@@ -934,16 +1064,43 @@ namespace AssetUsageDetectorNamespace
 
 					GUILayout.Space( 10 );
 
-					showFullPathsToReferences = EditorGUILayout.ToggleLeft( new GUIContent( "Show full paths to references (can be slow with too many references)", "If deselected, only the most relevant parts of the paths are drawn" ), showFullPathsToReferences );
-
 					showTooltips = EditorGUILayout.ToggleLeft( "Show tooltips", showTooltips );
 
 					GUILayout.Space( 10 );
 
+					GUILayout.Label( "Path drawing mode:" );
+
+					GUILayout.BeginHorizontal();
+
+					GUILayout.Space( 35 );
+
+					if( EditorGUILayout.ToggleLeft( "Full: Draw the complete paths to the references (can be slow with too many references)", pathDrawingMode == PathDrawingMode.Full ) )
+						pathDrawingMode = PathDrawingMode.Full;
+
+					GUILayout.EndHorizontal();
+
+					GUILayout.BeginHorizontal();
+
+					GUILayout.Space( 35 );
+
+					if( EditorGUILayout.ToggleLeft( "Shorter: Draw only the most relevant unique parts of the complete paths that start with UnityEngine.Object", pathDrawingMode == PathDrawingMode.ShortRelevantParts ) )
+						pathDrawingMode = PathDrawingMode.ShortRelevantParts;
+
+					GUILayout.EndHorizontal();
+
+					GUILayout.BeginHorizontal();
+
+					GUILayout.Space( 35 );
+
+					if( EditorGUILayout.ToggleLeft( "Shortest: Draw only the last two nodes of complete paths that are unique", pathDrawingMode == PathDrawingMode.Shortest ) )
+						pathDrawingMode = PathDrawingMode.Shortest;
+
+					GUILayout.EndHorizontal();
+					
 					// Tooltip gets its value in ReferenceHolder.DrawOnGUI function
 					tooltip = null;
 					for( int i = 0; i < searchResult.Count; i++ )
-						searchResult[i].DrawOnGUI( showFullPathsToReferences );
+						searchResult[i].DrawOnGUI( pathDrawingMode );
 
 					Vector2 mousePos = Event.current.mousePosition;
 					if( tooltip != null )
@@ -962,6 +1119,59 @@ namespace AssetUsageDetectorNamespace
 			EditorGUILayout.EndScrollView();
 		}
 
+		// Called when the value of assetToSearch has changed through editor window
+		private void OnSearchedAssetChanged()
+		{
+			if( assetToSearch == null || assetToSearch.Equals( null ) )
+				return;
+
+			subAssetsToSearch.Clear();
+
+			if( !assetToSearch.IsAsset() || !AssetDatabase.IsMainAsset( assetToSearch ) || assetToSearch is SceneAsset )
+				return;
+
+			// Find sub-assets of the searched asset (if any)
+			MonoScript[] monoScriptsInProject = null;
+			Object[] assets = AssetDatabase.LoadAllAssetsAtPath( AssetDatabase.GetAssetPath( assetToSearch ) );
+			for( int i = 0; i < assets.Length; i++ )
+			{
+				Object asset = assets[i];
+				if( asset == null || asset.Equals( null ) || asset is Component )
+					continue;
+
+				if( asset != assetToSearch )
+					subAssetsToSearch.Add( new SubAssetToSearch( asset, true ) );
+
+				// MonoScripts are a special case such that other MonoScript objects
+				// that extend this MonoScript are also considered a sub-asset
+				if( asset is MonoScript )
+				{ 
+					Type monoScriptType = ( (MonoScript) asset ).GetClass();
+					if( monoScriptType == null || !monoScriptType.IsDerivedFrom( typeof( Component ) ) )
+						continue;
+
+					// Find all MonoScript objects in the project
+					if( monoScriptsInProject == null )
+					{
+						string[] pathsToMonoScripts = AssetDatabase.FindAssets( "t:MonoScript" );
+						monoScriptsInProject = new MonoScript[pathsToMonoScripts.Length];
+						for( int j = 0; j < pathsToMonoScripts.Length; j++ )
+							monoScriptsInProject[j] = AssetDatabase.LoadAssetAtPath<MonoScript>( AssetDatabase.GUIDToAssetPath( pathsToMonoScripts[j] ) );
+					}
+					
+					// Add any MonoScript objects that extend this MonoScript as a sub-asset
+					for( int j = 0; j < monoScriptsInProject.Length; j++ )
+					{
+						Type otherMonoScriptType = monoScriptsInProject[j].GetClass();
+						if( otherMonoScriptType == null || monoScriptType == otherMonoScriptType || !otherMonoScriptType.IsDerivedFrom( monoScriptType ) )
+							continue;
+
+						subAssetsToSearch.Add( new SubAssetToSearch( monoScriptsInProject[j], false ) );
+					}
+				}
+			}
+		}
+
 		// Search for references!
 		private void ExecuteQuery()
 		{
@@ -976,7 +1186,7 @@ namespace AssetUsageDetectorNamespace
 
 			if( typeToVariables == null )
 				typeToVariables = new Dictionary<Type, VariableGetterHolder[]>( 4096 );
-			else if( assembliesReloaded || searchDepthLimit != prevSearchDepthLimit || prevFieldModifiers != fieldModifiers || prevPropertyModifiers != propertyModifiers )
+			else if( searchDepthLimit != prevSearchDepthLimit || prevFieldModifiers != fieldModifiers || prevPropertyModifiers != propertyModifiers )
 				typeToVariables.Clear();
 
 			if( searchableTypes == null )
@@ -1001,8 +1211,7 @@ namespace AssetUsageDetectorNamespace
 				assetsSet = new HashSet<Object>();
 			else
 				assetsSet.Clear();
-
-			assembliesReloaded = false;
+			
 			prevSearchDepthLimit = searchDepthLimit;
 			prevFieldModifiers = fieldModifiers;
 			prevPropertyModifiers = propertyModifiers;
@@ -1017,46 +1226,49 @@ namespace AssetUsageDetectorNamespace
 			searchMaterialsForTexture = false;
 
 			// Store the searched asset and its sub-assets (if any) in a set
-			isSearchingAsset = !string.IsNullOrEmpty( AssetDatabase.GetAssetPath( assetToSearch ) );
-			bool isMainAssetSearched = AssetDatabase.IsMainAsset( assetToSearch );
-			if( isMainAssetSearched && includeSubAssetsInSearch && !( assetToSearch is SceneAsset ) )
-			{
-				Object[] assets = AssetDatabase.LoadAllAssetsAtPath( AssetDatabase.GetAssetPath( assetToSearch ) );
-				for( int i = 0; i < assets.Length; i++ )
-				{
-					if( assets[i] != null )
-					{
-						assetsSet.Add( assets[i] );
-						allAssetClasses.Add( assets[i].GetType() );
+			isSearchingAsset = assetToSearch.IsAsset();
 
-						if( assets[i] is MonoScript )
-							allAssetClasses.Add( ( (MonoScript) assets[i] ).GetClass() );
+			try
+			{
+				// Temporarily add main searched asset to sub-assets list to avoid duplicate code
+				subAssetsToSearch.Add( new SubAssetToSearch( assetToSearch, true ) );
+
+				for( int i = 0; i < subAssetsToSearch.Count; i++ )
+				{
+					if( subAssetsToSearch[i].shouldSearch )
+					{
+						Object asset = subAssetsToSearch[i].subAsset;
+						if( asset == null || asset.Equals( null ) )
+							continue;
+
+						assetsSet.Add( asset );
+						allAssetClasses.Add( asset.GetType() );
+
+						if( asset is MonoScript )
+						{
+							Type monoScriptType = ( (MonoScript) asset ).GetClass();
+							if( monoScriptType != null && monoScriptType.IsDerivedFrom( typeof( Component ) ) )
+								allAssetClasses.Add( monoScriptType );
+						}
+						else if( asset is GameObject )
+						{
+							// If searched asset is a GameObject, include its components in the search
+							Component[] components = ( (GameObject) asset ).GetComponents<Component>();
+							for( int j = 0; j < components.Length; j++ )
+							{
+								if( components[j] == null || components[j].Equals( null ) )
+									continue;
+
+								assetsSet.Add( components[j] );
+								allAssetClasses.Add( components[j].GetType() );
+							}
+						}
 					}
 				}
 			}
-			else
+			finally
 			{
-				assetsSet.Add( assetToSearch );
-				allAssetClasses.Add( assetToSearch.GetType() );
-
-				if( assetToSearch is MonoScript )
-					allAssetClasses.Add( ( (MonoScript) assetToSearch ).GetClass() );
-			}
-
-			if( assetToSearch is GameObject )
-			{
-				// If searched asset is a GameObject, include its components in the search
-				Component[] components;
-				if( isMainAssetSearched && includeSubAssetsInSearch )
-					components = ( (GameObject) assetToSearch ).GetComponentsInChildren<Component>();
-				else
-					components = ( (GameObject) assetToSearch ).GetComponents<Component>();
-
-				for( int i = 0; i < components.Length; i++ )
-				{
-					assetsSet.Add( components[i] );
-					allAssetClasses.Add( components[i].GetType() );
-				}
+				subAssetsToSearch.RemoveAt( subAssetsToSearch.Count - 1 );
 			}
 
 			assetClasses = new Type[allAssetClasses.Count];
@@ -1191,12 +1403,39 @@ namespace AssetUsageDetectorNamespace
 				if( currentReferenceHolder.NumberOfReferences > 0 )
 					searchResult.Add( currentReferenceHolder );
 			}
-
+			
 			// Log some c00l stuff to console
 			Debug.Log( "Searched " + searchCount + " objects in " + ( EditorApplication.timeSinceStartup - searchStartTime ).ToString( "F2" ) + " seconds" );
 
 			// Search is complete!
 			currentPhase = Phase.Complete;
+		}
+
+		// Add a reference node to the results
+		private void AddReference( ReferenceNode referenceNode )
+		{
+			// Special case: for references that are found in prefabs in Project view,
+			// the path to the reference should start with the root GameObject in order to 
+			// make it possible to locate the asset
+			GameObject obj = referenceNode.nodeObject as GameObject;
+			if( obj != null && obj.IsAsset() )
+			{
+				Transform parent = obj.transform.parent;
+				while( parent != null )
+				{
+					ReferenceNode parentNode = GetReferenceNode( parent );
+					parentNode.AddLinkTo( referenceNode, "Child object" );
+					referenceNode = parentNode;
+					parent = parent.parent;
+				}
+
+				if( !currentReferenceHolder.Contains( referenceNode ) )
+					currentReferenceHolder.AddReference( referenceNode );
+			}
+			else
+			{
+				currentReferenceHolder.AddReference( referenceNode );
+			}
 		}
 
 		// Search a scene for references
@@ -1281,9 +1520,9 @@ namespace AssetUsageDetectorNamespace
 						else
 							PoolReferenceNode( componentNode );
 					}
-					
+
 					if( referenceNode.NumberOfOutgoingLinks > 0 )
-						currentReferenceHolder.AddReference( referenceNode );
+						AddReference( referenceNode );
 					else
 						PoolReferenceNode( referenceNode );
 				}
@@ -1293,7 +1532,7 @@ namespace AssetUsageDetectorNamespace
 
 			ReferenceNode searchResult = SearchObject( obj );
 			if( searchResult != null )
-				currentReferenceHolder.AddReference( searchResult );
+				AddReference( searchResult );
 		}
 
 		// Search an object for references
@@ -1344,7 +1583,7 @@ namespace AssetUsageDetectorNamespace
 					searchedObjects.Add( objHash, null );
 					return null;
 				}
-				
+
 				callStack.Push( unityObject );
 
 				// Search the Object in detail
@@ -1371,7 +1610,7 @@ namespace AssetUsageDetectorNamespace
 				// Comply with the recursive search limit
 				if( currentDepth >= searchDepthLimit )
 					return null;
-				
+
 				callStack.Push( obj );
 				currentDepth++;
 
@@ -1409,7 +1648,7 @@ namespace AssetUsageDetectorNamespace
 				if( assetsSet.Contains( prefab ) && go == PrefabUtility.FindRootGameObjectWithSameParentPrefab( go ) )
 					referenceNode.AddLinkTo( GetReferenceNode( prefab ), "Prefab object" );
 			}
-			
+
 			// Search through all the components of the object
 			Component[] components = go.GetComponents<Component>();
 			for( int i = 0; i < components.Length; i++ )
