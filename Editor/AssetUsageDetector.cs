@@ -151,8 +151,7 @@ namespace AssetUsageDetectorNamespace
 			if( GUILayout.Button( title, AssetUsageDetector.BoxGUIStyle, AssetUsageDetector.GL_EXPAND_WIDTH, AssetUsageDetector.GL_HEIGHT_40 ) && clickable )
 			{
 				// If the container (scene, usually) is clicked, highlight it on Project view
-				AssetDatabase.LoadAssetAtPath<SceneAsset>( title ).PingInEditor();
-				Selection.activeObject = AssetDatabase.LoadAssetAtPath<SceneAsset>( title );
+				AssetDatabase.LoadAssetAtPath<SceneAsset>( title ).SelectInEditor();
 			}
 
 			GUI.color = Color.yellow;
@@ -239,6 +238,18 @@ namespace AssetUsageDetectorNamespace
 		public ReferenceNode( object obj ) : this()
 		{
 			nodeObject = obj;
+		}
+
+		// Check if a specific link to a node exists
+		public bool HasLinkTo( ReferenceNode node, string linkDescription )
+		{
+			for( int i = 0; i < links.Count; i++ )
+			{
+				if( links[i].targetNode == node && links[i].description == linkDescription )
+					return true;
+			}
+
+			return false;
 		}
 
 		// Add a one-way connection to another node
@@ -355,12 +366,7 @@ namespace AssetUsageDetectorNamespace
 			if( GUILayout.Button( label, AssetUsageDetector.BoxGUIStyle, AssetUsageDetector.GL_EXPAND_HEIGHT ) )
 			{
 				// If a reference is clicked, highlight it (either on Hierarchy view or Project view)
-				Object unityObject = nodeObject as Object;
-				if( unityObject != null )
-				{
-					unityObject.PingInEditor();
-					Selection.activeObject = unityObject;
-				}
+				( nodeObject as Object ).SelectInEditor();
 			}
 
 			if( AssetUsageDetector.showTooltips && Event.current.type == EventType.Repaint && GUILayoutUtility.GetLastRect().Contains( Event.current.mousePosition ) )
@@ -480,6 +486,64 @@ namespace AssetUsageDetectorNamespace
 			return obj is Object && !string.IsNullOrEmpty( AssetDatabase.GetAssetPath( (Object) obj ) );
 		}
 
+		// Select an object in the editor
+		public static void SelectInEditor( this Object obj )
+		{
+			if( obj == null )
+				return;
+
+			Event e = Event.current;
+
+			// If CTRL key is pressed, do a multi-select;
+			// otherwise select only the clicked object and ping it in editor
+			if( !e.control )
+			{
+				obj.PingInEditor();
+				Selection.activeObject = obj;
+			}
+			else
+			{
+				Component objAsComp = obj as Component;
+				GameObject objAsGO = obj as GameObject;
+				int selectionIndex = -1;
+
+				Object[] selection = Selection.objects;
+				for( int i = 0; i < selection.Length; i++ )
+				{
+					Object selected = selection[i];
+
+					// Don't allow including both a gameobject and one of its components in the selection
+					if( selected == obj || ( objAsComp != null && selected == objAsComp.gameObject ) || 
+						(objAsGO != null && selected is Component && ( (Component) selected ).gameObject == objAsGO ) )
+					{
+						selectionIndex = i;
+						break;
+					}
+				}
+
+				Object[] newSelection;
+				if( selectionIndex == -1 )
+				{
+					// Include object in selection
+					newSelection = new Object[selection.Length + 1];
+					selection.CopyTo( newSelection, 0 );
+					newSelection[selection.Length] = obj;
+				}
+				else
+				{
+					// Remove object from selection
+					newSelection = new Object[selection.Length - 1];
+					int j = 0;
+					for( int i = 0; i < selectionIndex; i++, j++ )
+						newSelection[j] = selection[i];
+					for( int i = selectionIndex + 1; i < selection.Length; i++, j++ )
+						newSelection[j] = selection[i];
+				}
+
+				Selection.objects = newSelection;
+			}
+		}
+
 		// Ping an object in either Project view or Hierarchy view
 		public static void PingInEditor( this Object obj )
 		{
@@ -490,7 +554,7 @@ namespace AssetUsageDetectorNamespace
 			// or a direct child of it. Pinging any grandchildren of the prefab
 			// does not work; in which case, traverse the parent hierarchy until
 			// a pingable parent is reached
-			if( obj.IsAsset() && obj is GameObject)
+			if( obj.IsAsset() && obj is GameObject )
 			{
 				Transform objTR = ( (GameObject) obj ).transform;
 				while( objTR.parent != null && objTR.parent.parent != null )
@@ -498,7 +562,7 @@ namespace AssetUsageDetectorNamespace
 
 				obj = objTR.gameObject;
 			}
-			
+
 			EditorGUIUtility.PingObject( obj );
 		}
 
@@ -624,10 +688,7 @@ namespace AssetUsageDetectorNamespace
 		// Check if "child" is a subclass of "parent" (or if their types match)
 		public static bool IsDerivedFrom( this Type child, Type parent )
 		{
-			if( child == parent || child.IsSubclassOf( parent ) )
-				return true;
-
-			return false;
+			return parent.IsAssignableFrom( child );
 		}
 	}
 	#endregion
@@ -668,7 +729,7 @@ namespace AssetUsageDetectorNamespace
 		private bool searchInScenesInBuildTickedOnly = true; // Scenes in build (ticked only or not)
 		private bool searchInAllScenes = false; // All scenes (including scenes that are not in build)
 		private bool searchInAssetsFolder = false; // Assets in Project view
-		
+
 		private bool showSubAssetsFoldout = true; // Whether or not sub-assets included in search should be shown
 		private bool isSearchingAsset; // Whether we are searching for an asset's references or a scene object's references
 
@@ -735,12 +796,17 @@ namespace AssetUsageDetectorNamespace
 						font = EditorStyles.label.font
 					};
 
+					m_tooltipGUIStyle.normal.background = null;
+					m_tooltipGUIStyle.normal.textColor = Color.black;
+				}
+
+				if( m_tooltipGUIStyle.normal.background == null || m_tooltipGUIStyle.normal.background.Equals( null ) )
+				{
 					Texture2D backgroundTexture = new Texture2D( 1, 1 );
 					backgroundTexture.SetPixel( 0, 0, new Color( 0.88f, 0.88f, 0.88f, 0.85f ) );
 					backgroundTexture.Apply();
 
 					m_tooltipGUIStyle.normal.background = backgroundTexture;
-					m_tooltipGUIStyle.normal.textColor = Color.black;
 				}
 
 				return m_tooltipGUIStyle;
@@ -1096,7 +1162,7 @@ namespace AssetUsageDetectorNamespace
 						pathDrawingMode = PathDrawingMode.Shortest;
 
 					GUILayout.EndHorizontal();
-					
+
 					// Tooltip gets its value in ReferenceHolder.DrawOnGUI function
 					tooltip = null;
 					for( int i = 0; i < searchResult.Count; i++ )
@@ -1145,9 +1211,9 @@ namespace AssetUsageDetectorNamespace
 				// MonoScripts are a special case such that other MonoScript objects
 				// that extend this MonoScript are also considered a sub-asset
 				if( asset is MonoScript )
-				{ 
+				{
 					Type monoScriptType = ( (MonoScript) asset ).GetClass();
-					if( monoScriptType == null || !monoScriptType.IsDerivedFrom( typeof( Component ) ) )
+					if( monoScriptType == null || ( !monoScriptType.IsInterface && !monoScriptType.IsDerivedFrom( typeof( Component ) ) ) )
 						continue;
 
 					// Find all MonoScript objects in the project
@@ -1158,7 +1224,7 @@ namespace AssetUsageDetectorNamespace
 						for( int j = 0; j < pathsToMonoScripts.Length; j++ )
 							monoScriptsInProject[j] = AssetDatabase.LoadAssetAtPath<MonoScript>( AssetDatabase.GUIDToAssetPath( pathsToMonoScripts[j] ) );
 					}
-					
+
 					// Add any MonoScript objects that extend this MonoScript as a sub-asset
 					for( int j = 0; j < monoScriptsInProject.Length; j++ )
 					{
@@ -1211,7 +1277,7 @@ namespace AssetUsageDetectorNamespace
 				assetsSet = new HashSet<Object>();
 			else
 				assetsSet.Clear();
-			
+
 			prevSearchDepthLimit = searchDepthLimit;
 			prevFieldModifiers = fieldModifiers;
 			prevPropertyModifiers = propertyModifiers;
@@ -1403,7 +1469,7 @@ namespace AssetUsageDetectorNamespace
 				if( currentReferenceHolder.NumberOfReferences > 0 )
 					searchResult.Add( currentReferenceHolder );
 			}
-			
+
 			// Log some c00l stuff to console
 			Debug.Log( "Searched " + searchCount + " objects in " + ( EditorApplication.timeSinceStartup - searchStartTime ).ToString( "F2" ) + " seconds" );
 
@@ -1424,6 +1490,11 @@ namespace AssetUsageDetectorNamespace
 				while( parent != null )
 				{
 					ReferenceNode parentNode = GetReferenceNode( parent );
+
+					// Only one "Child object" link from parent to this node should exist
+					if( parentNode.HasLinkTo( referenceNode, "[Child object]" ) )
+						return;
+
 					parentNode.AddLinkTo( referenceNode, "Child object" );
 					referenceNode = parentNode;
 					parent = parent.parent;
