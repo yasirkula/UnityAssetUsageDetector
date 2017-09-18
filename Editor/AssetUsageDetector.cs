@@ -1735,6 +1735,9 @@ namespace AssetUsageDetectorNamespace
 		// Check if the asset is used in this component
 		private ReferenceNode SearchComponent( Component component )
 		{
+			if( component == null || component.Equals( null ) )
+				return null;
+
 			// Ignore Transform component (no object field to search for)
 			if( component is Transform )
 				return null;
