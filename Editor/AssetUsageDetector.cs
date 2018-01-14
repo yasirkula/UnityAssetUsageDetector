@@ -587,6 +587,9 @@ namespace AssetUsageDetectorNamespace
 			if( fieldType.IsDerivedFrom( typeof( Object ) ) )
 				return true;
 
+            if( Attribute.IsDefined( fieldInfo, typeof( UnityEngine.SerializeField ) ) )
+                return true;
+
 			if( fieldType.IsArray )
 			{
 				if( fieldType.GetArrayRank() != 1 )
@@ -602,8 +605,7 @@ namespace AssetUsageDetectorNamespace
 				fieldType = fieldType.GetGenericArguments()[0];
 			}
 
-			if( fieldType.IsGenericType || fieldInfo.IsInitOnly ||
-			  ( ( !fieldInfo.IsPublic || fieldInfo.IsNotSerialized ) && !Attribute.IsDefined( fieldInfo, typeof( SerializeField ) ) ) )
+			if( fieldType.IsGenericType || fieldInfo.IsInitOnly || !fieldInfo.IsPublic || fieldInfo.IsNotSerialized )
 				return false;
 
 			if( Attribute.IsDefined( fieldType, typeof( SerializableAttribute ), false ) )
