@@ -587,8 +587,8 @@ namespace AssetUsageDetectorNamespace
 			if( fieldType.IsDerivedFrom( typeof( Object ) ) )
 				return true;
 
-            if( Attribute.IsDefined( fieldInfo, typeof( UnityEngine.SerializeField ) ) )
-                return true;
+			if( Attribute.IsDefined( fieldInfo, typeof( UnityEngine.SerializeField ) ) )
+				return true;
 
 			if( fieldType.IsArray )
 			{
@@ -1874,21 +1874,21 @@ namespace AssetUsageDetectorNamespace
 			}
 		}
 
-        // Get all fields of a type and its base types recursively
-        private static List<FieldInfo> GetAllFields(Type type, BindingFlags flags)
-        {
-            if (type == null)
-                return new List<FieldInfo>();
+		// Get all fields of a type and its base types recursively
+		private static List<FieldInfo> GetAllFields(Type type, BindingFlags flags)
+		{
+			if (type == null)
+				return new List<FieldInfo>();
 
-            var list = GetAllFields( type.BaseType, flags );
-            
-            // In order to avoid duplicates, force BindingFlags.DeclaredOnly
-            list.AddRange( type.GetFields( flags | BindingFlags.DeclaredOnly ) );
-            return list;
-        }
+			var list = GetAllFields( type.BaseType, flags );
+			
+			// In order to avoid duplicates, force BindingFlags.DeclaredOnly
+			list.AddRange( type.GetFields( flags | BindingFlags.DeclaredOnly ) );
+			return list;
+		}
 
-        // Get filtered variables for a type
-        private VariableGetterHolder[] GetFilteredVariablesForType( Type type )
+		// Get filtered variables for a type
+		private VariableGetterHolder[] GetFilteredVariablesForType( Type type )
 		{
 			VariableGetterHolder[] result;
 			if( typeToVariables.TryGetValue( type, out result ) )
@@ -1905,7 +1905,7 @@ namespace AssetUsageDetectorNamespace
 			// Filter the fields
 			if( fieldModifiers != BindingFlags.Instance )
 			{
-                List<FieldInfo> fields = GetAllFields( type, fieldModifiers );
+				List<FieldInfo> fields = GetAllFields( type, fieldModifiers );
 				for( int i = 0; i < fields.Count; i++ )
 				{
 					// Skip obsolete fields
@@ -2047,7 +2047,7 @@ namespace AssetUsageDetectorNamespace
 					searchedTypesStack.Push( type );
 
 					HashSet<Type> searchedVariableTypes = new HashSet<Type>();
-                    List<FieldInfo> fields = GetAllFields( type, fieldModifiers);
+					List<FieldInfo> fields = GetAllFields( type, fieldModifiers);
 					for( int i = 0; i < fields.Count; i++ )
 					{
 						Type fieldType = fields[i].FieldType;
