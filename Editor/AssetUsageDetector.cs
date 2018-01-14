@@ -587,6 +587,9 @@ namespace AssetUsageDetectorNamespace
 			if( fieldType.IsDerivedFrom( typeof( Object ) ) )
 				return true;
 
+			if( Attribute.IsDefined( fieldInfo, typeof( UnityEngine.SerializeField ) ) )
+				return true;
+
 			if( fieldType.IsArray )
 			{
 				if( fieldType.GetArrayRank() != 1 )
@@ -602,8 +605,7 @@ namespace AssetUsageDetectorNamespace
 				fieldType = fieldType.GetGenericArguments()[0];
 			}
 
-			if( fieldType.IsGenericType || fieldInfo.IsInitOnly ||
-			  ( ( !fieldInfo.IsPublic || fieldInfo.IsNotSerialized ) && !Attribute.IsDefined( fieldInfo, typeof( SerializeField ) ) ) )
+			if( fieldType.IsGenericType || fieldInfo.IsInitOnly || !fieldInfo.IsPublic || fieldInfo.IsNotSerialized )
 				return false;
 
 			if( Attribute.IsDefined( fieldType, typeof( SerializableAttribute ), false ) )
@@ -1872,6 +1874,19 @@ namespace AssetUsageDetectorNamespace
 			}
 		}
 
+		// Get all fields of a type and its base types recursively
+		private static List<FieldInfo> GetAllFields(Type type, BindingFlags flags)
+		{
+			if (type == null)
+				return new List<FieldInfo>();
+
+			var list = GetAllFields( type.BaseType, flags );
+			
+			// In order to avoid duplicates, force BindingFlags.DeclaredOnly
+			list.AddRange( type.GetFields( flags | BindingFlags.DeclaredOnly ) );
+			return list;
+		}
+
 		// Get filtered variables for a type
 		private VariableGetterHolder[] GetFilteredVariablesForType( Type type )
 		{
@@ -1890,8 +1905,8 @@ namespace AssetUsageDetectorNamespace
 			// Filter the fields
 			if( fieldModifiers != BindingFlags.Instance )
 			{
-				FieldInfo[] fields = type.GetFields( fieldModifiers );
-				for( int i = 0; i < fields.Length; i++ )
+				List<FieldInfo> fields = GetAllFields( type, fieldModifiers );
+				for( int i = 0; i < fields.Count; i++ )
 				{
 					// Skip obsolete fields
 					if( Attribute.IsDefined( fields[i], typeof( ObsoleteAttribute ) ) )
@@ -2032,8 +2047,8 @@ namespace AssetUsageDetectorNamespace
 					searchedTypesStack.Push( type );
 
 					HashSet<Type> searchedVariableTypes = new HashSet<Type>();
-					FieldInfo[] fields = type.GetFields( fieldModifiers );
-					for( int i = 0; i < fields.Length; i++ )
+					List<FieldInfo> fields = GetAllFields( type, fieldModifiers);
+					for( int i = 0; i < fields.Count; i++ )
 					{
 						Type fieldType = fields[i].FieldType;
 						if( searchedVariableTypes.Contains( fieldType ) )
