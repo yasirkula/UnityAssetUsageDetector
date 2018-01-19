@@ -4,6 +4,8 @@
 // Note that static variables are not searched
 // Found a bug? Let me know on Unity forums! 
 
+//#define USE_EXPERIMENTAL_METHOD // This method is disabled by default
+
 using UnityEngine;
 using UnityEditor;
 using UnityEngine.SceneManagement;
@@ -469,13 +471,16 @@ namespace AssetUsageDetectorNamespace
 	#region Extension Functions
 	public static class AssetUsageDetectorExtensions
 	{
+		// A set of commonly used Unity types
+		private static HashSet<Type> primitiveUnityTypes = new HashSet<Type>() { typeof( string ), typeof( Vector3 ), typeof( Vector2 ), typeof( Rect ),
+				typeof( Quaternion ), typeof( Color ), typeof( Color32 ), typeof( LayerMask ), typeof( Vector4 ),
+				typeof( Matrix4x4 ), typeof( AnimationCurve ), typeof( Gradient ), typeof( RectOffset ) };
+
 		// Get a unique-ish string hash code for an object
 		public static string Hash( this object obj )
 		{
 			if( obj is Object )
-				return obj.GetHashCode()
-					+ obj.GetType().Name +
-					( (Object) obj ).name;
+				return obj.GetHashCode().ToString();
 
 			return obj.GetHashCode() + obj.GetType().Name;
 		}
@@ -584,7 +589,7 @@ namespace AssetUsageDetectorNamespace
 		{
 			// see Serialization Rules: https://docs.unity3d.com/Manual/script-Serialization.html
 			Type fieldType = fieldInfo.FieldType;
-			if( fieldType.IsDerivedFrom( typeof( Object ) ) )
+			if( typeof( Object ).IsAssignableFrom( fieldType ) )
 				return true;
 
 			if( fieldType.IsArray )
@@ -612,20 +617,12 @@ namespace AssetUsageDetectorNamespace
 			return false;
 		}
 
-		// Check if the type is a common Unity type (let's call them primitives)
-		public static bool IsPrimitiveUnityType( this Type type )
-		{
-			return type.IsPrimitive || type == typeof( string ) || type == typeof( Vector3 ) || type == typeof( Vector2 ) || type == typeof( Rect ) ||
-				type == typeof( Quaternion ) || type == typeof( Color ) || type == typeof( Color32 ) || type == typeof( LayerMask ) || type == typeof( GUIStyle ) ||
-				type == typeof( Vector4 ) || type == typeof( Matrix4x4 ) || type == typeof( AnimationCurve ) || type == typeof( Gradient ) || type == typeof( RectOffset );
-		}
-
 		// Check if the property is serializable
 		public static bool IsSerializable( this PropertyInfo propertyInfo )
 		{
 			// see Serialization Rules: https://docs.unity3d.com/Manual/script-Serialization.html
 			Type propertyType = propertyInfo.PropertyType;
-			if( propertyType.IsDerivedFrom( typeof( Object ) ) )
+			if( typeof( Object ).IsAssignableFrom( propertyType ) )
 				return true;
 
 			if( propertyType.IsArray )
@@ -649,11 +646,17 @@ namespace AssetUsageDetectorNamespace
 			return true;
 		}
 
-		// Credit: https://www.codeproject.com/Articles/14560/Fast-Dynamic-Property-Field-Accessors
+		// Check if the type is a common Unity type (let's call them primitives)
+		public static bool IsPrimitiveUnityType( this Type type )
+		{
+			return type.IsPrimitive || primitiveUnityTypes.Contains( type );
+		}
+		
 		// Get <get> function for a field
 		public static VariableGetVal CreateGetter( this FieldInfo fieldInfo, Type type )
 		{
 			// Commented the IL generator code below because it might actually be slower than simply using reflection
+			// Credit: https://www.codeproject.com/Articles/14560/Fast-Dynamic-Property-Field-Accessors
 			//DynamicMethod dm = new DynamicMethod( "Get" + fieldInfo.Name, fieldInfo.FieldType, new Type[] { typeof( object ) }, type );
 			//ILGenerator il = dm.GetILGenerator();
 			//// Load the instance of the object (argument 0) onto the stack
@@ -683,12 +686,6 @@ namespace AssetUsageDetectorNamespace
 			}
 
 			return null;
-		}
-
-		// Check if "child" is a subclass of "parent" (or if their types match)
-		public static bool IsDerivedFrom( this Type child, Type parent )
-		{
-			return parent.IsAssignableFrom( child );
 		}
 	}
 	#endregion
@@ -743,15 +740,15 @@ namespace AssetUsageDetectorNamespace
 
 		// Fetch public, protected and private non-static fields from objects by default
 		// Don't fetch properties from objects by default
-		private BindingFlags fieldModifiers = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-		private BindingFlags propertyModifiers = BindingFlags.Instance;
+		private BindingFlags fieldModifiers = BindingFlags.Instance | BindingFlags.DeclaredOnly | BindingFlags.Public | BindingFlags.NonPublic;
+		private BindingFlags propertyModifiers = BindingFlags.Instance | BindingFlags.DeclaredOnly;
 
 		private int prevSearchDepthLimit;
 		private BindingFlags prevFieldModifiers;
 		private BindingFlags prevPropertyModifiers;
 
 		public static string tooltip = null;
-		public static bool showTooltips = true;
+		public static bool showTooltips = false;
 
 		private const float PLAY_MODE_REFRESH_INTERVAL = 1f; // Interval to refresh the editor window in play mode
 		private double nextPlayModeRefreshTime = 0f;
@@ -788,7 +785,11 @@ namespace AssetUsageDetectorNamespace
 		{
 			get
 			{
-				if( m_tooltipGUIStyle == null )
+				GUIStyleState normalState;
+
+				if( m_tooltipGUIStyle != null )
+					normalState = m_tooltipGUIStyle.normal;
+				else
 				{
 					m_tooltipGUIStyle = new GUIStyle( EditorStyles.helpBox )
 					{
@@ -796,17 +797,19 @@ namespace AssetUsageDetectorNamespace
 						font = EditorStyles.label.font
 					};
 
-					m_tooltipGUIStyle.normal.background = null;
-					m_tooltipGUIStyle.normal.textColor = Color.black;
+					normalState = m_tooltipGUIStyle.normal;
+
+					normalState.background = null;
+					normalState.textColor = Color.black;
 				}
 
-				if( m_tooltipGUIStyle.normal.background == null || m_tooltipGUIStyle.normal.background.Equals( null ) )
+				if( normalState.background == null || normalState.background.Equals( null ) )
 				{
 					Texture2D backgroundTexture = new Texture2D( 1, 1 );
 					backgroundTexture.SetPixel( 0, 0, new Color( 0.88f, 0.88f, 0.88f, 0.85f ) );
 					backgroundTexture.Apply();
 
-					m_tooltipGUIStyle.normal.background = backgroundTexture;
+					normalState.background = backgroundTexture;
 				}
 
 				return m_tooltipGUIStyle;
@@ -820,9 +823,6 @@ namespace AssetUsageDetectorNamespace
 
 		private List<ReferenceNode> nodesPool = new List<ReferenceNode>( 32 );
 		private List<VariableGetterHolder> validVariables = new List<VariableGetterHolder>( 32 );
-
-		// This method is now disabled by default
-		private bool experimentalMethod = false;
 
 		// Add "Asset Usage Detector" menu item to the Window menu
 		[MenuItem( "Window/Asset Usage Detector" )]
@@ -1026,10 +1026,7 @@ namespace AssetUsageDetectorNamespace
 				GUILayout.EndHorizontal();
 
 				GUILayout.Space( 10 );
-
-				// Disabled by default as it seems slower than the normal method
-				//experimentalMethod = EditorGUILayout.ToggleLeft( "Experimental method (is it faster?)", experimentalMethod );
-
+				
 				// Don't let the user press the GO button without any valid search location
 				if( !searchInAllScenes && !searchInOpenScenes && !searchInScenesInBuild && !searchInAssetsFolder )
 					GUI.enabled = false;
@@ -1149,7 +1146,7 @@ namespace AssetUsageDetectorNamespace
 
 					GUILayout.Space( 35 );
 
-					if( EditorGUILayout.ToggleLeft( "Shorter: Draw only the most relevant unique parts of the complete paths that start with UnityEngine.Object", pathDrawingMode == PathDrawingMode.ShortRelevantParts ) )
+					if( EditorGUILayout.ToggleLeft( "Shorter: Draw only the most relevant unique parts of the complete paths that start with a UnityEngine.Object", pathDrawingMode == PathDrawingMode.ShortRelevantParts ) )
 						pathDrawingMode = PathDrawingMode.ShortRelevantParts;
 
 					GUILayout.EndHorizontal();
@@ -1167,13 +1164,14 @@ namespace AssetUsageDetectorNamespace
 					tooltip = null;
 					for( int i = 0; i < searchResult.Count; i++ )
 						searchResult[i].DrawOnGUI( pathDrawingMode );
-
-					Vector2 mousePos = Event.current.mousePosition;
+					
 					if( tooltip != null )
 					{
 						// Show tooltip at mouse position
-						float width = tooltip.Length * 8;
-						GUI.Box( new Rect( mousePos.x - width * 0.5f, mousePos.y - 40f, width, 40f ), tooltip, TooltipGUIStyle );
+						Vector2 mousePos = Event.current.mousePosition;
+						Vector2 size = TooltipGUIStyle.CalcSize( new GUIContent( tooltip ) );
+
+						GUI.Box( new Rect( new Vector2( mousePos.x - size.x * 0.5f, mousePos.y - size.y ), size ), tooltip, TooltipGUIStyle );
 					}
 				}
 			}
@@ -1185,7 +1183,7 @@ namespace AssetUsageDetectorNamespace
 			EditorGUILayout.EndScrollView();
 		}
 
-		// Called when the value of assetToSearch has changed through editor window
+		// Called when the value of assetToSearch has changed in editor window
 		private void OnSearchedAssetChanged()
 		{
 			if( assetToSearch == null || assetToSearch.Equals( null ) )
@@ -1213,7 +1211,7 @@ namespace AssetUsageDetectorNamespace
 				if( asset is MonoScript )
 				{
 					Type monoScriptType = ( (MonoScript) asset ).GetClass();
-					if( monoScriptType == null || ( !monoScriptType.IsInterface && !monoScriptType.IsDerivedFrom( typeof( Component ) ) ) )
+					if( monoScriptType == null || ( !monoScriptType.IsInterface && !typeof( Component ).IsAssignableFrom( monoScriptType ) ) )
 						continue;
 
 					// Find all MonoScript objects in the project
@@ -1229,7 +1227,7 @@ namespace AssetUsageDetectorNamespace
 					for( int j = 0; j < monoScriptsInProject.Length; j++ )
 					{
 						Type otherMonoScriptType = monoScriptsInProject[j].GetClass();
-						if( otherMonoScriptType == null || monoScriptType == otherMonoScriptType || !otherMonoScriptType.IsDerivedFrom( monoScriptType ) )
+						if( otherMonoScriptType == null || monoScriptType == otherMonoScriptType || !monoScriptType.IsAssignableFrom( otherMonoScriptType ) )
 							continue;
 
 						subAssetsToSearch.Add( new SubAssetToSearch( monoScriptsInProject[j], false ) );
@@ -1254,7 +1252,7 @@ namespace AssetUsageDetectorNamespace
 				typeToVariables = new Dictionary<Type, VariableGetterHolder[]>( 4096 );
 			else if( searchDepthLimit != prevSearchDepthLimit || prevFieldModifiers != fieldModifiers || prevPropertyModifiers != propertyModifiers )
 				typeToVariables.Clear();
-
+			
 			if( searchableTypes == null )
 				searchableTypes = new Dictionary<Type, bool>( 4096 );
 			else
@@ -1277,7 +1275,7 @@ namespace AssetUsageDetectorNamespace
 				assetsSet = new HashSet<Object>();
 			else
 				assetsSet.Clear();
-
+			
 			prevSearchDepthLimit = searchDepthLimit;
 			prevFieldModifiers = fieldModifiers;
 			prevPropertyModifiers = propertyModifiers;
@@ -1313,7 +1311,7 @@ namespace AssetUsageDetectorNamespace
 						if( asset is MonoScript )
 						{
 							Type monoScriptType = ( (MonoScript) asset ).GetClass();
-							if( monoScriptType != null && monoScriptType.IsDerivedFrom( typeof( Component ) ) )
+							if( monoScriptType != null && typeof( Component ).IsAssignableFrom( monoScriptType ) )
 								allAssetClasses.Add( monoScriptType );
 						}
 						else if( asset is GameObject )
@@ -1699,7 +1697,7 @@ namespace AssetUsageDetectorNamespace
 			}
 
 			// Cache the search result if we are skimming through a class (not a struct; i.e. objHash != null)
-			// and if the object is a UnityEngine.Object (if not cache the result only if we have actually found something
+			// and if the object is a UnityEngine.Object (if not, cache the result only if we have actually found something
 			// or we are at the root of the search; i.e. currentDepth == 0)
 			if( ( result != null || unityObject != null || currentDepth == 0 ) && objHash != null )
 				searchedObjects.Add( objHash, result );
@@ -1735,9 +1733,6 @@ namespace AssetUsageDetectorNamespace
 		// Check if the asset is used in this component
 		private ReferenceNode SearchComponent( Component component )
 		{
-			if( component == null || component.Equals( null ) )
-				return null;
-
 			// Ignore Transform component (no object field to search for)
 			if( component is Transform )
 				return null;
@@ -1888,79 +1883,91 @@ namespace AssetUsageDetectorNamespace
 			validVariables.Clear();
 
 			// Filter the fields
-			if( fieldModifiers != BindingFlags.Instance )
+			if( fieldModifiers != ( BindingFlags.Instance | BindingFlags.DeclaredOnly ) )
 			{
-				FieldInfo[] fields = type.GetFields( fieldModifiers );
-				for( int i = 0; i < fields.Length; i++ )
+				Type currType = type;
+				while( currType != typeof( object ) )
 				{
-					// Skip obsolete fields
-					if( Attribute.IsDefined( fields[i], typeof( ObsoleteAttribute ) ) )
-						continue;
-
-					// Skip primitive types
-					Type fieldType = fields[i].FieldType;
-					if( fieldType.IsPrimitive || fieldType == typeof( string ) || fieldType.IsEnum )
-						continue;
-
-					if( experimentalMethod )
+					FieldInfo[] fields = currType.GetFields( fieldModifiers );
+					for( int i = 0; i < fields.Length; i++ )
 					{
+						// Skip obsolete fields
+						if( Attribute.IsDefined( fields[i], typeof( ObsoleteAttribute ) ) )
+							continue;
+
+						// Skip primitive types
+						Type fieldType = fields[i].FieldType;
+						if( fieldType.IsPrimitive || fieldType == typeof( string ) || fieldType.IsEnum )
+							continue;
+
+#if USE_EXPERIMENTAL_METHOD
 						if( !IsTypeSearchable( fieldType ) )
 							continue;
-					}
-					else if( fieldType.IsPrimitiveUnityType() )
-						continue;
+#else
+						if( fieldType.IsPrimitiveUnityType() )
+							continue;
+#endif
 
-					VariableGetVal getter = fields[i].CreateGetter( type );
-					if( getter != null )
-						validVariables.Add( new VariableGetterHolder( fields[i], getter, fields[i].IsSerializable() ) );
+						VariableGetVal getter = fields[i].CreateGetter( type );
+						if( getter != null )
+							validVariables.Add( new VariableGetterHolder( fields[i], getter, fields[i].IsSerializable() ) );
+					}
+
+					currType = currType.BaseType;
 				}
 			}
 
-			if( propertyModifiers != BindingFlags.Instance )
+			if( propertyModifiers != ( BindingFlags.Instance | BindingFlags.DeclaredOnly ) )
 			{
-				PropertyInfo[] properties = type.GetProperties( propertyModifiers );
-				for( int i = 0; i < properties.Length; i++ )
+				Type currType = type;
+				while( currType != typeof( object ) )
 				{
-					// Skip obsolete properties
-					if( Attribute.IsDefined( properties[i], typeof( ObsoleteAttribute ) ) )
-						continue;
-
-					// Skip primitive types
-					Type propertyType = properties[i].PropertyType;
-					if( propertyType.IsPrimitive || propertyType == typeof( string ) || propertyType.IsEnum )
-						continue;
-
-					if( experimentalMethod )
+					PropertyInfo[] properties = currType.GetProperties( propertyModifiers );
+					for( int i = 0; i < properties.Length; i++ )
 					{
+						// Skip obsolete properties
+						if( Attribute.IsDefined( properties[i], typeof( ObsoleteAttribute ) ) )
+							continue;
+
+						// Skip primitive types
+						Type propertyType = properties[i].PropertyType;
+						if( propertyType.IsPrimitive || propertyType == typeof( string ) || propertyType.IsEnum )
+							continue;
+
+#if USE_EXPERIMENTAL_METHOD
 						if( !IsTypeSearchable( propertyType ) )
 							continue;
-					}
-					else if( propertyType.IsPrimitiveUnityType() )
-						continue;
+#else
+						if( propertyType.IsPrimitiveUnityType() )
+							continue;
+#endif
 
-					// Additional filtering for properties:
-					// 1- Ignore "gameObject", "transform", "rectTransform" and "attachedRigidbody" properties of Component's to get more useful results
-					// 2- Ignore "canvasRenderer" and "canvas" properties of Graphic components
-					// 3 & 4- Prevent accessing properties of Unity that instantiate an existing resource (causing leak)
-					string propertyName = properties[i].Name;
-					if( type.IsDerivedFrom( typeof( Component ) ) && ( propertyName.Equals( "gameObject" ) ||
-						propertyName.Equals( "transform" ) || propertyName.Equals( "attachedRigidbody" ) || propertyName.Equals( "rectTransform" ) ) )
-						continue;
-					else if( type.IsDerivedFrom( typeof( UnityEngine.UI.Graphic ) ) &&
-						( propertyName.Equals( "canvasRenderer" ) || propertyName.Equals( "canvas" ) ) )
-						continue;
-					else if( propertyName.Equals( "mesh" ) && type.IsDerivedFrom( typeof( MeshFilter ) ) )
-						continue;
-					else if( ( propertyName.Equals( "material" ) || propertyName.Equals( "materials" ) ) &&
-						( type.IsDerivedFrom( typeof( Renderer ) ) || type.IsDerivedFrom( typeof( Collider ) ) ||
-						type.IsDerivedFrom( typeof( Collider2D ) ) || type.IsDerivedFrom( typeof( GUIText ) ) ) )
-						continue;
-					else
-					{
-						VariableGetVal getter = properties[i].CreateGetter();
-						if( getter != null )
-							validVariables.Add( new VariableGetterHolder( properties[i], getter, properties[i].IsSerializable() ) );
+						// Additional filtering for properties:
+						// 1- Ignore "gameObject", "transform", "rectTransform" and "attachedRigidbody" properties of Component's to get more useful results
+						// 2- Ignore "canvasRenderer" and "canvas" properties of Graphic components
+						// 3 & 4- Prevent accessing properties of Unity that instantiate an existing resource (causing leak)
+						string propertyName = properties[i].Name;
+						if( typeof( Component ).IsAssignableFrom( currType ) && ( propertyName.Equals( "gameObject" ) ||
+							propertyName.Equals( "transform" ) || propertyName.Equals( "attachedRigidbody" ) || propertyName.Equals( "rectTransform" ) ) )
+							continue;
+						else if( typeof( UnityEngine.UI.Graphic ).IsAssignableFrom( currType ) &&
+							( propertyName.Equals( "canvasRenderer" ) || propertyName.Equals( "canvas" ) ) )
+							continue;
+						else if( propertyName.Equals( "mesh" ) && typeof( MeshFilter ).IsAssignableFrom( currType ) )
+							continue;
+						else if( ( propertyName.Equals( "material" ) || propertyName.Equals( "materials" ) ) &&
+							( typeof( Renderer ).IsAssignableFrom( currType ) || typeof( Collider ).IsAssignableFrom( currType ) ||
+							typeof( Collider2D ).IsAssignableFrom( currType ) || typeof( GUIText ).IsAssignableFrom( currType ) ) )
+							continue;
+						else
+						{
+							VariableGetVal getter = properties[i].CreateGetter();
+							if( getter != null )
+								validVariables.Add( new VariableGetterHolder( properties[i], getter, properties[i].IsSerializable() ) );
+						}
 					}
+
+					currType = currType.BaseType;
 				}
 			}
 
@@ -1986,9 +1993,9 @@ namespace AssetUsageDetectorNamespace
 				return result;
 
 			if( type == typeof( GameObject ) || type == typeof( AnimationClip ) || type == typeof( Animation ) ||
-				type == typeof( Animator ) || type.IsDerivedFrom( typeof( RuntimeAnimatorController ) ) ||
-				( ( searchMaterialsForShader || searchMaterialsForTexture ) && type.IsDerivedFrom( typeof( Material ) ) ) ||
-				( searchRenderers && type.IsDerivedFrom( typeof( Renderer ) ) ) )
+				type == typeof( Animator ) || typeof( RuntimeAnimatorController ).IsAssignableFrom( type ) ||
+				( ( searchMaterialsForShader || searchMaterialsForTexture ) && typeof( Material ).IsAssignableFrom( type ) ) ||
+				( searchRenderers && typeof( Renderer ).IsAssignableFrom( type ) ) )
 			{
 				searchableTypes.Add( type, true );
 				return true;
@@ -1996,7 +2003,7 @@ namespace AssetUsageDetectorNamespace
 
 			for( int i = 0; i < assetClasses.Length; i++ )
 			{
-				if( assetClasses[i].IsDerivedFrom( type ) )
+				if( type.IsAssignableFrom( assetClasses[i] ) )
 				{
 					searchableTypes.Add( type, true );
 					return true;
@@ -2154,7 +2161,7 @@ namespace AssetUsageDetectorNamespace
 			for( int i = 0; i < EditorSceneManager.loadedSceneCount; i++ )
 			{
 				Scene scene = EditorSceneManager.GetSceneAt( i );
-				if( scene.isDirty || scene.path == null || scene.path.Length == 0 )
+				if( scene.isDirty || string.IsNullOrEmpty( scene.path ) )
 					return false;
 			}
 
