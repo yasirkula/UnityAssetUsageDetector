@@ -588,62 +588,51 @@ namespace AssetUsageDetectorNamespace
 		public static bool IsSerializable( this FieldInfo fieldInfo )
 		{
 			// see Serialization Rules: https://docs.unity3d.com/Manual/script-Serialization.html
-			Type fieldType = fieldInfo.FieldType;
-			if( typeof( Object ).IsAssignableFrom( fieldType ) )
-				return true;
-
-			if( fieldType.IsArray )
-			{
-				if( fieldType.GetArrayRank() != 1 )
-					return false;
-
-				fieldType = fieldType.GetElementType();
-			}
-			else if( fieldType.IsGenericType )
-			{
-				if( fieldType.GetGenericTypeDefinition() != typeof( List<> ) )
-					return false;
-
-				fieldType = fieldType.GetGenericArguments()[0];
-			}
-
-			if( fieldType.IsGenericType || fieldInfo.IsInitOnly ||
-			  ( ( !fieldInfo.IsPublic || fieldInfo.IsNotSerialized ) && !Attribute.IsDefined( fieldInfo, typeof( SerializeField ) ) ) )
+			if( fieldInfo.IsInitOnly || ( ( !fieldInfo.IsPublic || fieldInfo.IsNotSerialized ) &&
+			   !Attribute.IsDefined( fieldInfo, typeof( SerializeField ) ) ) )
 				return false;
 
-			if( Attribute.IsDefined( fieldType, typeof( SerializableAttribute ), false ) )
-				return true;
-
-			return false;
+			return IsTypeSerializable( fieldInfo.FieldType );
 		}
 
 		// Check if the property is serializable
 		public static bool IsSerializable( this PropertyInfo propertyInfo )
 		{
+			return IsTypeSerializable( propertyInfo.PropertyType );
+		}
+
+		// Check if type is serializable
+		private static bool IsTypeSerializable( Type type )
+		{
 			// see Serialization Rules: https://docs.unity3d.com/Manual/script-Serialization.html
-			Type propertyType = propertyInfo.PropertyType;
-			if( typeof( Object ).IsAssignableFrom( propertyType ) )
+			if( typeof( Object ).IsAssignableFrom( type ) )
 				return true;
 
-			if( propertyType.IsArray )
+			if( type.IsArray )
 			{
-				if( propertyType.GetArrayRank() != 1 )
+				if( type.GetArrayRank() != 1 )
 					return false;
 
-				propertyType = propertyType.GetElementType();
+				type = type.GetElementType();
+
+				if( typeof( Object ).IsAssignableFrom( type ) )
+					return true;
 			}
-			else if( propertyType.IsGenericType )
+			else if( type.IsGenericType )
 			{
-				if( propertyType.GetGenericTypeDefinition() != typeof( List<> ) )
+				if( type.GetGenericTypeDefinition() != typeof( List<> ) )
 					return false;
 
-				propertyType = propertyType.GetGenericArguments()[0];
+				type = type.GetGenericArguments()[0];
+
+				if( typeof( Object ).IsAssignableFrom( type ) )
+					return true;
 			}
 
-			if( propertyType.IsGenericType )
+			if( type.IsGenericType )
 				return false;
 
-			return true;
+			return Attribute.IsDefined( type, typeof( SerializableAttribute ), false );
 		}
 
 		// Check if the type is a common Unity type (let's call them primitives)
