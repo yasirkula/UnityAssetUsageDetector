@@ -19,7 +19,8 @@ using Object = UnityEngine.Object;
 namespace AssetUsageDetectorNamespace
 {
 	public enum Phase { Setup, Processing, Complete };
-	public enum PathDrawingMode { Full, ShortRelevantParts, Shortest }
+	public enum PathDrawingMode { Full, ShortRelevantParts, Shortest };
+	public enum SearchedType { Asset, SceneObject, Mixed };
 
 	// Delegate to get the value of a variable (either field or property)
 	public delegate object VariableGetVal( object obj );
@@ -682,10 +683,10 @@ namespace AssetUsageDetectorNamespace
 	// Here we go..!
 	public class AssetUsageDetector : EditorWindow
 	{
-		private Object assetToSearch;
+		private List<Object> assetsToSearch = new List<Object>() { null };
 		private List<SubAssetToSearch> subAssetsToSearch = new List<SubAssetToSearch>();
 
-		private HashSet<Object> assetsSet; // A set that contains the searched asset and its sub-assets (if any)
+		private HashSet<Object> assetsSet; // A set that contains the searched asset(s) and their sub-assets (if any)
 		private Type[] assetClasses; // Type's of the searched objects (like GameObject, Material, a custom MonoBehaviour etc.)
 
 		private Phase currentPhase = Phase.Setup;
@@ -717,7 +718,7 @@ namespace AssetUsageDetectorNamespace
 		private bool searchInAssetsFolder = false; // Assets in Project view
 
 		private bool showSubAssetsFoldout = true; // Whether or not sub-assets included in search should be shown
-		private bool isSearchingAsset; // Whether we are searching for an asset's references or a scene object's references
+		private SearchedType searchedType; // Whether we are searching for an asset's references or a scene object's references, or mixed
 
 		private int searchDepthLimit = 1; // Depth limit for recursively searching variables of objects
 		private int currentDepth = 0;
@@ -867,15 +868,10 @@ namespace AssetUsageDetectorNamespace
 			}
 			else if( currentPhase == Phase.Setup )
 			{
-				GUI.changed = false;
-
-				Object prevAssetToSearch = assetToSearch;
-				assetToSearch = EditorGUILayout.ObjectField( "Asset: ", assetToSearch, typeof( Object ), true );
-
-				if( GUI.changed && prevAssetToSearch != assetToSearch )
-					OnSearchedAssetChanged();
-
-				if( assetToSearch != null && subAssetsToSearch.Count > 0 )
+				if( ExposeSearchedAssets() )
+					OnSearchedAssetsChanged();
+				
+				if( subAssetsToSearch.Count > 0 )
 				{
 					GUILayout.BeginHorizontal();
 
@@ -1022,9 +1018,9 @@ namespace AssetUsageDetectorNamespace
 
 				if( GUILayout.Button( "GO!", GL_HEIGHT_30 ) )
 				{
-					if( assetToSearch == null )
+					if( AreSearchedAssetsEmpty() )
 					{
-						errorMessage = "SELECT AN ASSET FIRST!";
+						errorMessage = "ADD AN ASSET TO THE LIST FIRST!";
 					}
 					else if( !EditorApplication.isPlaying && !AreScenesSaved() )
 					{
@@ -1051,7 +1047,7 @@ namespace AssetUsageDetectorNamespace
 				// Draw the results of the search
 				GUI.enabled = false;
 
-				EditorGUILayout.ObjectField( "Asset: ", assetToSearch, typeof( Object ), true );
+				ExposeSearchedAssets();
 
 				GUILayout.Space( 10 );
 				GUI.enabled = true;
@@ -1172,57 +1168,157 @@ namespace AssetUsageDetectorNamespace
 			EditorGUILayout.EndScrollView();
 		}
 
-		// Called when the value of assetToSearch has changed in editor window
-		private void OnSearchedAssetChanged()
+		// Exposes searchedAssets as an array field on GUI
+		private bool ExposeSearchedAssets()
 		{
-			if( assetToSearch == null || assetToSearch.Equals( null ) )
-				return;
+			bool hasChanged = false;
+			Event ev = Event.current;
 
+			GUILayout.BeginHorizontal();
+
+			GUILayout.Label( "Asset(s):" );
+
+			// Handle drag & drop references to array
+			// Credit: https://answers.unity.com/answers/657877/view.html
+			if( GUI.enabled && ( ev.type == EventType.DragPerform || ev.type == EventType.DragUpdated ) &&
+				GUILayoutUtility.GetLastRect().Contains( ev.mousePosition ) )
+			{
+				DragAndDrop.visualMode = DragAndDropVisualMode.Copy;
+				if( ev.type == EventType.DragPerform )
+				{
+					DragAndDrop.AcceptDrag();
+
+					Object[] draggedObjects = DragAndDrop.objectReferences;
+					if( draggedObjects.Length > 0 )
+					{
+						for( int i = 0; i < draggedObjects.Length; i++ )
+						{
+							if( draggedObjects[i] != null && !draggedObjects[i].Equals( null ) )
+							{
+								hasChanged = true;
+								assetsToSearch.Add( draggedObjects[i] );
+							}
+						}
+					}
+				}
+
+				ev.Use();
+			}
+
+			if( GUILayout.Button( "+", GL_WIDTH_25 ) )
+				assetsToSearch.Insert( 0, null );
+
+			GUILayout.EndHorizontal();
+
+			for( int i = 0; i < assetsToSearch.Count; i++ )
+			{
+				GUI.changed = false;
+				GUILayout.BeginHorizontal();
+
+				Object prevAssetToSearch = assetsToSearch[i];
+				assetsToSearch[i] = EditorGUILayout.ObjectField( "", assetsToSearch[i], typeof( Object ), true );
+
+				if( GUI.changed && prevAssetToSearch != assetsToSearch[i] )
+					hasChanged = true;
+
+				if( GUILayout.Button( "+", GL_WIDTH_25 ) )
+					assetsToSearch.Insert( i + 1, null );
+
+				if( GUILayout.Button( "-", GL_WIDTH_25 ) )
+				{
+					if( assetsToSearch[i] != null && !assetsToSearch[i].Equals( null ) )
+						hasChanged = true;
+
+					assetsToSearch.RemoveAt( i-- );
+				}
+
+				GUILayout.EndHorizontal();
+			}
+
+			return hasChanged;
+		}
+
+		// Called when the value of assetsToSearch has changed in editor window
+		private void OnSearchedAssetsChanged()
+		{
+			errorMessage = string.Empty;
 			subAssetsToSearch.Clear();
 
-			if( !assetToSearch.IsAsset() || !AssetDatabase.IsMainAsset( assetToSearch ) || assetToSearch is SceneAsset )
+			if( AreSearchedAssetsEmpty() )
 				return;
 
-			// Find sub-assets of the searched asset (if any)
 			MonoScript[] monoScriptsInProject = null;
-			Object[] assets = AssetDatabase.LoadAllAssetsAtPath( AssetDatabase.GetAssetPath( assetToSearch ) );
-			for( int i = 0; i < assets.Length; i++ )
+			HashSet<Object> currentSubAssets = new HashSet<Object>();
+			for( int i = 0; i < assetsToSearch.Count; i++ )
 			{
-				Object asset = assets[i];
-				if( asset == null || asset.Equals( null ) || asset is Component )
+				Object assetToSearch = assetsToSearch[i];
+				if( assetToSearch == null || assetToSearch.Equals( null ) )
 					continue;
 
-				if( asset != assetToSearch )
-					subAssetsToSearch.Add( new SubAssetToSearch( asset, true ) );
+				if( !assetToSearch.IsAsset() || !AssetDatabase.IsMainAsset( assetToSearch ) || assetToSearch is SceneAsset )
+					continue;
 
-				// MonoScripts are a special case such that other MonoScript objects
-				// that extend this MonoScript are also considered a sub-asset
-				if( asset is MonoScript )
+				// Find sub-assets of the searched asset(s) (if any)
+				Object[] assets = AssetDatabase.LoadAllAssetsAtPath( AssetDatabase.GetAssetPath( assetToSearch ) );
+				for( int j = 0; j < assets.Length; j++ )
 				{
-					Type monoScriptType = ( (MonoScript) asset ).GetClass();
-					if( monoScriptType == null || ( !monoScriptType.IsInterface && !typeof( Component ).IsAssignableFrom( monoScriptType ) ) )
+					Object asset = assets[j];
+					if( asset == null || asset.Equals( null ) || asset is Component )
 						continue;
 
-					// Find all MonoScript objects in the project
-					if( monoScriptsInProject == null )
+					if( currentSubAssets.Contains( asset ) )
+						continue;
+
+					if( asset != assetToSearch )
 					{
-						string[] pathsToMonoScripts = AssetDatabase.FindAssets( "t:MonoScript" );
-						monoScriptsInProject = new MonoScript[pathsToMonoScripts.Length];
-						for( int j = 0; j < pathsToMonoScripts.Length; j++ )
-							monoScriptsInProject[j] = AssetDatabase.LoadAssetAtPath<MonoScript>( AssetDatabase.GUIDToAssetPath( pathsToMonoScripts[j] ) );
+						subAssetsToSearch.Add( new SubAssetToSearch( asset, true ) );
+						currentSubAssets.Add( asset );
 					}
 
-					// Add any MonoScript objects that extend this MonoScript as a sub-asset
-					for( int j = 0; j < monoScriptsInProject.Length; j++ )
+					// MonoScripts are a special case such that other MonoScript objects
+					// that extend this MonoScript are also considered a sub-asset
+					if( asset is MonoScript )
 					{
-						Type otherMonoScriptType = monoScriptsInProject[j].GetClass();
-						if( otherMonoScriptType == null || monoScriptType == otherMonoScriptType || !monoScriptType.IsAssignableFrom( otherMonoScriptType ) )
+						Type monoScriptType = ( (MonoScript) asset ).GetClass();
+						if( monoScriptType == null || ( !monoScriptType.IsInterface && !typeof( Component ).IsAssignableFrom( monoScriptType ) ) )
 							continue;
 
-						subAssetsToSearch.Add( new SubAssetToSearch( monoScriptsInProject[j], false ) );
+						// Find all MonoScript objects in the project
+						if( monoScriptsInProject == null )
+						{
+							string[] pathsToMonoScripts = AssetDatabase.FindAssets( "t:MonoScript" );
+							monoScriptsInProject = new MonoScript[pathsToMonoScripts.Length];
+							for( int k = 0; k < pathsToMonoScripts.Length; k++ )
+								monoScriptsInProject[k] = AssetDatabase.LoadAssetAtPath<MonoScript>( AssetDatabase.GUIDToAssetPath( pathsToMonoScripts[k] ) );
+						}
+
+						// Add any MonoScript objects that extend this MonoScript as a sub-asset
+						for( int k = 0; k < monoScriptsInProject.Length; k++ )
+						{
+							Type otherMonoScriptType = monoScriptsInProject[k].GetClass();
+							if( otherMonoScriptType == null || monoScriptType == otherMonoScriptType || !monoScriptType.IsAssignableFrom( otherMonoScriptType ) )
+								continue;
+
+							if( !currentSubAssets.Contains( monoScriptsInProject[k] ) )
+							{
+								subAssetsToSearch.Add( new SubAssetToSearch( monoScriptsInProject[k], false ) );
+								currentSubAssets.Add( monoScriptsInProject[k] );
+							}
+						}
 					}
 				}
 			}
+		}
+
+		private bool AreSearchedAssetsEmpty()
+		{
+			for( int i = 0; i < assetsToSearch.Count; i++ )
+			{
+				if( assetsToSearch[i] != null && !assetsToSearch[i].Equals( null ) )
+					return false;
+			}
+
+			return true;
 		}
 
 		// Search for references!
@@ -1277,14 +1373,28 @@ namespace AssetUsageDetectorNamespace
 			searchRenderers = false;
 			searchMaterialsForShader = false;
 			searchMaterialsForTexture = false;
+			
+			for( int i = 0; i < assetsToSearch.Count; i++ )
+			{
+				bool isAsset = assetsToSearch[i].IsAsset();
 
-			// Store the searched asset and its sub-assets (if any) in a set
-			isSearchingAsset = assetToSearch.IsAsset();
+				if( i == 0 )
+					searchedType = isAsset ? SearchedType.Asset : SearchedType.SceneObject;
+				else if( searchedType != SearchedType.Mixed )
+				{
+					if( isAsset && searchedType == SearchedType.SceneObject )
+						searchedType = SearchedType.Mixed;
+					else if( !isAsset && searchedType == SearchedType.Asset )
+						searchedType = SearchedType.Mixed;
+				}
+			}
 
+			// Store the searched asset(s) and their sub-assets (if any) in a set
 			try
 			{
-				// Temporarily add main searched asset to sub-assets list to avoid duplicate code
-				subAssetsToSearch.Add( new SubAssetToSearch( assetToSearch, true ) );
+				// Temporarily add main searched asset(s) to sub-assets list to avoid duplicate code
+				for( int i = 0; i < assetsToSearch.Count; i++ )
+					subAssetsToSearch.Add( new SubAssetToSearch( assetsToSearch[i], true ) );
 
 				for( int i = 0; i < subAssetsToSearch.Count; i++ )
 				{
@@ -1321,7 +1431,7 @@ namespace AssetUsageDetectorNamespace
 			}
 			finally
 			{
-				subAssetsToSearch.RemoveAt( subAssetsToSearch.Count - 1 );
+				subAssetsToSearch.RemoveRange( subAssetsToSearch.Count - assetsToSearch.Count, assetsToSearch.Count );
 			}
 
 			assetClasses = new Type[allAssetClasses.Count];
@@ -1396,7 +1506,7 @@ namespace AssetUsageDetectorNamespace
 			searchSerializableVariablesOnly = true;
 
 			// Don't search assets if searched object is a scene object as assets can't hold references to scene objects
-			if( searchInAssetsFolder && isSearchingAsset )
+			if( searchInAssetsFolder && searchedType != SearchedType.SceneObject )
 			{
 				currentReferenceHolder = new ReferenceHolder( "Project View (Assets)", false );
 
@@ -1504,7 +1614,7 @@ namespace AssetUsageDetectorNamespace
 			if( !EditorApplication.isPlaying )
 			{
 				// Open the scene additively (to access its objects) only if it seems to contain some references to searched object(s)
-				if( isSearchingAsset && !AssetDatabase.LoadAssetAtPath<SceneAsset>( scenePath ).HasAnyReferenceTo( assetsSet ) )
+				if( searchedType != SearchedType.SceneObject && !AssetDatabase.LoadAssetAtPath<SceneAsset>( scenePath ).HasAnyReferenceTo( assetsSet ) )
 					return;
 
 				scene = EditorSceneManager.OpenScene( scenePath, OpenSceneMode.Additive );
@@ -1636,7 +1746,7 @@ namespace AssetUsageDetectorNamespace
 				}
 
 				// Search the Object in detail only if EditorUtility.CollectDependencies returns a reference
-				if( isSearchingAsset && !unityObject.HasAnyReferenceTo( assetsSet ) )
+				if( searchedType != SearchedType.SceneObject && !unityObject.HasAnyReferenceTo( assetsSet ) )
 				{
 					searchedObjects.Add( objHash, null );
 					return null;
