@@ -230,6 +230,9 @@ namespace AssetUsageDetectorNamespace
 		// Assembly reloading; serialize nodes in a way that Unity can serialize
 		public void OnBeforeSerialize()
 		{
+			if( references == null )
+				return;
+
 			if( serializedNodes == null )
 				serializedNodes = new List<SerializableNode>( references.Count * 5 );
 			else
@@ -1727,7 +1730,7 @@ namespace AssetUsageDetectorNamespace
 			if( !EditorApplication.isPlaying )
 			{
 				// Open the scene additively (to access its objects) only if it seems to contain some references to searched object(s)
-				if( searchedType != SearchedType.SceneObject && !AssetDatabase.LoadAssetAtPath<SceneAsset>( scenePath ).HasAnyReferenceTo( assetsSet ) )
+				if( searchedType == SearchedType.Asset && !AssetDatabase.LoadAssetAtPath<SceneAsset>( scenePath ).HasAnyReferenceTo( assetsSet ) )
 					return;
 
 				scene = EditorSceneManager.OpenScene( scenePath, OpenSceneMode.Additive );
@@ -1859,7 +1862,7 @@ namespace AssetUsageDetectorNamespace
 				}
 
 				// Search the Object in detail only if EditorUtility.CollectDependencies returns a reference
-				if( searchedType != SearchedType.SceneObject && !unityObject.HasAnyReferenceTo( assetsSet ) )
+				if( searchedType == SearchedType.Asset && !unityObject.HasAnyReferenceTo( assetsSet ) )
 				{
 					searchedObjects.Add( objHash, null );
 					return null;
