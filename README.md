@@ -1,5 +1,5 @@
 # Asset Usage Detector for Unity 3D
-![screenshot1](img1.png)
+![screenshot1](screenshots/img1.png)
 
 ### A. ABOUT
 
@@ -16,7 +16,7 @@ This editor extension helps you figure out at which places an asset or GameObjec
 - Can search in multiple scenes at once
 - Can show complete paths to the references or only the most relevant parts of the paths (see demonstration below)
 
-![screenshot2](img2.gif)
+![screenshot2](screenshots/img2.gif)
 
 ### D. KNOWN LIMITATIONS
 - *static* variables are not searched

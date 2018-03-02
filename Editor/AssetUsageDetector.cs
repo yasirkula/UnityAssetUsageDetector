@@ -1,10 +1,9 @@
 // Asset Usage Detector - by Suleyman Yasir KULA (yasirkula@yahoo.com)
-// Finds references to an asset or Object
+// Finds references to asset(s) and/or Object(s)
 // 
 // Note that static variables are not searched
-// Found a bug? Let me know on Unity forums! 
 
-//#define USE_EXPERIMENTAL_METHOD // This method is disabled by default
+//#define USE_EXPERIMENTAL_METHOD // This method is disabled by default as it seems to be slower than the standard method
 
 using UnityEngine;
 using UnityEditor;
@@ -27,7 +26,8 @@ namespace AssetUsageDetectorNamespace
 
 	#region Helper Classes
 	// Custom class to hold the results for a single scene or Assets folder
-	public class ReferenceHolder
+	[Serializable]
+	public class ReferenceHolder : ISerializationCallbackReceiver
 	{
 		// Custom struct to hold a single path to a reference
 		public struct ReferencePath
@@ -42,11 +42,26 @@ namespace AssetUsageDetectorNamespace
 			}
 		}
 
+		// Credit: https://docs.unity3d.com/Manual/script-Serialization-Custom.html
+		[Serializable]
+		public class SerializableNode
+		{
+			public int instanceId;
+			public bool isUnityObject;
+			public string description;
+
+			public List<int> links;
+			public List<string> linkDescriptions;
+		}
+		
 		private string title;
 		private bool clickable;
 		private List<ReferenceNode> references;
 		private List<ReferencePath> referencePathsShortUnique;
 		private List<ReferencePath> referencePathsShortest;
+
+		private List<SerializableNode> serializedNodes;
+		private List<int> initialSerializedNodes;
 
 		public int NumberOfReferences { get { return references.Count; } }
 
@@ -63,6 +78,13 @@ namespace AssetUsageDetectorNamespace
 		public void AddReference( ReferenceNode node )
 		{
 			references.Add( node );
+		}
+
+		// Initializes commonly used variables of the nodes
+		public void InitializeNodes()
+		{
+			for( int i = 0; i < references.Count; i++ )
+				references[i].InitializeRecursively();
 		}
 
 		// Check if node exists in this results set
@@ -84,8 +106,8 @@ namespace AssetUsageDetectorNamespace
 
 			for( int i = 0; i < referencePathsShortUnique.Count; i++ )
 			{
-				Object obj = referencePathsShortUnique[i].startNode.nodeObject as Object;
-				if( obj != null )
+				Object obj = referencePathsShortUnique[i].startNode.UnityObject;
+				if( obj != null && !obj.Equals( null ) )
 					objectsSet.Add( obj );
 			}
 		}
@@ -97,8 +119,8 @@ namespace AssetUsageDetectorNamespace
 
 			for( int i = 0; i < referencePathsShortUnique.Count; i++ )
 			{
-				Object obj = referencePathsShortUnique[i].startNode.nodeObject as Object;
-				if( obj != null )
+				Object obj = referencePathsShortUnique[i].startNode.UnityObject;
+				if( obj != null && !obj.Equals( null ) )
 				{
 					if( obj is GameObject )
 						gameObjectsSet.Add( (GameObject) obj );
@@ -163,9 +185,6 @@ namespace AssetUsageDetectorNamespace
 			{
 				for( int i = 0; i < references.Count; i++ )
 				{
-					if( references[i].nodeObject == null )
-						continue;
-
 					GUILayout.Space( 5 );
 
 					references[i].DrawOnGUIRecursively();
@@ -184,14 +203,11 @@ namespace AssetUsageDetectorNamespace
 
 				for( int i = 0; i < pathsToDraw.Count; i++ )
 				{
-					ReferencePath path = pathsToDraw[i];
-					if( path.startNode.nodeObject == null )
-						continue;
-
 					GUILayout.Space( 5 );
 
 					GUILayout.BeginHorizontal();
 
+					ReferencePath path = pathsToDraw[i];
 					path.startNode.DrawOnGUI( null );
 
 					ReferenceNode currentNode = path.startNode;
@@ -210,6 +226,52 @@ namespace AssetUsageDetectorNamespace
 
 			GUILayout.Space( 10 );
 		}
+
+		// Assembly reloading; serialize nodes in a way that Unity can serialize
+		public void OnBeforeSerialize()
+		{
+			if( serializedNodes == null )
+				serializedNodes = new List<SerializableNode>( references.Count * 5 );
+			else
+				serializedNodes.Clear();
+
+			if( initialSerializedNodes == null )
+				initialSerializedNodes = new List<int>( references.Count );
+			else
+				initialSerializedNodes.Clear();
+
+			Dictionary<ReferenceNode, int> nodeToIndex = new Dictionary<ReferenceNode, int>( references.Count * 5 );
+			for( int i = 0; i < references.Count; i++ )
+				initialSerializedNodes.Add( references[i].SerializeRecursively( nodeToIndex, serializedNodes ) );
+		}
+
+		// Assembly reloaded; deserialize nodes to construct the original graph
+		public void OnAfterDeserialize()
+		{
+			if( initialSerializedNodes == null || serializedNodes == null )
+				return;
+
+			if( references == null )
+				references = new List<ReferenceNode>( initialSerializedNodes.Count );
+			else
+				references.Clear();
+
+			List<ReferenceNode> allNodes = new List<ReferenceNode>( serializedNodes.Count );
+			for( int i = 0; i < serializedNodes.Count; i++ )
+				allNodes.Add( new ReferenceNode() );
+
+			for( int i = 0; i < serializedNodes.Count; i++ )
+				allNodes[i].Deserialize( serializedNodes[i], allNodes );
+
+			for( int i = 0; i < initialSerializedNodes.Count; i++ )
+				references.Add( allNodes[initialSerializedNodes[i]] );
+
+			referencePathsShortUnique = null;
+			referencePathsShortest = null;
+
+			serializedNodes.Clear();
+			initialSerializedNodes.Clear();
+		}
 	}
 
 	// Custom class to hold an object in the path to a reference as a node
@@ -227,8 +289,17 @@ namespace AssetUsageDetectorNamespace
 			}
 		}
 
+		// Unique identifier is used while serializing the node
+		private static int uid_last = 0;
+		private readonly int uid;
+
 		public object nodeObject;
 		private readonly List<Link> links;
+
+		private int? instanceId; // instanceId of the nodeObject if it is a Unity object, null otherwise
+		private string description; // String to print on this node
+		
+		public Object UnityObject { get { return instanceId.HasValue ? EditorUtility.InstanceIDToObject( instanceId.Value ) : null; } }
 
 		public int NumberOfOutgoingLinks { get { return links.Count; } }
 		public Link this[int index] { get { return links[index]; } }
@@ -236,23 +307,12 @@ namespace AssetUsageDetectorNamespace
 		public ReferenceNode()
 		{
 			links = new List<Link>( 2 );
+			uid = uid_last++;
 		}
 
 		public ReferenceNode( object obj ) : this()
 		{
 			nodeObject = obj;
-		}
-
-		// Check if a specific link to a node exists
-		public bool HasLinkTo( ReferenceNode node, string linkDescription )
-		{
-			for( int i = 0; i < links.Count; i++ )
-			{
-				if( links[i].targetNode == node && links[i].description == linkDescription )
-					return true;
-			}
-
-			return false;
 		}
 
 		// Add a one-way connection to another node
@@ -265,6 +325,35 @@ namespace AssetUsageDetectorNamespace
 
 				links.Add( new Link( nextNode, description ) );
 			}
+		}
+
+		// Initialize node's commonly used variables
+		public void InitializeRecursively()
+		{
+			if( description != null ) // Already initialized
+				return;
+
+			Object unityObject = nodeObject as Object;
+			if( unityObject != null )
+			{
+				instanceId = unityObject.GetInstanceID();
+				description = unityObject.name + " (" + unityObject.GetType() + ")";
+			}
+			else if( nodeObject != null )
+			{
+				instanceId = null;
+				description = nodeObject.GetType() + " object";
+			}
+			else
+			{
+				instanceId = null;
+				description = "<<destroyed>>";
+			}
+
+			nodeObject = null; // don't hold Object reference, allow Unity to GC used memory
+
+			for( int i = 0; i < links.Count; i++ )
+				links[i].targetNode.InitializeRecursively();
 		}
 
 		// Clear this node so that it can be reused later
@@ -283,9 +372,6 @@ namespace AssetUsageDetectorNamespace
 		// Just some boring calculations to find the short unique paths recursively
 		private void CalculateShortUniquePaths( List<ReferenceHolder.ReferencePath> shortestPaths, List<ReferenceNode> currentPath, List<int> currentPathIndices, int latestObjectIndexInPath )
 		{
-			if( nodeObject == null )
-				return;
-
 			int currentIndex = currentPath.Count;
 			currentPath.Add( this );
 
@@ -324,7 +410,7 @@ namespace AssetUsageDetectorNamespace
 			}
 			else
 			{
-				if( nodeObject is Object )
+				if( instanceId.HasValue ) // nodeObject is Unity object
 					latestObjectIndexInPath = currentIndex;
 
 				for( int i = 0; i < links.Count; i++ )
@@ -352,8 +438,7 @@ namespace AssetUsageDetectorNamespace
 				for( int i = 0; i < links.Count; i++ )
 				{
 					ReferenceNode next = links[i].targetNode;
-					if( next.nodeObject != null )
-						next.DrawOnGUIRecursively( links[i].description );
+					next.DrawOnGUIRecursively( links[i].description );
 				}
 
 				GUILayout.EndVertical();
@@ -369,7 +454,7 @@ namespace AssetUsageDetectorNamespace
 			if( GUILayout.Button( label, AssetUsageDetector.BoxGUIStyle, AssetUsageDetector.GL_EXPAND_HEIGHT ) )
 			{
 				// If a reference is clicked, highlight it (either on Hierarchy view or Project view)
-				( nodeObject as Object ).SelectInEditor();
+				UnityObject.SelectInEditor();
 			}
 
 			if( AssetUsageDetector.showTooltips && Event.current.type == EventType.Repaint && GUILayoutUtility.GetLastRect().Contains( Event.current.mousePosition ) )
@@ -379,17 +464,65 @@ namespace AssetUsageDetectorNamespace
 		// Get the string representation of this node
 		private string GetNodeContent( string linkToPrevNodeDescription = null )
 		{
-			string result = string.Empty;
 			if( !string.IsNullOrEmpty( linkToPrevNodeDescription ) )
-				result = linkToPrevNodeDescription + "\n";
+				return linkToPrevNodeDescription + "\n" + description;
 
-			Object unityObject = nodeObject as Object;
-			if( unityObject != null )
-				result += unityObject.name + " (" + unityObject.GetType() + ")";
+			return description;
+		}
+
+		// Serialize this node and its connected nodes recursively
+		public int SerializeRecursively( Dictionary<ReferenceNode, int> nodeToIndex, List<ReferenceHolder.SerializableNode> serializedNodes )
+		{
+			int index;
+			if( nodeToIndex.TryGetValue( this, out index ) )
+				return index;
+
+			ReferenceHolder.SerializableNode serializedNode = new ReferenceHolder.SerializableNode()
+			{
+				instanceId = instanceId ?? 0,
+				isUnityObject = instanceId.HasValue,
+				description = description
+			};
+
+			index = serializedNodes.Count;
+			nodeToIndex[this] = index;
+			serializedNodes.Add( serializedNode );
+
+			if( links.Count > 0 )
+			{
+				serializedNode.links = new List<int>( links.Count );
+				serializedNode.linkDescriptions = new List<string>( links.Count );
+
+				for( int i = 0; i < links.Count; i++ )
+				{
+					serializedNode.links.Add( links[i].targetNode.SerializeRecursively( nodeToIndex, serializedNodes ) );
+					serializedNode.linkDescriptions.Add( links[i].description );
+				}
+			}
+
+			return index;
+		}
+
+		// Deserialize this node and its links from the serialized data
+		public void Deserialize( ReferenceHolder.SerializableNode serializedNode, List<ReferenceNode> allNodes )
+		{
+			if( serializedNode.isUnityObject )
+				instanceId = serializedNode.instanceId;
 			else
-				result += nodeObject.GetType() + " object";
+				instanceId = null;
 
-			return result;
+			description = serializedNode.description;
+
+			if( serializedNode.links != null )
+			{
+				for( int i = 0; i < serializedNode.links.Count; i++ )
+					links.Add( new Link( allNodes[serializedNode.links[i]], serializedNode.linkDescriptions[i] ) );
+			}
+		}
+
+		public override int GetHashCode()
+		{
+			return uid;
 		}
 	}
 
@@ -1060,6 +1193,9 @@ namespace AssetUsageDetectorNamespace
 					{
 						errorMessage = string.Empty;
 						currentPhase = Phase.Setup;
+
+						if( searchResult != null )
+							searchResult.Clear();
 					}
 				}
 
@@ -1177,37 +1313,40 @@ namespace AssetUsageDetectorNamespace
 			GUILayout.BeginHorizontal();
 
 			GUILayout.Label( "Asset(s):" );
-
-			// Handle drag & drop references to array
-			// Credit: https://answers.unity.com/answers/657877/view.html
-			if( GUI.enabled && ( ev.type == EventType.DragPerform || ev.type == EventType.DragUpdated ) &&
-				GUILayoutUtility.GetLastRect().Contains( ev.mousePosition ) )
+			
+			if( GUI.enabled )
 			{
-				DragAndDrop.visualMode = DragAndDropVisualMode.Copy;
-				if( ev.type == EventType.DragPerform )
+				// Handle drag & drop references to array
+				// Credit: https://answers.unity.com/answers/657877/view.html
+				if( ( ev.type == EventType.DragPerform || ev.type == EventType.DragUpdated ) &&
+					GUILayoutUtility.GetLastRect().Contains( ev.mousePosition ) )
 				{
-					DragAndDrop.AcceptDrag();
-
-					Object[] draggedObjects = DragAndDrop.objectReferences;
-					if( draggedObjects.Length > 0 )
+					DragAndDrop.visualMode = DragAndDropVisualMode.Copy;
+					if( ev.type == EventType.DragPerform )
 					{
-						for( int i = 0; i < draggedObjects.Length; i++ )
+						DragAndDrop.AcceptDrag();
+
+						Object[] draggedObjects = DragAndDrop.objectReferences;
+						if( draggedObjects.Length > 0 )
 						{
-							if( draggedObjects[i] != null && !draggedObjects[i].Equals( null ) )
+							for( int i = 0; i < draggedObjects.Length; i++ )
 							{
-								hasChanged = true;
-								assetsToSearch.Add( draggedObjects[i] );
+								if( draggedObjects[i] != null && !draggedObjects[i].Equals( null ) )
+								{
+									hasChanged = true;
+									assetsToSearch.Add( draggedObjects[i] );
+								}
 							}
 						}
 					}
+
+					ev.Use();
 				}
 
-				ev.Use();
+				if( GUILayout.Button( "+", GL_WIDTH_25 ) )
+					assetsToSearch.Insert( 0, null );
 			}
-
-			if( GUILayout.Button( "+", GL_WIDTH_25 ) )
-				assetsToSearch.Insert( 0, null );
-
+			
 			GUILayout.EndHorizontal();
 
 			for( int i = 0; i < assetsToSearch.Count; i++ )
@@ -1221,15 +1360,18 @@ namespace AssetUsageDetectorNamespace
 				if( GUI.changed && prevAssetToSearch != assetsToSearch[i] )
 					hasChanged = true;
 
-				if( GUILayout.Button( "+", GL_WIDTH_25 ) )
-					assetsToSearch.Insert( i + 1, null );
-
-				if( GUILayout.Button( "-", GL_WIDTH_25 ) )
+				if( GUI.enabled )
 				{
-					if( assetsToSearch[i] != null && !assetsToSearch[i].Equals( null ) )
-						hasChanged = true;
+					if( GUILayout.Button( "+", GL_WIDTH_25 ) )
+						assetsToSearch.Insert( i + 1, null );
 
-					assetsToSearch.RemoveAt( i-- );
+					if( GUILayout.Button( "-", GL_WIDTH_25 ) )
+					{
+						if( assetsToSearch[i] != null && !assetsToSearch[i].Equals( null ) )
+							hasChanged = true;
+
+						assetsToSearch.RemoveAt( i-- );
+					}
 				}
 
 				GUILayout.EndHorizontal();
@@ -1567,45 +1709,16 @@ namespace AssetUsageDetectorNamespace
 					searchResult.Add( currentReferenceHolder );
 			}
 
+			for( int i = 0; i < searchResult.Count; i++ )
+				searchResult[i].InitializeNodes();
+
 			// Log some c00l stuff to console
 			Debug.Log( "Searched " + searchCount + " objects in " + ( EditorApplication.timeSinceStartup - searchStartTime ).ToString( "F2" ) + " seconds" );
 
 			// Search is complete!
 			currentPhase = Phase.Complete;
 		}
-
-		// Add a reference node to the results
-		private void AddReference( ReferenceNode referenceNode )
-		{
-			// Special case: for references that are found in prefabs in Project view,
-			// the path to the reference should start with the root GameObject in order to 
-			// make it possible to locate the asset
-			GameObject obj = referenceNode.nodeObject as GameObject;
-			if( obj != null && obj.IsAsset() )
-			{
-				Transform parent = obj.transform.parent;
-				while( parent != null )
-				{
-					ReferenceNode parentNode = GetReferenceNode( parent );
-
-					// Only one "Child object" link from parent to this node should exist
-					if( parentNode.HasLinkTo( referenceNode, "[Child object]" ) )
-						return;
-
-					parentNode.AddLinkTo( referenceNode, "Child object" );
-					referenceNode = parentNode;
-					parent = parent.parent;
-				}
-
-				if( !currentReferenceHolder.Contains( referenceNode ) )
-					currentReferenceHolder.AddReference( referenceNode );
-			}
-			else
-			{
-				currentReferenceHolder.AddReference( referenceNode );
-			}
-		}
-
+		
 		// Search a scene for references
 		private void SearchScene( string scenePath )
 		{
@@ -1673,7 +1786,7 @@ namespace AssetUsageDetectorNamespace
 			{
 				// Rare case: if searched object is a scene GameObject, search its components for references 
 				// instead of completely ignoring the GameObject
-				if( obj is GameObject )
+				if( obj is GameObject && !obj.IsAsset() )
 				{
 					ReferenceNode referenceNode = PopReferenceNode( obj );
 					Component[] components = ( (GameObject) obj ).GetComponents<Component>();
@@ -1690,7 +1803,7 @@ namespace AssetUsageDetectorNamespace
 					}
 
 					if( referenceNode.NumberOfOutgoingLinks > 0 )
-						AddReference( referenceNode );
+						currentReferenceHolder.AddReference( referenceNode );
 					else
 						PoolReferenceNode( referenceNode );
 				}
@@ -1700,7 +1813,7 @@ namespace AssetUsageDetectorNamespace
 
 			ReferenceNode searchResult = SearchObject( obj );
 			if( searchResult != null )
-				AddReference( searchResult );
+				currentReferenceHolder.AddReference( searchResult );
 		}
 
 		// Search an object for references
@@ -2052,7 +2165,10 @@ namespace AssetUsageDetectorNamespace
 						else if( typeof( UnityEngine.UI.Graphic ).IsAssignableFrom( currType ) &&
 							( propertyName.Equals( "canvasRenderer" ) || propertyName.Equals( "canvas" ) ) )
 							continue;
-						else if( propertyName.Equals( "mesh" ) && typeof( MeshFilter ).IsAssignableFrom( currType ) )
+						else if( typeof( MeshFilter ).IsAssignableFrom( currType ) && propertyName.Equals( "mesh" ) )
+							continue;
+						else if( typeof( Renderer ).IsAssignableFrom( currType ) &&
+							( propertyName.Equals( "sharedMaterial" ) || propertyName.Equals( "sharedMaterials" ) ) )
 							continue;
 						else if( ( propertyName.Equals( "material" ) || propertyName.Equals( "materials" ) ) &&
 							( typeof( Renderer ).IsAssignableFrom( currType ) || typeof( Collider ).IsAssignableFrom( currType ) ||
