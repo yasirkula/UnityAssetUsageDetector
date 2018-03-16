@@ -1,6 +1,10 @@
 # Asset Usage Detector for Unity 3D
 ![screenshot1](screenshots/img1.png)
 
+**Available on Asset Store:** https://www.assetstore.unity3d.com/en/#!/content/112837
+
+**Forum Thread:** https://forum.unity.com/threads/asset-usage-detector-find-references-to-an-asset-object-open-source.408134/
+
 ### A. ABOUT
 
 This editor extension helps you figure out at which places an asset or GameObject is used, i.e. lists the objects that refer to the asset. It is possible to search for references in the Assets folder (Project view) and/or in the scene(s) of your project. You can also search for references while in Play mode!
