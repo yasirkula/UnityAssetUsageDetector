@@ -847,6 +847,9 @@ namespace AssetUsageDetectorNamespace
 
 		private bool searchSerializableVariablesOnly;
 
+		private bool searchInTargetFolder = true; // Scenes in Target Folder
+		private Object targetFolder;
+
 		private bool searchInOpenScenes = true; // Scenes currently open in Hierarchy view
 		private bool searchInScenesInBuild = false; // Scenes in build
 		private bool searchInScenesInBuildTickedOnly = true; // Scenes in build (ticked only or not)
@@ -1073,6 +1076,15 @@ namespace AssetUsageDetectorNamespace
 				else if( searchInAllScenes )
 					GUI.enabled = false;
 
+				searchInTargetFolder = EditorGUILayout.ToggleLeft ("Scenes in Target Folder", searchInTargetFolder);
+				if (searchInTargetFolder)
+				{
+					GUILayout.BeginHorizontal ();
+					GUILayout.Space (35);
+					targetFolder = EditorGUILayout.ObjectField ("Target Folder", targetFolder, typeof (DefaultAsset), false);
+					GUILayout.EndHorizontal ();
+				}
+
 				searchInOpenScenes = EditorGUILayout.ToggleLeft( "Currently open (loaded) scene(s)", searchInOpenScenes );
 
 				if( EditorApplication.isPlaying )
@@ -1149,7 +1161,7 @@ namespace AssetUsageDetectorNamespace
 				GUILayout.Space( 10 );
 				
 				// Don't let the user press the GO button without any valid search location
-				if( !searchInAllScenes && !searchInOpenScenes && !searchInScenesInBuild && !searchInAssetsFolder )
+				if( !searchInAllScenes && !searchInOpenScenes && !searchInScenesInBuild && !searchInAssetsFolder &&  !(searchInTargetFolder && targetFolder != null) )
 					GUI.enabled = false;
 
 				if( GUILayout.Button( "GO!", GL_HEIGHT_30 ) )
@@ -1624,6 +1636,13 @@ namespace AssetUsageDetectorNamespace
 			}
 			else
 			{
+				if (searchInTargetFolder)
+				{
+					string[] scenesTemp = AssetDatabase.FindAssets ("t:SceneAsset", new [] { AssetDatabase.GetAssetPath (targetFolder) });
+					for (int i = 0; i < scenesTemp.Length; i++)
+						scenesToSearch.Add (AssetDatabase.GUIDToAssetPath (scenesTemp[i]));
+				}
+
 				if( searchInOpenScenes )
 				{
 					// Get all open (and loaded) scenes
