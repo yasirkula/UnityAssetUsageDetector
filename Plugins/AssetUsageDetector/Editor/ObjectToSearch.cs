@@ -1,0 +1,138 @@
+﻿using System;
+using System.Collections.Generic;
+using UnityEditor;
+using UnityEngine;
+using Object = UnityEngine.Object;
+
+namespace AssetUsageDetectorNamespace
+{
+	[Serializable]
+	public class ObjectToSearch
+	{
+		public Object obj;
+		public List<SubAssetToSearch> subAssets;
+		public bool showSubAssetsFoldout;
+
+		private static MonoScript[] monoScriptsInProject;
+		private static HashSet<Object> currentSubAssets;
+
+		public ObjectToSearch( Object obj )
+		{
+			this.obj = obj;
+			RefreshSubAssets();
+		}
+
+		public void RefreshSubAssets()
+		{
+			if( subAssets == null )
+				subAssets = new List<SubAssetToSearch>();
+			else
+				subAssets.Clear();
+
+			if( currentSubAssets == null )
+				currentSubAssets = new HashSet<Object>();
+			else
+				currentSubAssets.Clear();
+
+			AddSubAssets( obj, false );
+		}
+
+		private void AddSubAssets( Object target, bool includeTarget )
+		{
+			if( target == null || target.Equals( null ) )
+				return;
+
+			if( !target.IsAsset() || !AssetDatabase.IsMainAsset( target ) || target is SceneAsset )
+				return;
+
+			if( includeTarget )
+			{
+				if( !currentSubAssets.Contains( target ) )
+				{
+					subAssets.Add( new SubAssetToSearch( target, true ) );
+					currentSubAssets.Add( target );
+				}
+			}
+			else
+			{
+				// If asset is a directory, add all of its contents as sub-assets recursively
+				string targetPath = AssetDatabase.GetAssetPath( target );
+				if( target is DefaultAsset && AssetDatabase.IsValidFolder( targetPath ) )
+				{
+					string[] folderContents = AssetDatabase.FindAssets( "", new string[] { targetPath } );
+					for( int i = 0; i < folderContents.Length; i++ )
+					{
+						string filePath = AssetDatabase.GUIDToAssetPath( folderContents[i] );
+						if( !string.IsNullOrEmpty( filePath ) && !AssetDatabase.IsValidFolder( filePath ) )
+							AddSubAssets( AssetDatabase.LoadAssetAtPath<Object>( filePath ), true );
+					}
+
+					return;
+				}
+			}
+
+			// Find sub-asset(s) of the asset (if any)
+			Object[] assets = AssetDatabase.LoadAllAssetsAtPath( AssetDatabase.GetAssetPath( target ) );
+			for( int i = 0; i < assets.Length; i++ )
+			{
+				Object asset = assets[i];
+				if( asset == null || asset.Equals( null ) || asset is Component )
+					continue;
+
+				if( currentSubAssets.Contains( asset ) )
+					continue;
+
+				if( asset != target )
+				{
+					subAssets.Add( new SubAssetToSearch( asset, true ) );
+					currentSubAssets.Add( asset );
+				}
+
+				// MonoScripts are a special case such that other MonoScript objects
+				// that extend this MonoScript are also considered a sub-asset
+				if( asset is MonoScript )
+				{
+					Type monoScriptType = ( (MonoScript) asset ).GetClass();
+					if( monoScriptType == null || ( !monoScriptType.IsInterface && !typeof( Component ).IsAssignableFrom( monoScriptType ) ) )
+						continue;
+
+					// Find all MonoScript objects in the project
+					if( monoScriptsInProject == null )
+					{
+						string[] monoScriptGuids = AssetDatabase.FindAssets( "t:MonoScript" );
+						monoScriptsInProject = new MonoScript[monoScriptGuids.Length];
+						for( int k = 0; k < monoScriptGuids.Length; k++ )
+							monoScriptsInProject[k] = AssetDatabase.LoadAssetAtPath<MonoScript>( AssetDatabase.GUIDToAssetPath( monoScriptGuids[k] ) );
+					}
+
+					// Add any MonoScript objects that extend this MonoScript as a sub-asset
+					for( int j = 0; j < monoScriptsInProject.Length; j++ )
+					{
+						Type otherMonoScriptType = monoScriptsInProject[j].GetClass();
+						if( otherMonoScriptType == null || monoScriptType == otherMonoScriptType || !monoScriptType.IsAssignableFrom( otherMonoScriptType ) )
+							continue;
+
+						if( !currentSubAssets.Contains( monoScriptsInProject[j] ) )
+						{
+							subAssets.Add( new SubAssetToSearch( monoScriptsInProject[j], true ) );
+							currentSubAssets.Add( monoScriptsInProject[j] );
+						}
+					}
+				}
+			}
+		}
+	}
+
+	[Serializable]
+	public class SubAssetToSearch
+	{
+		public Object subAsset;
+		public bool shouldSearch;
+
+		public SubAssetToSearch( Object subAsset, bool shouldSearch )
+		{
+			this.subAsset = subAsset;
+			this.shouldSearch = shouldSearch;
+		}
+	}
+}
