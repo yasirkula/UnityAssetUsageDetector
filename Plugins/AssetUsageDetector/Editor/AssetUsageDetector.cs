@@ -91,7 +91,6 @@ namespace AssetUsageDetectorNamespace
 
 		private Stack<object> callStack; // Stack of SearchObject function parameters to avoid infinite loops (which happens when same object is passed as parameter to function)
 
-		private bool searchMaterialAssets;
 		private bool searchPrefabConnections;
 		private bool searchMonoBehavioursForScript;
 		private bool searchRenderers;
@@ -105,7 +104,9 @@ namespace AssetUsageDetectorNamespace
 		private bool searchInScenesInBuildTickedOnly = true; // Scenes in build (ticked only or not)
 		private bool searchInAllScenes = true; // All scenes (including scenes that are not in build)
 		private bool searchInAssetsFolder = true; // Assets in Project view
-		
+
+		private List<Object> searchInAssets = new List<Object>() { null }; // If not empty, only these assets are searched for references
+
 		private int searchDepthLimit = 4; // Depth limit for recursively searching variables of objects
 		private int currentDepth = 0;
 
@@ -141,7 +142,7 @@ namespace AssetUsageDetectorNamespace
 		{
 			AssetUsageDetector window = GetWindow<AssetUsageDetector>();
 			window.titleContent = new GUIContent( "Asset Usage Detector" );
-
+			window.minSize = new Vector2( 325f, 220f );
 			window.Show();
 		}
 
@@ -202,14 +203,26 @@ namespace AssetUsageDetectorNamespace
 			}
 			else if( currentPhase == Phase.Setup )
 			{
-				if( ExposeSearchedAssets() )
+				if( ExposeSearchedObjects() )
 					errorMessage = string.Empty;
-				
+
 				GUILayout.Space( 10 );
 
 				GUILayout.Box( "SEARCH IN", Utilities.GL_EXPAND_WIDTH );
 
 				searchInAssetsFolder = EditorGUILayout.ToggleLeft( "Project view (Assets folder)", searchInAssetsFolder );
+
+				if( searchInAssetsFolder )
+				{
+					GUILayout.BeginHorizontal();
+					GUILayout.Space( 35 );
+					GUILayout.BeginVertical();
+
+					ExposeAssetsToSearch();
+
+					GUILayout.EndVertical();
+					GUILayout.EndHorizontal();
+				}
 
 				GUILayout.Space( 10 );
 
@@ -302,7 +315,7 @@ namespace AssetUsageDetectorNamespace
 
 				if( GUILayout.Button( "GO!", Utilities.GL_HEIGHT_30 ) )
 				{
-					if( AreSearchedAssetsEmpty() )
+					if( AreSearchedObjectsEmpty() )
 					{
 						errorMessage = "ADD AN ASSET TO THE LIST FIRST!";
 					}
@@ -331,7 +344,7 @@ namespace AssetUsageDetectorNamespace
 				// Draw the results of the search
 				GUI.enabled = false;
 
-				ExposeSearchedAssets();
+				ExposeSearchedObjects();
 
 				GUILayout.Space( 10 );
 				GUI.enabled = true;
@@ -358,9 +371,7 @@ namespace AssetUsageDetectorNamespace
 				GUILayout.Space( 10 );
 
 				if( searchResult.Count == 0 )
-				{
 					GUILayout.Box( "No results found...", Utilities.GL_EXPAND_WIDTH );
-				}
 				else
 				{
 					GUILayout.BeginHorizontal();
@@ -455,8 +466,8 @@ namespace AssetUsageDetectorNamespace
 			EditorGUILayout.EndScrollView();
 		}
 
-		// Exposes searchedAssets as an array field on GUI
-		private bool ExposeSearchedAssets()
+		// Exposes objectsToSearch as an array field on GUI
+		private bool ExposeSearchedObjects()
 		{
 			bool hasChanged = false;
 			bool guiEnabled = GUI.enabled;
@@ -589,11 +600,76 @@ namespace AssetUsageDetectorNamespace
 			return hasChanged;
 		}
 
-		private bool AreSearchedAssetsEmpty()
+		private bool AreSearchedObjectsEmpty()
 		{
 			for( int i = 0; i < objectsToSearch.Count; i++ )
 			{
-				if( objectsToSearch[i] != null && !objectsToSearch[i].Equals( null ) )
+				if( objectsToSearch[i].obj != null && !objectsToSearch[i].obj.Equals( null ) )
+					return false;
+			}
+
+			return true;
+		}
+
+		// Exposes searchInAssets as an array field on GUI
+		private void ExposeAssetsToSearch()
+		{
+			Event ev = Event.current;
+
+			GUILayout.BeginHorizontal();
+
+			GUILayout.Label( "Search in following asset(s) only:" );
+
+			// Handle drag & drop references to array
+			// Credit: https://answers.unity.com/answers/657877/view.html
+			if( ( ev.type == EventType.DragPerform || ev.type == EventType.DragUpdated ) &&
+				GUILayoutUtility.GetLastRect().Contains( ev.mousePosition ) )
+			{
+				DragAndDrop.visualMode = DragAndDropVisualMode.Copy;
+				if( ev.type == EventType.DragPerform )
+				{
+					DragAndDrop.AcceptDrag();
+
+					Object[] draggedObjects = DragAndDrop.objectReferences;
+					if( draggedObjects.Length > 0 )
+					{
+						for( int i = 0; i < draggedObjects.Length; i++ )
+						{
+							if( draggedObjects[i] != null && !draggedObjects[i].Equals( null ) )
+								searchInAssets.Add( draggedObjects[i] );
+						}
+					}
+				}
+
+				ev.Use();
+			}
+
+			if( GUILayout.Button( "+", Utilities.GL_WIDTH_25 ) )
+				searchInAssets.Insert( 0, null );
+
+			GUILayout.EndHorizontal();
+
+			for( int i = 0; i < searchInAssets.Count; i++ )
+			{
+				GUILayout.BeginHorizontal();
+
+				searchInAssets[i] = EditorGUILayout.ObjectField( "", searchInAssets[i], typeof( Object ), true );
+
+				if( GUILayout.Button( "+", Utilities.GL_WIDTH_25 ) )
+					searchInAssets.Insert( i + 1, null );
+
+				if( GUILayout.Button( "-", Utilities.GL_WIDTH_25 ) )
+					searchInAssets.RemoveAt( i-- );
+
+				GUILayout.EndHorizontal();
+			}
+		}
+
+		private bool AreAssetsToSearchEmpty()
+		{
+			for( int i = 0; i < searchInAssets.Count; i++ )
+			{
+				if( searchInAssets[i] != null && !searchInAssets[i].Equals( null ) )
 					return false;
 			}
 
@@ -667,7 +743,6 @@ namespace AssetUsageDetectorNamespace
 			prevFieldModifiers = fieldModifiers;
 			prevPropertyModifiers = propertyModifiers;
 
-			searchMaterialAssets = false;
 			searchPrefabConnections = false;
 			searchMonoBehavioursForScript = false;
 			searchRenderers = false;
@@ -680,8 +755,11 @@ namespace AssetUsageDetectorNamespace
 				AddSearchedObjectToFilteredSets( objectsToSearch[i].obj );
 
 				List<SubAssetToSearch> subAssets = objectsToSearch[i].subAssets;
-				if( subAssets[i].shouldSearch )
-					AddSearchedObjectToFilteredSets( subAssets[i].subAsset );
+				for( int j = 0; j < subAssets.Count; j++ )
+				{
+					if( subAssets[j].shouldSearch )
+						AddSearchedObjectToFilteredSets( subAssets[j].subAsset );
+				}
 			}
 
 			foreach( Object obj in objectsToSearchSet )
@@ -691,7 +769,6 @@ namespace AssetUsageDetectorNamespace
 
 				if( obj is Texture )
 				{
-					searchMaterialAssets = true;
 					searchRenderers = true;
 					searchMaterialsForTexture = true;
 				}
@@ -705,7 +782,6 @@ namespace AssetUsageDetectorNamespace
 				}
 				else if( obj is Shader )
 				{
-					searchMaterialAssets = true;
 					searchRenderers = true;
 					searchMaterialsForShader = true;
 				}
@@ -752,38 +828,55 @@ namespace AssetUsageDetectorNamespace
 			// By default, search only serializable variables for references
 			searchSerializableVariablesOnly = true;
 
-			// Don't search assets if searched object is a scene object as assets can't hold references to scene objects
+			// Don't search assets if searched object(s) are all scene objects as assets can't hold references to scene objects
 			if( searchInAssetsFolder && assetsToSearchSet.Count > 0 )
 			{
 				currentReferenceHolder = new ReferenceHolder( "Project View (Assets)", false );
 
-				// Search through all the prefabs and imported models in the project
-				string[] pathsToAssets = AssetDatabase.FindAssets( "t:GameObject" );
-				for( int i = 0; i < pathsToAssets.Length; i++ )
-					SearchGameObjectRecursively( AssetDatabase.LoadAssetAtPath<GameObject>( AssetDatabase.GUIDToAssetPath( pathsToAssets[i] ) ) );
-
-				// Search through all the scriptable objects in the project
-				pathsToAssets = AssetDatabase.FindAssets( "t:ScriptableObject" );
-				for( int i = 0; i < pathsToAssets.Length; i++ )
-					BeginSearchObject( AssetDatabase.LoadAssetAtPath<ScriptableObject>( AssetDatabase.GUIDToAssetPath( pathsToAssets[i] ) ) );
-
-				// If a searched asset is shader or texture, search through all the materials in the project
-				if( searchMaterialAssets )
+				// Get the paths of all assets that are to be searched
+				IEnumerable<string> assetPaths;
+				if( AreAssetsToSearchEmpty() )
+					assetPaths = AssetDatabase.GetAllAssetPaths();
+				else
 				{
-					pathsToAssets = AssetDatabase.FindAssets( "t:Material" );
-					for( int i = 0; i < pathsToAssets.Length; i++ )
-						BeginSearchObject( AssetDatabase.LoadAssetAtPath<Material>( AssetDatabase.GUIDToAssetPath( pathsToAssets[i] ) ) );
+					HashSet<string> temp = new HashSet<string>();
+					for( int i = 0; i < searchInAssets.Count; i++ )
+					{
+						Object target = searchInAssets[i];
+						string targetPath = AssetDatabase.GetAssetPath( target );
+						if( target is DefaultAsset && AssetDatabase.IsValidFolder( targetPath ) )
+						{
+							string[] folderContents = AssetDatabase.FindAssets( "", new string[] { targetPath } );
+							for( int j = 0; j < folderContents.Length; j++ )
+							{
+								string filePath = AssetDatabase.GUIDToAssetPath( folderContents[j] );
+								if( !string.IsNullOrEmpty( filePath ) && !AssetDatabase.IsValidFolder( filePath ) )
+									temp.Add( filePath );
+							}
+						}
+						else
+							temp.Add( targetPath );
+					}
+
+					assetPaths = temp;
 				}
 
-				// Search through all the animation clips in the project
-				pathsToAssets = AssetDatabase.FindAssets( "t:AnimationClip" );
-				for( int i = 0; i < pathsToAssets.Length; i++ )
-					BeginSearchObject( AssetDatabase.LoadAssetAtPath<AnimationClip>( AssetDatabase.GUIDToAssetPath( pathsToAssets[i] ) ) );
+				foreach( string path in assetPaths )
+				{
+					// If asset resides inside the Assets directory and is not a scene asset
+					if( path.StartsWith( "Assets/" ) && !path.EndsWith( ".unity" ) )
+					{
+						if( !AssetHasAnyReferenceTo( path, assetsToSearchPathsSet ) )
+							continue;
 
-				// Search through all the animator controllers in the project
-				pathsToAssets = AssetDatabase.FindAssets( "t:RuntimeAnimatorController" );
-				for( int i = 0; i < pathsToAssets.Length; i++ )
-					BeginSearchObject( AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>( AssetDatabase.GUIDToAssetPath( pathsToAssets[i] ) ) );
+						Object[] assets = AssetDatabase.LoadAllAssetsAtPath( path );
+						if( assets == null || assets.Length == 0 )
+							continue;
+
+						for( int i = 0; i < assets.Length; i++ )
+							BeginSearchObject( assets[i] );
+					}
+				}
 
 				// If a reference is found in the Project view, save the results
 				if( currentReferenceHolder.NumberOfReferences > 0 )
@@ -938,6 +1031,9 @@ namespace AssetUsageDetectorNamespace
 		// Begin searching a root object (like a GameObject or an asset)
 		private void BeginSearchObject( Object obj )
 		{
+			if( obj is SceneAsset )
+				return;
+
 			if( objectsToSearchSet.Contains( obj ) )
 			{
 				// Rare case: if searched object is a scene GameObject, search its components for references 
