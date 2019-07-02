@@ -15,6 +15,8 @@ namespace AssetUsageDetectorNamespace
 				typeof( Quaternion ), typeof( Color ), typeof( Color32 ), typeof( LayerMask ),
 				typeof( Matrix4x4 ), typeof( AnimationCurve ), typeof( Gradient ), typeof( RectOffset ) };
 
+		private static readonly HashSet<string> folderContentsSet = new HashSet<string>();
+
 		public static readonly GUILayoutOption GL_EXPAND_WIDTH = GUILayout.ExpandWidth( true );
 		public static readonly GUILayoutOption GL_EXPAND_HEIGHT = GUILayout.ExpandHeight( true );
 		public static readonly GUILayoutOption GL_WIDTH_25 = GUILayout.Width( 25 );
@@ -23,7 +25,7 @@ namespace AssetUsageDetectorNamespace
 		public static readonly GUILayoutOption GL_HEIGHT_30 = GUILayout.Height( 30 );
 		public static readonly GUILayoutOption GL_HEIGHT_35 = GUILayout.Height( 35 );
 		public static readonly GUILayoutOption GL_HEIGHT_40 = GUILayout.Height( 40 );
-		
+
 		private static GUIStyle m_boxGUIStyle; // GUIStyle used to draw the results of the search
 		public static GUIStyle BoxGUIStyle
 		{
@@ -91,6 +93,30 @@ namespace AssetUsageDetectorNamespace
 		public static bool IsAsset( this object obj )
 		{
 			return obj is Object && AssetDatabase.Contains( (Object) obj );
+		}
+
+		// Check if object is a folder asset
+		public static bool IsFolder( this Object obj )
+		{
+			return obj is DefaultAsset && AssetDatabase.IsValidFolder( AssetDatabase.GetAssetPath( obj ) );
+		}
+
+		// Returns an enumerator to iterate through all asset paths in the folder
+		public static IEnumerable<string> EnumerateFolderContents( Object folderAsset )
+		{
+			string[] folderContents = AssetDatabase.FindAssets( "", new string[] { AssetDatabase.GetAssetPath( folderAsset ) } );
+			if( folderContents == null )
+				return new EmptyEnumerator<string>();
+
+			folderContentsSet.Clear();
+			for( int i = 0; i < folderContents.Length; i++ )
+			{
+				string filePath = AssetDatabase.GUIDToAssetPath( folderContents[i] );
+				if( !string.IsNullOrEmpty( filePath ) && !AssetDatabase.IsValidFolder( filePath ) )
+					folderContentsSet.Add( filePath );
+			}
+
+			return folderContentsSet;
 		}
 
 		// Select an object in the editor
@@ -268,6 +294,34 @@ namespace AssetUsageDetectorNamespace
 			}
 
 			return null;
+		}
+
+		public static bool IsEmpty( this List<ObjectToSearch> objectsToSearch )
+		{
+			if( objectsToSearch == null )
+				return true;
+
+			for( int i = 0; i < objectsToSearch.Count; i++ )
+			{
+				if( objectsToSearch[i].obj != null && !objectsToSearch[i].obj.Equals( null ) )
+					return false;
+			}
+
+			return true;
+		}
+
+		public static bool IsEmpty( this List<Object> searchInAssetsSubset )
+		{
+			if( searchInAssetsSubset == null )
+				return true;
+
+			for( int i = 0; i < searchInAssetsSubset.Count; i++ )
+			{
+				if( searchInAssetsSubset[i] != null && !searchInAssetsSubset[i].Equals( null ) )
+					return false;
+			}
+
+			return true;
 		}
 	}
 }

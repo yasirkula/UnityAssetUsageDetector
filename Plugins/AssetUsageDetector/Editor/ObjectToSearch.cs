@@ -9,8 +9,21 @@ namespace AssetUsageDetectorNamespace
 	[Serializable]
 	public class ObjectToSearch
 	{
+		[Serializable]
+		public class SubAsset
+		{
+			public Object subAsset;
+			public bool shouldSearch;
+
+			public SubAsset( Object subAsset, bool shouldSearch )
+			{
+				this.subAsset = subAsset;
+				this.shouldSearch = shouldSearch;
+			}
+		}
+
 		public Object obj;
-		public List<SubAssetToSearch> subAssets;
+		public List<SubAsset> subAssets;
 		public bool showSubAssetsFoldout;
 
 		private static MonoScript[] monoScriptsInProject;
@@ -25,7 +38,7 @@ namespace AssetUsageDetectorNamespace
 		public void RefreshSubAssets()
 		{
 			if( subAssets == null )
-				subAssets = new List<SubAssetToSearch>();
+				subAssets = new List<SubAsset>();
 			else
 				subAssets.Clear();
 
@@ -35,6 +48,7 @@ namespace AssetUsageDetectorNamespace
 				currentSubAssets.Clear();
 
 			AddSubAssets( obj, false );
+			currentSubAssets.Clear();
 		}
 
 		private void AddSubAssets( Object target, bool includeTarget )
@@ -49,23 +63,17 @@ namespace AssetUsageDetectorNamespace
 			{
 				if( !currentSubAssets.Contains( target ) )
 				{
-					subAssets.Add( new SubAssetToSearch( target, true ) );
+					subAssets.Add( new SubAsset( target, true ) );
 					currentSubAssets.Add( target );
 				}
 			}
 			else
 			{
 				// If asset is a directory, add all of its contents as sub-assets recursively
-				string targetPath = AssetDatabase.GetAssetPath( target );
-				if( target is DefaultAsset && AssetDatabase.IsValidFolder( targetPath ) )
+				if( target.IsFolder() )
 				{
-					string[] folderContents = AssetDatabase.FindAssets( "", new string[] { targetPath } );
-					for( int i = 0; i < folderContents.Length; i++ )
-					{
-						string filePath = AssetDatabase.GUIDToAssetPath( folderContents[i] );
-						if( !string.IsNullOrEmpty( filePath ) && !AssetDatabase.IsValidFolder( filePath ) )
-							AddSubAssets( AssetDatabase.LoadAssetAtPath<Object>( filePath ), true );
-					}
+					foreach( string filePath in Utilities.EnumerateFolderContents( target ) )
+						AddSubAssets( AssetDatabase.LoadAssetAtPath<Object>( filePath ), true );
 
 					return;
 				}
@@ -84,7 +92,7 @@ namespace AssetUsageDetectorNamespace
 
 				if( asset != target )
 				{
-					subAssets.Add( new SubAssetToSearch( asset, true ) );
+					subAssets.Add( new SubAsset( asset, true ) );
 					currentSubAssets.Add( asset );
 				}
 
@@ -114,25 +122,12 @@ namespace AssetUsageDetectorNamespace
 
 						if( !currentSubAssets.Contains( monoScriptsInProject[j] ) )
 						{
-							subAssets.Add( new SubAssetToSearch( monoScriptsInProject[j], true ) );
+							subAssets.Add( new SubAsset( monoScriptsInProject[j], true ) );
 							currentSubAssets.Add( monoScriptsInProject[j] );
 						}
 					}
 				}
 			}
-		}
-	}
-
-	[Serializable]
-	public class SubAssetToSearch
-	{
-		public Object subAsset;
-		public bool shouldSearch;
-
-		public SubAssetToSearch( Object subAsset, bool shouldSearch )
-		{
-			this.subAsset = subAsset;
-			this.shouldSearch = shouldSearch;
 		}
 	}
 }

@@ -1,14 +1,212 @@
 ﻿using System;
 using System.Collections.Generic;
 using UnityEditor;
+using UnityEditor.SceneManagement;
 using UnityEngine;
 using Object = UnityEngine.Object;
 
 namespace AssetUsageDetectorNamespace
 {
-	// Custom class to hold the results for a single scene or Assets folder
 	[Serializable]
-	public class ReferenceHolder : ISerializationCallbackReceiver
+	public class SearchResultDrawParameters
+	{
+		public PathDrawingMode pathDrawingMode;
+		public bool showTooltips;
+		public string tooltip;
+
+		public SearchResultDrawParameters( PathDrawingMode pathDrawingMode, bool showTooltips )
+		{
+			this.pathDrawingMode = pathDrawingMode;
+			this.showTooltips = showTooltips;
+		}
+	}
+
+	// Custom class to hold search results
+	[Serializable]
+	public class SearchResult : ISerializationCallbackReceiver
+	{
+		// Credit: https://docs.unity3d.com/Manual/script-Serialization-Custom.html
+		[Serializable]
+		public class SerializableResultGroup
+		{
+			public string title;
+			public bool clickable;
+
+			public List<int> initialSerializedNodes;
+		}
+
+		[Serializable]
+		public class SerializableNode
+		{
+			public int instanceId;
+			public bool isUnityObject;
+			public string description;
+
+			public List<int> links;
+			public List<string> linkDescriptions;
+		}
+
+		private List<SearchResultGroup> result;
+		private SceneSetup[] initialSceneSetup;
+
+		private List<SerializableNode> serializedNodes;
+		private List<SerializableResultGroup> serializedGroups;
+
+		public int Count { get { return result.Count; } }
+		public SearchResultGroup this[int index] { get { return result[index]; } }
+
+		public bool SearchCompletedSuccessfully { get { return result != null; } }
+		public bool InitialSceneSetupConfigured { get { return initialSceneSetup != null; } }
+
+		public SearchResult( List<SearchResultGroup> result, SceneSetup[] initialSceneSetup )
+		{
+			if( result == null )
+				result = new List<SearchResultGroup>( 0 );
+
+			this.result = result;
+			this.initialSceneSetup = initialSceneSetup;
+		}
+
+		public void DrawOnGUI( SearchResultDrawParameters parameters )
+		{
+			parameters.tooltip = null;
+
+			for( int i = 0; i < result.Count; i++ )
+				result[i].DrawOnGUI( parameters );
+
+			if( parameters.tooltip != null )
+			{
+				// Show tooltip at mouse position
+				Vector2 mousePos = Event.current.mousePosition;
+				Vector2 size = Utilities.TooltipGUIStyle.CalcSize( new GUIContent( parameters.tooltip ) );
+
+				GUI.Box( new Rect( new Vector2( mousePos.x - size.x * 0.5f, mousePos.y - size.y ), size ), parameters.tooltip, Utilities.TooltipGUIStyle );
+			}
+		}
+
+		public Object[] SelectAllAsObjects()
+		{
+			HashSet<Object> uniqueObjects = new HashSet<Object>();
+			for( int i = 0; i < result.Count; i++ )
+				result[i].AddObjectsTo( uniqueObjects );
+
+			if( uniqueObjects.Count > 0 )
+			{
+				Object[] objects = new Object[uniqueObjects.Count];
+				uniqueObjects.CopyTo( objects );
+
+				return objects;
+			}
+
+			return null;
+		}
+
+		public GameObject[] SelectAllAsGameObjects()
+		{
+			HashSet<GameObject> uniqueGameObjects = new HashSet<GameObject>();
+			for( int i = 0; i < result.Count; i++ )
+				result[i].AddGameObjectsTo( uniqueGameObjects );
+
+			if( uniqueGameObjects.Count > 0 )
+			{
+				GameObject[] objects = new GameObject[uniqueGameObjects.Count];
+				uniqueGameObjects.CopyTo( objects );
+
+				return objects;
+			}
+
+			return null;
+		}
+
+		// Close the scenes that were not part of the initial scene setup
+		// Returns true if initial scene setup is restored successfully
+		public bool RestoreInitialSceneSetup()
+		{
+			if( initialSceneSetup == null )
+				return true;
+
+			if( EditorApplication.isPlaying || !EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo() )
+				return false;
+
+			SceneSetup[] sceneFinalSetup = EditorSceneManager.GetSceneManagerSetup();
+			for( int i = 0; i < sceneFinalSetup.Length; i++ )
+			{
+				bool sceneIsOneOfInitials = false;
+				for( int j = 0; j < initialSceneSetup.Length; j++ )
+				{
+					if( sceneFinalSetup[i].path == initialSceneSetup[j].path )
+					{
+						sceneIsOneOfInitials = true;
+						break;
+					}
+				}
+
+				if( !sceneIsOneOfInitials )
+					EditorSceneManager.CloseScene( EditorSceneManager.GetSceneByPath( sceneFinalSetup[i].path ), true );
+			}
+
+			for( int i = 0; i < initialSceneSetup.Length; i++ )
+			{
+				if( !initialSceneSetup[i].isLoaded )
+					EditorSceneManager.CloseScene( EditorSceneManager.GetSceneByPath( initialSceneSetup[i].path ), false );
+			}
+
+			initialSceneSetup = null;
+			return true;
+		}
+
+		// Assembly reloading; serialize nodes in a way that Unity can serialize
+		void ISerializationCallbackReceiver.OnBeforeSerialize()
+		{
+			if( result == null )
+				return;
+
+			if( serializedGroups == null )
+				serializedGroups = new List<SerializableResultGroup>( result.Count );
+			else
+				serializedGroups.Clear();
+
+			if( serializedNodes == null )
+				serializedNodes = new List<SerializableNode>( result.Count * 16 );
+			else
+				serializedNodes.Clear();
+
+			Dictionary<ReferenceNode, int> nodeToIndex = new Dictionary<ReferenceNode, int>( result.Count * 16 );
+			for( int i = 0; i < result.Count; i++ )
+				serializedGroups.Add( result[i].Serialize( nodeToIndex, serializedNodes ) );
+		}
+
+		// Assembly reloaded; deserialize nodes to construct the original graph
+		void ISerializationCallbackReceiver.OnAfterDeserialize()
+		{
+			if( serializedGroups == null || serializedNodes == null )
+				return;
+
+			if( result == null )
+				result = new List<SearchResultGroup>( serializedGroups.Count );
+			else
+				result.Clear();
+
+			List<ReferenceNode> allNodes = new List<ReferenceNode>( serializedNodes.Count );
+			for( int i = 0; i < serializedNodes.Count; i++ )
+				allNodes.Add( new ReferenceNode() );
+
+			for( int i = 0; i < serializedNodes.Count; i++ )
+				allNodes[i].Deserialize( serializedNodes[i], allNodes );
+
+			for( int i = 0; i < serializedGroups.Count; i++ )
+			{
+				result.Add( new SearchResultGroup( serializedGroups[i].title, serializedGroups[i].clickable ) );
+				result[i].Deserialize( serializedGroups[i], allNodes );
+			}
+
+			serializedNodes.Clear();
+			serializedGroups.Clear();
+		}
+	}
+
+	// Custom class to hold the results for a single scene or Assets folder
+	public class SearchResultGroup
 	{
 		// Custom struct to hold a single path to a reference
 		public struct ReferencePath
@@ -23,34 +221,21 @@ namespace AssetUsageDetectorNamespace
 			}
 		}
 
-		// Credit: https://docs.unity3d.com/Manual/script-Serialization-Custom.html
-		[Serializable]
-		public class SerializableNode
-		{
-			public int instanceId;
-			public bool isUnityObject;
-			public string description;
+		private readonly string title;
+		private readonly bool clickable;
 
-			public List<int> links;
-			public List<string> linkDescriptions;
-		}
-
-		private string title;
-		private bool clickable;
-
-		private List<ReferenceNode> references;
+		private readonly List<ReferenceNode> references;
 		private List<ReferencePath> referencePathsShortUnique;
 		private List<ReferencePath> referencePathsShortest;
 
-		private List<SerializableNode> serializedNodes;
-		private List<int> initialSerializedNodes;
-
 		public int NumberOfReferences { get { return references.Count; } }
+		public ReferenceNode this[int index] { get { return references[index]; } }
 
-		public ReferenceHolder( string title, bool clickable )
+		public SearchResultGroup( string title, bool clickable )
 		{
 			this.title = title;
 			this.clickable = clickable;
+
 			references = new List<ReferenceNode>();
 			referencePathsShortUnique = null;
 			referencePathsShortest = null;
@@ -150,7 +335,7 @@ namespace AssetUsageDetectorNamespace
 		}
 
 		// Draw the results found for this container
-		public void DrawOnGUI( PathDrawingMode pathDrawingMode )
+		public void DrawOnGUI( SearchResultDrawParameters parameters )
 		{
 			Color c = GUI.color;
 			GUI.color = Color.cyan;
@@ -163,13 +348,12 @@ namespace AssetUsageDetectorNamespace
 
 			GUI.color = Color.yellow;
 
-			if( pathDrawingMode == PathDrawingMode.Full )
+			if( parameters.pathDrawingMode == PathDrawingMode.Full )
 			{
 				for( int i = 0; i < references.Count; i++ )
 				{
 					GUILayout.Space( 5 );
-
-					references[i].DrawOnGUIRecursively();
+					references[i].DrawOnGUIRecursively( parameters, null );
 				}
 			}
 			else
@@ -178,7 +362,7 @@ namespace AssetUsageDetectorNamespace
 					CalculateShortestPathsToReferences();
 
 				List<ReferencePath> pathsToDraw;
-				if( pathDrawingMode == PathDrawingMode.ShortRelevantParts )
+				if( parameters.pathDrawingMode == PathDrawingMode.ShortRelevantParts )
 					pathsToDraw = referencePathsShortUnique;
 				else
 					pathsToDraw = referencePathsShortest;
@@ -190,13 +374,13 @@ namespace AssetUsageDetectorNamespace
 					GUILayout.BeginHorizontal();
 
 					ReferencePath path = pathsToDraw[i];
-					path.startNode.DrawOnGUI( null );
+					path.startNode.DrawOnGUI( parameters, null );
 
 					ReferenceNode currentNode = path.startNode;
 					for( int j = 0; j < path.pathLinksToFollow.Length; j++ )
 					{
 						ReferenceNode.Link link = currentNode[path.pathLinksToFollow[j]];
-						link.targetNode.DrawOnGUI( link.description );
+						link.targetNode.DrawOnGUI( parameters, link.description );
 						currentNode = link.targetNode;
 					}
 
@@ -209,53 +393,37 @@ namespace AssetUsageDetectorNamespace
 			GUILayout.Space( 10 );
 		}
 
-		// Assembly reloading; serialize nodes in a way that Unity can serialize
-		public void OnBeforeSerialize()
+		// Serialize this result group
+		public SearchResult.SerializableResultGroup Serialize( Dictionary<ReferenceNode, int> nodeToIndex, List<SearchResult.SerializableNode> serializedNodes )
 		{
-			if( references == null )
-				return;
+			SearchResult.SerializableResultGroup serializedResultGroup = new SearchResult.SerializableResultGroup()
+			{
+				title = title,
+				clickable = clickable
+			};
 
-			if( serializedNodes == null )
-				serializedNodes = new List<SerializableNode>( references.Count * 5 );
-			else
-				serializedNodes.Clear();
+			if( references != null )
+			{
+				serializedResultGroup.initialSerializedNodes = new List<int>( references.Count );
 
-			if( initialSerializedNodes == null )
-				initialSerializedNodes = new List<int>( references.Count );
-			else
-				initialSerializedNodes.Clear();
+				for( int i = 0; i < references.Count; i++ )
+					serializedResultGroup.initialSerializedNodes.Add( references[i].SerializeRecursively( nodeToIndex, serializedNodes ) );
+			}
 
-			Dictionary<ReferenceNode, int> nodeToIndex = new Dictionary<ReferenceNode, int>( references.Count * 5 );
-			for( int i = 0; i < references.Count; i++ )
-				initialSerializedNodes.Add( references[i].SerializeRecursively( nodeToIndex, serializedNodes ) );
+			return serializedResultGroup;
 		}
 
-		// Assembly reloaded; deserialize nodes to construct the original graph
-		public void OnAfterDeserialize()
+		// Deserialize this result group from the serialized data
+		public void Deserialize( SearchResult.SerializableResultGroup serializedResultGroup, List<ReferenceNode> allNodes )
 		{
-			if( initialSerializedNodes == null || serializedNodes == null )
-				return;
-
-			if( references == null )
-				references = new List<ReferenceNode>( initialSerializedNodes.Count );
-			else
-				references.Clear();
-
-			List<ReferenceNode> allNodes = new List<ReferenceNode>( serializedNodes.Count );
-			for( int i = 0; i < serializedNodes.Count; i++ )
-				allNodes.Add( new ReferenceNode() );
-
-			for( int i = 0; i < serializedNodes.Count; i++ )
-				allNodes[i].Deserialize( serializedNodes[i], allNodes );
-
-			for( int i = 0; i < initialSerializedNodes.Count; i++ )
-				references.Add( allNodes[initialSerializedNodes[i]] );
+			if( serializedResultGroup.initialSerializedNodes != null )
+			{
+				for( int i = 0; i < serializedResultGroup.initialSerializedNodes.Count; i++ )
+					references.Add( allNodes[serializedResultGroup.initialSerializedNodes[i]] );
+			}
 
 			referencePathsShortUnique = null;
 			referencePathsShortest = null;
-
-			serializedNodes.Clear();
-			initialSerializedNodes.Clear();
 		}
 	}
 
@@ -349,13 +517,13 @@ namespace AssetUsageDetectorNamespace
 		}
 
 		// Calculate short unique paths that start with this node
-		public void CalculateShortUniquePaths( List<ReferenceHolder.ReferencePath> currentPaths )
+		public void CalculateShortUniquePaths( List<SearchResultGroup.ReferencePath> currentPaths )
 		{
 			CalculateShortUniquePaths( currentPaths, new List<ReferenceNode>( 8 ), new List<int>( 8 ) { -1 }, 0 );
 		}
 
 		// Just some boring calculations to find the short unique paths recursively
-		private void CalculateShortUniquePaths( List<ReferenceHolder.ReferencePath> shortestPaths, List<ReferenceNode> currentPath, List<int> currentPathIndices, int latestObjectIndexInPath )
+		private void CalculateShortUniquePaths( List<SearchResultGroup.ReferencePath> shortestPaths, List<ReferenceNode> currentPath, List<int> currentPathIndices, int latestObjectIndexInPath )
 		{
 			int currentIndex = currentPath.Count;
 			currentPath.Add( this );
@@ -390,7 +558,7 @@ namespace AssetUsageDetectorNamespace
 					for( int i = latestObjectIndexInPath + 1, j = 0; i < currentPathIndices.Count; i++, j++ )
 						pathIndices[j] = currentPathIndices[i];
 
-					shortestPaths.Add( new ReferenceHolder.ReferencePath( currentPath[latestObjectIndexInPath], pathIndices ) );
+					shortestPaths.Add( new SearchResultGroup.ReferencePath( currentPath[latestObjectIndexInPath], pathIndices ) );
 				}
 			}
 			else
@@ -410,11 +578,11 @@ namespace AssetUsageDetectorNamespace
 		}
 
 		// Draw all the paths that start with this node on GUI recursively
-		public void DrawOnGUIRecursively( string linkToPrevNodeDescription = null )
+		public void DrawOnGUIRecursively( SearchResultDrawParameters parameters, string linkToPrevNodeDescription )
 		{
 			GUILayout.BeginHorizontal();
 
-			DrawOnGUI( linkToPrevNodeDescription );
+			DrawOnGUI( parameters, linkToPrevNodeDescription );
 
 			if( links.Count > 0 )
 			{
@@ -423,7 +591,7 @@ namespace AssetUsageDetectorNamespace
 				for( int i = 0; i < links.Count; i++ )
 				{
 					ReferenceNode next = links[i].targetNode;
-					next.DrawOnGUIRecursively( links[i].description );
+					next.DrawOnGUIRecursively( parameters, links[i].description );
 				}
 
 				GUILayout.EndVertical();
@@ -433,36 +601,27 @@ namespace AssetUsageDetectorNamespace
 		}
 
 		// Draw only this node on GUI
-		public void DrawOnGUI( string linkToPrevNodeDescription )
+		public void DrawOnGUI( SearchResultDrawParameters parameters, string linkToPrevNodeDescription )
 		{
-			string label = GetNodeContent( linkToPrevNodeDescription );
+			string label = string.IsNullOrEmpty( linkToPrevNodeDescription ) ? description : ( linkToPrevNodeDescription + "\n" + description );
 			if( GUILayout.Button( label, Utilities.BoxGUIStyle, Utilities.GL_EXPAND_HEIGHT ) )
 			{
 				// If a reference is clicked, highlight it (either on Hierarchy view or Project view)
 				UnityObject.SelectInEditor();
 			}
 
-			if( AssetUsageDetector.showTooltips && Event.current.type == EventType.Repaint && GUILayoutUtility.GetLastRect().Contains( Event.current.mousePosition ) )
-				AssetUsageDetector.tooltip = label;
-		}
-
-		// Get the string representation of this node
-		private string GetNodeContent( string linkToPrevNodeDescription = null )
-		{
-			if( !string.IsNullOrEmpty( linkToPrevNodeDescription ) )
-				return linkToPrevNodeDescription + "\n" + description;
-
-			return description;
+			if( parameters.showTooltips && Event.current.type == EventType.Repaint && GUILayoutUtility.GetLastRect().Contains( Event.current.mousePosition ) )
+				parameters.tooltip = label;
 		}
 
 		// Serialize this node and its connected nodes recursively
-		public int SerializeRecursively( Dictionary<ReferenceNode, int> nodeToIndex, List<ReferenceHolder.SerializableNode> serializedNodes )
+		public int SerializeRecursively( Dictionary<ReferenceNode, int> nodeToIndex, List<SearchResult.SerializableNode> serializedNodes )
 		{
 			int index;
 			if( nodeToIndex.TryGetValue( this, out index ) )
 				return index;
 
-			ReferenceHolder.SerializableNode serializedNode = new ReferenceHolder.SerializableNode()
+			SearchResult.SerializableNode serializedNode = new SearchResult.SerializableNode()
 			{
 				instanceId = instanceId ?? 0,
 				isUnityObject = instanceId.HasValue,
@@ -489,7 +648,7 @@ namespace AssetUsageDetectorNamespace
 		}
 
 		// Deserialize this node and its links from the serialized data
-		public void Deserialize( ReferenceHolder.SerializableNode serializedNode, List<ReferenceNode> allNodes )
+		public void Deserialize( SearchResult.SerializableNode serializedNode, List<ReferenceNode> allNodes )
 		{
 			if( serializedNode.isUnityObject )
 				instanceId = serializedNode.instanceId;
