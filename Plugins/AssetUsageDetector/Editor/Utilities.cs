@@ -130,10 +130,7 @@ namespace AssetUsageDetectorNamespace
 			// If CTRL key is pressed, do a multi-select;
 			// otherwise select only the clicked object and ping it in editor
 			if( !e.control )
-			{
-				obj.PingInEditor();
-				Selection.activeObject = obj;
-			}
+				Selection.activeObject = obj.PingInEditor();
 			else
 			{
 				Component objAsComp = obj as Component;
@@ -178,10 +175,12 @@ namespace AssetUsageDetectorNamespace
 		}
 
 		// Ping an object in either Project view or Hierarchy view
-		public static void PingInEditor( this Object obj )
+		public static Object PingInEditor( this Object obj )
 		{
 			if( obj is Component )
 				obj = ( (Component) obj ).gameObject;
+
+			Object selection = obj;
 
 			// Pinging a prefab only works if the pinged object is the root of the prefab
 			// or a direct child of it. Pinging any grandchildren of the prefab
@@ -191,6 +190,41 @@ namespace AssetUsageDetectorNamespace
 			{
 #if UNITY_2018_3_OR_NEWER
 				Transform objTR = ( (GameObject) obj ).transform.root;
+
+				PrefabAssetType prefabAssetType = PrefabUtility.GetPrefabAssetType( objTR.gameObject );
+				if( prefabAssetType == PrefabAssetType.Regular || prefabAssetType == PrefabAssetType.Variant )
+				{
+					string assetPath = AssetDatabase.GetAssetPath( objTR.gameObject );
+					var openPrefabStage = UnityEditor.Experimental.SceneManagement.PrefabStageUtility.GetCurrentPrefabStage();
+					if( openPrefabStage != null && openPrefabStage.stageHandle.IsValid() && assetPath == openPrefabStage.prefabAssetPath )
+					{
+						// Ping the object in prefab stage
+						Transform targetParent = objTR;
+						Transform selectedObject = ( (GameObject) obj ).transform;
+						objTR = openPrefabStage.prefabContentsRoot.transform;
+						while( targetParent != selectedObject )
+						{
+							Transform temp = selectedObject;
+							while( temp.parent != targetParent )
+								temp = temp.parent;
+
+							objTR = objTR.GetChild( temp.GetSiblingIndex() );
+							targetParent = temp;
+						}
+
+						selection = objTR.gameObject;
+					}
+#if UNITY_2019_1_OR_NEWER
+					else if( obj != objTR.gameObject )
+					{
+						Debug.Log( "Open " + assetPath + " in prefab mode to select and edit " + obj.name );
+						selection = objTR.gameObject;
+					}
+#else
+					else
+						Debug.Log( "Open " + assetPath + " in prefab mode to select and edit " + obj.name );
+#endif
+				}
 #else
 				Transform objTR = ( (GameObject) obj ).transform;
 				while( objTR.parent != null && objTR.parent.parent != null )
@@ -201,6 +235,7 @@ namespace AssetUsageDetectorNamespace
 			}
 
 			EditorGUIUtility.PingObject( obj );
+			return selection;
 		}
 
 		// Check if the field is serializable
@@ -285,6 +320,10 @@ namespace AssetUsageDetectorNamespace
 			// Ignore indexer properties
 			if( propertyInfo.GetIndexParameters().Length > 0 )
 				return null;
+
+			// Can't use PropertyWrapper (which uses CreateDelegate) for property getters of structs
+			if( propertyInfo.DeclaringType.IsValueType )
+				return propertyInfo.CanRead ? ( ( obj ) => propertyInfo.GetValue( obj, null ) ) : (VariableGetVal) null;
 
 			MethodInfo mi = propertyInfo.GetGetMethod( true );
 			if( mi != null )

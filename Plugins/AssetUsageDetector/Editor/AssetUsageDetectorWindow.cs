@@ -291,6 +291,8 @@ namespace AssetUsageDetectorNamespace
 					EditorGUILayout.HelpBox( "ERROR: searchResult is null", MessageType.Error );
 					return;
 				}
+				else if( !searchResult.SearchCompletedSuccessfully )
+					EditorGUILayout.HelpBox( "ERROR: search was interrupted, check the logs for more info", MessageType.Error );
 
 				Color c = GUI.color;
 				GUI.color = Color.green;
@@ -299,7 +301,7 @@ namespace AssetUsageDetectorNamespace
 
 				GUILayout.Space( 10 );
 
-				if( searchResult.Count == 0 )
+				if( searchResult.NumberOfGroups == 0 )
 					GUILayout.Box( "No results found...", Utilities.GL_EXPAND_WIDTH );
 				else
 				{

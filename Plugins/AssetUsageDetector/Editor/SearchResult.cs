@@ -46,23 +46,25 @@ namespace AssetUsageDetectorNamespace
 			public List<string> linkDescriptions;
 		}
 
+		private bool success;
 		private List<SearchResultGroup> result;
 		private SceneSetup[] initialSceneSetup;
 
 		private List<SerializableNode> serializedNodes;
 		private List<SerializableResultGroup> serializedGroups;
 
-		public int Count { get { return result.Count; } }
+		public int NumberOfGroups { get { return result.Count; } }
 		public SearchResultGroup this[int index] { get { return result[index]; } }
 
-		public bool SearchCompletedSuccessfully { get { return result != null; } }
+		public bool SearchCompletedSuccessfully { get { return success; } }
 		public bool InitialSceneSetupConfigured { get { return initialSceneSetup != null; } }
 
-		public SearchResult( List<SearchResultGroup> result, SceneSetup[] initialSceneSetup )
+		public SearchResult( bool success, List<SearchResultGroup> result, SceneSetup[] initialSceneSetup )
 		{
 			if( result == null )
 				result = new List<SearchResultGroup>( 0 );
 
+			this.success = success;
 			this.result = result;
 			this.initialSceneSetup = initialSceneSetup;
 		}
@@ -79,6 +81,7 @@ namespace AssetUsageDetectorNamespace
 				// Show tooltip at mouse position
 				Vector2 mousePos = Event.current.mousePosition;
 				Vector2 size = Utilities.TooltipGUIStyle.CalcSize( new GUIContent( parameters.tooltip ) );
+				size.x += 10f;
 
 				GUI.Box( new Rect( new Vector2( mousePos.x - size.x * 0.5f, mousePos.y - size.y ), size ), parameters.tooltip, Utilities.TooltipGUIStyle );
 			}
@@ -250,8 +253,34 @@ namespace AssetUsageDetectorNamespace
 		// Initializes commonly used variables of the nodes
 		public void InitializeNodes()
 		{
-			for( int i = 0; i < references.Count; i++ )
-				references[i].InitializeRecursively();
+			for( int i = references.Count - 1; i >= 0; i-- )
+			{
+				ReferenceNode node = references[i];
+				if( node.NumberOfOutgoingLinks == 0 )
+					references.RemoveAt( i );
+				else
+				{
+					// For simplicity's sake, get rid of root nodes that are
+					// already part of another node's hierarchy
+					bool isRootNodeChildOfOtherNode = false;
+					for( int j = references.Count - 1; j >= 0; j-- )
+					{
+						if( i == j )
+							continue;
+
+						if( references[j].NodeExistsInChildrenRecursive( node ) )
+						{
+							isRootNodeChildOfOtherNode = true;
+							break;
+						}
+					}
+
+					if( isRootNodeChildOfOtherNode )
+						references.RemoveAt( i );
+					else
+						node.InitializeRecursively();
+				}
+			}
 		}
 
 		// Check if node exists in this results set
@@ -476,6 +505,23 @@ namespace AssetUsageDetectorNamespace
 				if( !string.IsNullOrEmpty( description ) )
 					description = "[" + description + "]";
 
+				// Avoid duplicate links
+				for( int i = 0; i < links.Count; i++ )
+				{
+					if( links[i].targetNode == nextNode )
+					{
+						if( !string.IsNullOrEmpty( description ) )
+						{
+							if( !string.IsNullOrEmpty( links[i].description ) )
+								links[i] = new Link( links[i].targetNode, string.Concat( links[i].description, Environment.NewLine, description ) );
+							else
+								links[i] = new Link( links[i].targetNode, description );
+						}
+
+						return;
+					}
+				}
+
 				links.Add( new Link( nextNode, description ) );
 			}
 		}
@@ -507,6 +553,24 @@ namespace AssetUsageDetectorNamespace
 
 			for( int i = 0; i < links.Count; i++ )
 				links[i].targetNode.InitializeRecursively();
+		}
+
+		// Returns whether or not specified node is part of this node's siblings
+		public bool NodeExistsInChildrenRecursive( ReferenceNode node )
+		{
+			for( int i = 0; i < links.Count; i++ )
+			{
+				if( links[i].targetNode == node )
+					return true;
+			}
+
+			for( int i = 0; i < links.Count; i++ )
+			{
+				if( links[i].targetNode.NodeExistsInChildrenRecursive( node ) )
+					return true;
+			}
+
+			return false;
 		}
 
 		// Clear this node so that it can be reused later
