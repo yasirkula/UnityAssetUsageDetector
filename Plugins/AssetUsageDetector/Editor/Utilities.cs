@@ -5,7 +5,7 @@ using UnityEditor;
 using UnityEngine;
 using Object = UnityEngine.Object;
 
-namespace AssetUsageDetectorNamespace
+namespace AssetUsageDetectorNamespace.Extras
 {
 	public static class Utilities
 	{
@@ -13,7 +13,9 @@ namespace AssetUsageDetectorNamespace
 		private static readonly HashSet<Type> primitiveUnityTypes = new HashSet<Type>() {
 				typeof( string ), typeof( Vector4 ), typeof( Vector3 ), typeof( Vector2 ), typeof( Rect ),
 				typeof( Quaternion ), typeof( Color ), typeof( Color32 ), typeof( LayerMask ),
-				typeof( Matrix4x4 ), typeof( AnimationCurve ), typeof( Gradient ), typeof( RectOffset ) };
+				typeof( Matrix4x4 ), typeof( AnimationCurve ), typeof( Gradient ), typeof( RectOffset ),
+				typeof( Assembly ) // Searching assembly variables for reference throws InvalidCastException on .NET 4.0 runtime
+		};
 
 		private static readonly HashSet<string> folderContentsSet = new HashSet<string>();
 

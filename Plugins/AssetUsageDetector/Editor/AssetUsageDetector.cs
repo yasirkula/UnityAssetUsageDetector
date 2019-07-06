@@ -1,5 +1,6 @@
 // Asset Usage Detector - by Suleyman Yasir KULA (yasirkula@gmail.com)
 
+using AssetUsageDetectorNamespace.Extras;
 using UnityEngine;
 using UnityEditor;
 using UnityEngine.SceneManagement;
@@ -24,6 +25,7 @@ namespace AssetUsageDetectorNamespace
 {
 	[Flags]
 	public enum SceneSearchMode { None = 0, OpenScenes = 1, ScenesInBuildSettingsAll = 2, ScenesInBuildSettingsTickedOnly = 4, AllScenes = 8 };
+	public enum PathDrawingMode { Full = 0, ShortRelevantParts = 1, Shortest = 2 };
 
 	public class AssetUsageDetector
 	{
@@ -389,15 +391,7 @@ namespace AssetUsageDetectorNamespace
 						searchResult.Add( currentSearchResultGroup );
 				}
 
-				for( int i = 0; i < searchResult.Count; i++ )
-					searchResult[i].InitializeNodes();
-
-				// If there are any empty groups after node initialization, remove those groups
-				for( int i = searchResult.Count - 1; i >= 0; i-- )
-				{
-					if( searchResult[i].NumberOfReferences == 0 )
-						searchResult.RemoveAt( i );
-				}
+				InitializeSearchResultNodes( searchResult );
 
 				// Log some c00l stuff to console
 				Debug.Log( "Searched " + searchedObjectsCount + " objects in " + ( EditorApplication.timeSinceStartup - searchStartTime ).ToString( "F2" ) + " seconds" );
@@ -407,12 +401,33 @@ namespace AssetUsageDetectorNamespace
 			catch( Exception e )
 			{
 				Debug.LogException( e );
+
+				try
+				{
+					InitializeSearchResultNodes( searchResult );
+				}
+				catch
+				{ }
+
 				return new SearchResult( false, searchResult, initialSceneSetup );
 			}
 			finally
 			{
 				currentSearchResultGroup = null;
 				currentObject = null;
+			}
+		}
+
+		private void InitializeSearchResultNodes( List<SearchResultGroup> searchResult )
+		{
+			for( int i = 0; i < searchResult.Count; i++ )
+				searchResult[i].InitializeNodes();
+
+			// If there are any empty groups after node initialization, remove those groups
+			for( int i = searchResult.Count - 1; i >= 0; i-- )
+			{
+				if( searchResult[i].NumberOfReferences == 0 )
+					searchResult.RemoveAt( i );
 			}
 		}
 
@@ -1101,6 +1116,8 @@ namespace AssetUsageDetectorNamespace
 					string title = "Please wait...";
 					string message = "Generating cache for the first time";
 
+					double startTime = EditorApplication.timeSinceStartup;
+
 					HashSet<string> temp = new HashSet<string>();
 					EditorUtility.DisplayProgressBar( title, message, 0f );
 
@@ -1111,6 +1128,9 @@ namespace AssetUsageDetectorNamespace
 					}
 
 					EditorUtility.ClearProgressBar();
+
+					Debug.Log( "Cache generated in " + ( EditorApplication.timeSinceStartup - startTime ).ToString( "F2" ) + " seconds" );
+					SaveCache();
 				}
 			}
 		}

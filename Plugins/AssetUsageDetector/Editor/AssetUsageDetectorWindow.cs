@@ -8,14 +8,21 @@ using System.Collections.Generic;
 using System.Reflection;
 using Object = UnityEngine.Object;
 
-namespace AssetUsageDetectorNamespace
+namespace AssetUsageDetectorNamespace.Extras
 {
 	public enum Phase { Setup, Processing, Complete };
-	public enum PathDrawingMode { Full, ShortRelevantParts, Shortest };
 
 	public class AssetUsageDetectorWindow : EditorWindow
 	{
 		private const float PLAY_MODE_REFRESH_INTERVAL = 1f; // Interval to refresh the editor window in play mode
+
+		private const string PREFS_SEARCH_SCENES = "AUD_SceneSearch";
+		private const string PREFS_SEARCH_ASSETS = "AUD_AssetsSearch";
+		private const string PREFS_SEARCH_DEPTH_LIMIT = "AUD_Depth";
+		private const string PREFS_SEARCH_FIELDS = "AUD_Fields";
+		private const string PREFS_SEARCH_PROPERTIES = "AUD_Properties";
+		private const string PREFS_PATH_DRAWING_MODE = "AUD_PathDrawing";
+		private const string PREFS_SHOW_TOOLTIPS = "AUD_Tooltips";
 
 		private AssetUsageDetector core = new AssetUsageDetector();
 		private SearchResult searchResult; // Overall search results
@@ -39,9 +46,7 @@ namespace AssetUsageDetectorNamespace
 		private string errorMessage = string.Empty;
 		private bool noAssetDatabaseChanges = false;
 
-		// Fetch public, protected and private non-static fields and properties from objects by default
-		private BindingFlags fieldModifiers = BindingFlags.Instance | BindingFlags.DeclaredOnly | BindingFlags.Public | BindingFlags.NonPublic;
-		private BindingFlags propertyModifiers = BindingFlags.Instance | BindingFlags.DeclaredOnly | BindingFlags.Public | BindingFlags.NonPublic;
+		private BindingFlags fieldModifiers, propertyModifiers;
 
 		private SearchResultDrawParameters searchResultDrawParameters = new SearchResultDrawParameters( PathDrawingMode.ShortRelevantParts, false );
 
@@ -56,22 +61,69 @@ namespace AssetUsageDetectorNamespace
 			AssetUsageDetectorWindow window = GetWindow<AssetUsageDetectorWindow>();
 			window.titleContent = new GUIContent( "Asset Usage Detector" );
 			window.minSize = new Vector2( 325f, 220f );
-			window.Show();
-		}
 
-		private void OnDisable()
-		{
-			if( core != null )
-				core.SaveCache();
+			window.LoadPrefs();
+			window.Show();
 		}
 
 		private void OnDestroy()
 		{
-			if( searchResult != null && currentPhase == Phase.Complete && !EditorApplication.isPlaying && searchResult.InitialSceneSetupConfigured )
+			if( core != null )
+				core.SaveCache();
+
+			SavePrefs();
+
+			if( searchResult != null && currentPhase == Phase.Complete && !EditorApplication.isPlaying && searchResult.IsSceneSetupDifferentThanCurrentSetup() )
 			{
 				if( EditorUtility.DisplayDialog( "Scenes", "Restore initial scene setup?", "Yes", "Leave it as is" ) )
 					searchResult.RestoreInitialSceneSetup();
 			}
+		}
+
+		private void SavePrefs()
+		{
+			SceneSearchMode sceneSearchMode = SceneSearchMode.None;
+			if( searchInOpenScenes )
+				sceneSearchMode |= SceneSearchMode.OpenScenes;
+			if( searchInScenesInBuild )
+				sceneSearchMode |= searchInScenesInBuildTickedOnly ? SceneSearchMode.ScenesInBuildSettingsTickedOnly : SceneSearchMode.ScenesInBuildSettingsAll;
+			if( searchInAllScenes )
+				sceneSearchMode |= SceneSearchMode.AllScenes;
+
+			EditorPrefs.SetInt( PREFS_SEARCH_SCENES, (int) sceneSearchMode );
+			EditorPrefs.SetBool( PREFS_SEARCH_ASSETS, searchInAssetsFolder );
+			EditorPrefs.SetInt( PREFS_SEARCH_DEPTH_LIMIT, searchDepthLimit );
+			EditorPrefs.SetInt( PREFS_SEARCH_FIELDS, (int) fieldModifiers );
+			EditorPrefs.SetInt( PREFS_SEARCH_PROPERTIES, (int) propertyModifiers );
+			EditorPrefs.SetInt( PREFS_PATH_DRAWING_MODE, (int) searchResultDrawParameters.pathDrawingMode );
+			EditorPrefs.SetBool( PREFS_SHOW_TOOLTIPS, searchResultDrawParameters.showTooltips );
+		}
+
+		private void LoadPrefs()
+		{
+			SceneSearchMode sceneSearchMode = (SceneSearchMode) EditorPrefs.GetInt( PREFS_SEARCH_SCENES, (int) ( SceneSearchMode.OpenScenes | SceneSearchMode.ScenesInBuildSettingsTickedOnly | SceneSearchMode.AllScenes ) );
+			searchInOpenScenes = ( sceneSearchMode & SceneSearchMode.OpenScenes ) == SceneSearchMode.OpenScenes;
+			searchInScenesInBuild = ( sceneSearchMode & SceneSearchMode.ScenesInBuildSettingsAll ) == SceneSearchMode.ScenesInBuildSettingsAll || ( sceneSearchMode & SceneSearchMode.ScenesInBuildSettingsTickedOnly ) == SceneSearchMode.ScenesInBuildSettingsTickedOnly;
+			searchInScenesInBuildTickedOnly = ( sceneSearchMode & SceneSearchMode.ScenesInBuildSettingsAll ) != SceneSearchMode.ScenesInBuildSettingsAll;
+			searchInAllScenes = ( sceneSearchMode & SceneSearchMode.AllScenes ) == SceneSearchMode.AllScenes;
+
+			searchInAssetsFolder = EditorPrefs.GetBool( PREFS_SEARCH_ASSETS, true );
+			searchDepthLimit = EditorPrefs.GetInt( PREFS_SEARCH_DEPTH_LIMIT, 4 );
+
+			// Fetch public, protected and private non-static fields and properties from objects by default
+			fieldModifiers = (BindingFlags) EditorPrefs.GetInt( PREFS_SEARCH_FIELDS, (int) ( BindingFlags.Instance | BindingFlags.DeclaredOnly | BindingFlags.Public | BindingFlags.NonPublic ) );
+			propertyModifiers = (BindingFlags) EditorPrefs.GetInt( PREFS_SEARCH_PROPERTIES, (int) ( BindingFlags.Instance | BindingFlags.DeclaredOnly | BindingFlags.Public | BindingFlags.NonPublic ) );
+
+			try
+			{
+				searchResultDrawParameters.pathDrawingMode = (PathDrawingMode) EditorPrefs.GetInt( PREFS_PATH_DRAWING_MODE, (int) PathDrawingMode.ShortRelevantParts );
+			}
+			catch
+			{
+				searchResultDrawParameters.pathDrawingMode = PathDrawingMode.ShortRelevantParts;
+			}
+
+			searchResultDrawParameters.showTooltips = EditorPrefs.GetBool( PREFS_SHOW_TOOLTIPS, false );
 		}
 
 		private void Update()

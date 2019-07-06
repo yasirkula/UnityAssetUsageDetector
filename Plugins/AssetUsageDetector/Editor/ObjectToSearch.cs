@@ -4,7 +4,7 @@ using UnityEditor;
 using UnityEngine;
 using Object = UnityEngine.Object;
 
-namespace AssetUsageDetectorNamespace
+namespace AssetUsageDetectorNamespace.Extras
 {
 	[Serializable]
 	public class ObjectToSearch

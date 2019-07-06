@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Reflection;
 
-namespace AssetUsageDetectorNamespace
+namespace AssetUsageDetectorNamespace.Extras
 {
 	// Delegate to get the value of a variable (either field or property)
 	public delegate object VariableGetVal( object obj );

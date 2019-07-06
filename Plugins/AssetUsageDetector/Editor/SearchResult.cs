@@ -1,4 +1,5 @@
-﻿using System;
+﻿using AssetUsageDetectorNamespace.Extras;
+using System;
 using System.Collections.Generic;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -119,6 +120,38 @@ namespace AssetUsageDetectorNamespace
 			}
 
 			return null;
+		}
+
+		// Returns if RestoreInitialSceneSetup will have any effect on the current scene setup
+		public bool IsSceneSetupDifferentThanCurrentSetup()
+		{
+			if( initialSceneSetup == null )
+				return false;
+
+			SceneSetup[] sceneFinalSetup = EditorSceneManager.GetSceneManagerSetup();
+			if( initialSceneSetup.Length != sceneFinalSetup.Length )
+				return true;
+
+			for( int i = 0; i < sceneFinalSetup.Length; i++ )
+			{
+				bool sceneIsOneOfInitials = false;
+				for( int j = 0; j < initialSceneSetup.Length; j++ )
+				{
+					if( sceneFinalSetup[i].path == initialSceneSetup[j].path )
+					{
+						if( sceneFinalSetup[i].isLoaded != initialSceneSetup[j].isLoaded )
+							return true;
+
+						sceneIsOneOfInitials = true;
+						break;
+					}
+				}
+
+				if( !sceneIsOneOfInitials )
+					return true;
+			}
+
+			return false;
 		}
 
 		// Close the scenes that were not part of the initial scene setup
