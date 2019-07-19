@@ -13,7 +13,9 @@ using System.Runtime.Serialization.Formatters.Binary;
 using System.IO;
 #if UNITY_2017_1_OR_NEWER
 using UnityEngine.U2D;
+#if UNITY_2018_2_OR_NEWER
 using UnityEditor.U2D;
+#endif
 using UnityEngine.Playables;
 #endif
 #if UNITY_2017_2_OR_NEWER
@@ -816,19 +818,29 @@ namespace AssetUsageDetectorNamespace
 		{
 			ReferenceNode referenceNode = PopReferenceNode( spriteAtlas );
 
+			SerializedObject spriteAtlasSO = new SerializedObject( spriteAtlas );
 			if( spriteAtlas.isVariant )
 			{
-				Object masterAtlas = new SerializedObject( spriteAtlas ).FindProperty( "m_MasterAtlas" ).objectReferenceValue;
+				Object masterAtlas = spriteAtlasSO.FindProperty( "m_MasterAtlas" ).objectReferenceValue;
 				if( objectsToSearchSet.Contains( masterAtlas ) )
 					referenceNode.AddLinkTo( SearchObject( masterAtlas ), "Master Atlas" );
 			}
 
+#if UNITY_2018_2_OR_NEWER
 			Object[] packables = spriteAtlas.GetPackables();
 			if( packables != null )
 			{
 				for( int i = 0; i < packables.Length; i++ )
 					referenceNode.AddLinkTo( SearchObject( packables[i] ), "Packed Texture" );
 			}
+#else
+			SerializedProperty packables = spriteAtlasSO.FindProperty( "m_EditorData.packables" );
+			if( packables != null )
+			{
+				for( int i = 0, length = packables.arraySize; i < length; i++ )
+					referenceNode.AddLinkTo( SearchObject( packables.GetArrayElementAtIndex( i ).objectReferenceValue ), "Packed Texture" );
+			}
+#endif
 
 			return referenceNode;
 		}
