@@ -3,6 +3,7 @@
 using AssetUsageDetectorNamespace.Extras;
 using UnityEngine;
 using UnityEditor;
+using UnityEditor.Animations;
 using UnityEngine.SceneManagement;
 using UnityEditor.SceneManagement;
 using System.Collections;
@@ -49,12 +50,17 @@ namespace AssetUsageDetectorNamespace
 		[Serializable]
 		private class CacheEntry
 		{
+			public enum Result { Unknown = 0, No = 1, Yes = 2 };
+
 			public string[] dependencies;
 			public string hash;
 			public bool hasSelfDependency;
 
 			[NonSerialized]
 			public bool verified;
+
+			[NonSerialized]
+			public Result searchResult;
 
 			public CacheEntry( string path )
 			{
@@ -108,6 +114,8 @@ namespace AssetUsageDetectorNamespace
 		private Dictionary<string, ReferenceNode> searchedObjects; // An optimization to search an object only once (key is a hash of the searched object)
 		private Dictionary<string, CacheEntry> assetDependencyCache; // An optimization to fetch the dependencies of an asset only once (key is the path of the asset)
 
+		private Dictionary<Type, Func<Object, ReferenceNode>> typeToSearchFunction; // Dictionary to quickly find the function to search a specific type with
+
 		private Stack<object> callStack; // Stack of SearchObject function parameters to avoid infinite loops (which happens when same object is passed as parameter to function)
 
 		private bool searchPrefabConnections;
@@ -145,6 +153,9 @@ namespace AssetUsageDetectorNamespace
 
 			// Get the scenes that are open right now
 			SceneSetup[] initialSceneSetup = !EditorApplication.isPlaying ? EditorSceneManager.GetSceneManagerSetup() : null;
+
+			// Make sure the AssetDatabase is up-to-date
+			AssetDatabase.SaveAssets();
 
 			try
 			{
@@ -208,6 +219,29 @@ namespace AssetUsageDetectorNamespace
 				{
 					foreach( var cacheEntry in assetDependencyCache.Values )
 						cacheEntry.verified = false;
+				}
+
+				foreach( var cacheEntry in assetDependencyCache.Values )
+					cacheEntry.searchResult = CacheEntry.Result.Unknown;
+
+				if( typeToSearchFunction == null )
+				{
+					typeToSearchFunction = new Dictionary<Type, Func<Object, ReferenceNode>>()
+					{
+						{ typeof( GameObject ), SearchGameObject },
+						{ typeof( Material ), SearchMaterial },
+						{ typeof( RuntimeAnimatorController ), SearchAnimatorController },
+						{ typeof( AnimatorOverrideController ), SearchAnimatorController },
+						{ typeof( AnimatorController ), SearchAnimatorController },
+						{ typeof( AnimatorStateMachine ), SearchAnimatorStateMachine },
+						{ typeof( AnimatorState ), SearchAnimatorState },
+						{ typeof( AnimatorStateTransition ), SearchAnimatorStateTransition },
+						{ typeof( BlendTree ), SearchBlendTree },
+						{ typeof( AnimationClip ), SearchAnimationClip },
+#if UNITY_2017_1_OR_NEWER
+						{ typeof( SpriteAtlas ), SearchSpriteAtlas },
+#endif
+					};
 				}
 
 				prevFieldModifiers = fieldModifiers;
@@ -352,7 +386,7 @@ namespace AssetUsageDetectorNamespace
 						// If asset resides inside the Assets directory and is not a scene asset
 						if( path.StartsWith( "Assets/" ) && !path.EndsWith( ".unity" ) )
 						{
-							if( !AssetHasAnyReferenceTo( path, assetsToSearchPathsSet ) )
+							if( !AssetHasAnyReference( path ) )
 								continue;
 
 							Object[] assets = AssetDatabase.LoadAllAssetsAtPath( path );
@@ -360,7 +394,13 @@ namespace AssetUsageDetectorNamespace
 								continue;
 
 							for( int i = 0; i < assets.Length; i++ )
+							{
+								// Components are already searched while searching the GameObject
+								if( assets[i] is Component )
+									continue;
+
 								BeginSearchObject( assets[i] );
+							}
 						}
 					}
 
@@ -490,7 +530,7 @@ namespace AssetUsageDetectorNamespace
 			bool canContainSceneObjectReference = scene.isLoaded && ( !EditorSceneManager.preventCrossSceneReferences || sceneObjectsToSearchScenesSet.Contains( scenePath ) );
 			if( !canContainSceneObjectReference )
 			{
-				bool canContainAssetReference = AssetHasAnyReferenceTo( scenePath, assetsToSearchPathsSet );
+				bool canContainAssetReference = assetsToSearchSet.Count > 0 && ( EditorApplication.isPlaying || AssetHasAnyReference( scenePath ) );
 				if( !canContainAssetReference )
 					return;
 			}
@@ -601,7 +641,7 @@ namespace AssetUsageDetectorNamespace
 				}
 
 				// If the Object is an asset, search it in detail only if its dependencies contain at least one of the searched asset(s)
-				if( unityObject.IsAsset() && !AssetHasAnyReferenceTo( AssetDatabase.GetAssetPath( unityObject ), assetsToSearchPathsSet ) )
+				if( unityObject.IsAsset() && ( assetsToSearchSet.Count == 0 || !AssetHasAnyReference( AssetDatabase.GetAssetPath( unityObject ) ) ) )
 				{
 					searchedObjects.Add( objHash, null );
 					return null;
@@ -610,20 +650,11 @@ namespace AssetUsageDetectorNamespace
 				callStack.Push( unityObject );
 
 				// Search the Object in detail
-				if( unityObject is GameObject )
-					result = SearchGameObject( (GameObject) unityObject );
+				Func<Object, ReferenceNode> func;
+				if( typeToSearchFunction.TryGetValue( unityObject.GetType(), out func ) )
+					result = func( unityObject );
 				else if( unityObject is Component )
-					result = SearchComponent( (Component) unityObject );
-				else if( unityObject is Material )
-					result = SearchMaterial( (Material) unityObject );
-				else if( unityObject is RuntimeAnimatorController )
-					result = SearchAnimatorController( (RuntimeAnimatorController) unityObject );
-				else if( unityObject is AnimationClip )
-					result = SearchAnimationClip( (AnimationClip) unityObject );
-#if UNITY_2017_1_OR_NEWER
-				else if( unityObject is SpriteAtlas )
-					result = SearchSpriteAtlas( (SpriteAtlas) unityObject );
-#endif
+					result = SearchComponent( unityObject );
 				else
 				{
 					result = PopReferenceNode( unityObject );
@@ -657,14 +688,15 @@ namespace AssetUsageDetectorNamespace
 			// Cache the search result if we are skimming through a class (not a struct; i.e. objHash != null)
 			// and if the object is a UnityEngine.Object (if not, cache the result only if we have actually found something
 			// or we are at the root of the search; i.e. currentDepth == 0)
-			if( ( result != null || unityObject != null || currentDepth == 0 ) && objHash != null )
+			if( objHash != null && ( result != null || unityObject != null || currentDepth == 0 ) )
 				searchedObjects.Add( objHash, result );
 
 			return result;
 		}
 
-		private ReferenceNode SearchGameObject( GameObject go )
+		private ReferenceNode SearchGameObject( Object unityObject )
 		{
+			GameObject go = (GameObject) unityObject;
 			ReferenceNode referenceNode = PopReferenceNode( go );
 
 			// Check if this GameObject's prefab is one of the selected assets
@@ -688,8 +720,10 @@ namespace AssetUsageDetectorNamespace
 			return referenceNode;
 		}
 
-		private ReferenceNode SearchComponent( Component component )
+		private ReferenceNode SearchComponent( Object unityObject )
 		{
+			Component component = (Component) unityObject;
+
 			// Ignore Transform component (no object field to search for)
 			if( component is Transform )
 				return null;
@@ -703,8 +737,7 @@ namespace AssetUsageDetectorNamespace
 				if( objectsToSearchSet.Contains( script ) )
 					referenceNode.AddLinkTo( GetReferenceNode( script ) );
 			}
-
-			if( searchRenderers && component is Renderer )
+			else if( searchRenderers && component is Renderer )
 			{
 				// If an asset is a shader, texture or material, and this component is a Renderer,
 				// search it for references
@@ -712,23 +745,21 @@ namespace AssetUsageDetectorNamespace
 				for( int j = 0; j < materials.Length; j++ )
 					referenceNode.AddLinkTo( SearchObject( materials[j] ) );
 			}
-
-			if( component is Animation )
+			else if( component is Animation )
 			{
 				// If this component is an Animation, search its animation clips for references
 				foreach( AnimationState anim in (Animation) component )
 					referenceNode.AddLinkTo( SearchObject( anim.clip ) );
 			}
-
-			if( component is Animator )
+			else if( component is Animator )
 			{
 				// If this component is an Animator, search its animation clips for references
 				referenceNode.AddLinkTo( SearchObject( ( (Animator) component ).runtimeAnimatorController ) );
 			}
-
 #if UNITY_2017_2_OR_NEWER
-			if( component is Tilemap )
+			else if( component is Tilemap )
 			{
+				// If this component is a Tilemap, search its tiles for references
 				TileBase[] tiles = new TileBase[( (Tilemap) component ).GetUsedTilesCount()];
 				( (Tilemap) component ).GetUsedTilesNonAlloc( tiles );
 
@@ -739,10 +770,10 @@ namespace AssetUsageDetectorNamespace
 				}
 			}
 #endif
-
 #if UNITY_2017_1_OR_NEWER
-			if( component is PlayableDirector )
+			else if( component is PlayableDirector )
 			{
+				// If this component is a PlayableDirectory, search its PlayableAsset's scene bindings for references
 				PlayableAsset playableAsset = ( (PlayableDirector) component ).playableAsset;
 				if( playableAsset != null && !playableAsset.Equals( null ) )
 				{
@@ -757,8 +788,9 @@ namespace AssetUsageDetectorNamespace
 			return referenceNode;
 		}
 
-		private ReferenceNode SearchMaterial( Material material )
+		private ReferenceNode SearchMaterial( Object unityObject )
 		{
+			Material material = (Material) unityObject;
 			ReferenceNode referenceNode = PopReferenceNode( material );
 
 			if( searchMaterialsForShader && objectsToSearchSet.Contains( material.shader ) )
@@ -785,19 +817,101 @@ namespace AssetUsageDetectorNamespace
 			return referenceNode;
 		}
 
-		private ReferenceNode SearchAnimatorController( RuntimeAnimatorController controller )
+		private ReferenceNode SearchAnimatorController( Object unityObject )
 		{
+			RuntimeAnimatorController controller = (RuntimeAnimatorController) unityObject;
 			ReferenceNode referenceNode = PopReferenceNode( controller );
 
-			AnimationClip[] animClips = controller.animationClips;
-			for( int j = 0; j < animClips.Length; j++ )
-				referenceNode.AddLinkTo( SearchObject( animClips[j] ) );
+			if( controller is AnimatorController )
+			{
+				AnimatorControllerLayer[] layers = ( (AnimatorController) controller ).layers;
+				for( int i = 0; i < layers.Length; i++ )
+				{
+					if( objectsToSearchSet.Contains( layers[i].avatarMask ) )
+						referenceNode.AddLinkTo( GetReferenceNode( layers[i].avatarMask ), layers[i].name + " Mask" );
+
+					referenceNode.AddLinkTo( SearchObject( layers[i].stateMachine ) );
+				}
+			}
+			else
+			{
+				AnimationClip[] animClips = controller.animationClips;
+				for( int i = 0; i < animClips.Length; i++ )
+					referenceNode.AddLinkTo( SearchObject( animClips[i] ) );
+			}
 
 			return referenceNode;
 		}
 
-		private ReferenceNode SearchAnimationClip( AnimationClip clip )
+		private ReferenceNode SearchAnimatorStateMachine( Object unityObject )
 		{
+			AnimatorStateMachine animatorStateMachine = (AnimatorStateMachine) unityObject;
+			ReferenceNode referenceNode = PopReferenceNode( animatorStateMachine );
+
+			ChildAnimatorStateMachine[] stateMachines = animatorStateMachine.stateMachines;
+			for( int i = 0; i < stateMachines.Length; i++ )
+				referenceNode.AddLinkTo( SearchObject( stateMachines[i].stateMachine ), "Child State Machine" );
+
+			ChildAnimatorState[] states = animatorStateMachine.states;
+			for( int i = 0; i < states.Length; i++ )
+				referenceNode.AddLinkTo( SearchObject( states[i].state ) );
+
+			if( searchMonoBehavioursForScript )
+			{
+				StateMachineBehaviour[] behaviours = animatorStateMachine.behaviours;
+				for( int i = 0; i < behaviours.Length; i++ )
+				{
+					MonoScript script = MonoScript.FromScriptableObject( behaviours[i] );
+					if( objectsToSearchSet.Contains( script ) )
+						referenceNode.AddLinkTo( GetReferenceNode( script ) );
+				}
+			}
+
+			return referenceNode;
+		}
+
+		private ReferenceNode SearchAnimatorState( Object unityObject )
+		{
+			AnimatorState animatorState = (AnimatorState) unityObject;
+			ReferenceNode referenceNode = PopReferenceNode( animatorState );
+
+			referenceNode.AddLinkTo( SearchObject( animatorState.motion ), "Motion" );
+
+			if( searchMonoBehavioursForScript )
+			{
+				StateMachineBehaviour[] behaviours = animatorState.behaviours;
+				for( int i = 0; i < behaviours.Length; i++ )
+				{
+					MonoScript script = MonoScript.FromScriptableObject( behaviours[i] );
+					if( objectsToSearchSet.Contains( script ) )
+						referenceNode.AddLinkTo( GetReferenceNode( script ) );
+				}
+			}
+
+			return referenceNode;
+		}
+
+		private ReferenceNode SearchAnimatorStateTransition( Object unityObject )
+		{
+			// Don't search AnimatorStateTransition objects, it will just return duplicate results of SearchAnimatorStateMachine
+			return PopReferenceNode( unityObject );
+		}
+
+		private ReferenceNode SearchBlendTree( Object unityObject )
+		{
+			BlendTree blendTree = (BlendTree) unityObject;
+			ReferenceNode referenceNode = PopReferenceNode( blendTree );
+
+			ChildMotion[] children = blendTree.children;
+			for( int i = 0; i < children.Length; i++ )
+				referenceNode.AddLinkTo( SearchObject( children[i].motion ), "Motion" );
+
+			return referenceNode;
+		}
+
+		private ReferenceNode SearchAnimationClip( Object unityObject )
+		{
+			AnimationClip clip = (AnimationClip) unityObject;
 			ReferenceNode referenceNode = PopReferenceNode( clip );
 
 			// Get all curves from animation clip
@@ -814,8 +928,9 @@ namespace AssetUsageDetectorNamespace
 		}
 
 #if UNITY_2017_1_OR_NEWER
-		private ReferenceNode SearchSpriteAtlas( SpriteAtlas spriteAtlas )
+		private ReferenceNode SearchSpriteAtlas( Object unityObject )
 		{
+			SpriteAtlas spriteAtlas = (SpriteAtlas) unityObject;
 			ReferenceNode referenceNode = PopReferenceNode( spriteAtlas );
 
 			SerializedObject spriteAtlasSO = new SerializedObject( spriteAtlas );
@@ -989,7 +1104,7 @@ namespace AssetUsageDetectorNamespace
 		}
 
 		// Check if the asset at specified path depends on any of the references
-		private bool AssetHasAnyReferenceTo( string assetPath, HashSet<string> referencePaths )
+		private bool AssetHasAnyReference( string assetPath )
 		{
 			CacheEntry cacheEntry;
 			if( !assetDependencyCache.TryGetValue( assetPath, out cacheEntry ) )
@@ -1000,20 +1115,34 @@ namespace AssetUsageDetectorNamespace
 			else if( !cacheEntry.verified )
 				cacheEntry.Verify( assetPath );
 
-			if( cacheEntry.hasSelfDependency && referencePaths.Contains( assetPath ) )
+			if( cacheEntry.searchResult != CacheEntry.Result.Unknown )
+				return cacheEntry.searchResult == CacheEntry.Result.Yes;
+
+			if( cacheEntry.hasSelfDependency && assetsToSearchPathsSet.Contains( assetPath ) )
+			{
+				cacheEntry.searchResult = CacheEntry.Result.Yes;
 				return true;
+			}
+
+			cacheEntry.searchResult = CacheEntry.Result.No;
 
 			string[] dependencies = cacheEntry.dependencies;
 			for( int i = 0; i < dependencies.Length; i++ )
 			{
-				if( referencePaths.Contains( dependencies[i] ) )
+				if( assetsToSearchPathsSet.Contains( dependencies[i] ) )
+				{
+					cacheEntry.searchResult = CacheEntry.Result.Yes;
 					return true;
+				}
 			}
 
 			for( int i = 0; i < dependencies.Length; i++ )
 			{
-				if( AssetHasAnyReferenceTo( dependencies[i], referencePaths ) )
+				if( AssetHasAnyReference( dependencies[i] ) )
+				{
+					cacheEntry.searchResult = CacheEntry.Result.Yes;
 					return true;
+				}
 			}
 
 			return false;
@@ -1130,12 +1259,11 @@ namespace AssetUsageDetectorNamespace
 
 					double startTime = EditorApplication.timeSinceStartup;
 
-					HashSet<string> temp = new HashSet<string>();
 					EditorUtility.DisplayProgressBar( title, message, 0f );
 
 					for( int i = 0; i < allAssets.Length; i++ )
 					{
-						AssetHasAnyReferenceTo( allAssets[i], temp );
+						AssetHasAnyReference( allAssets[i] );
 						EditorUtility.DisplayProgressBar( title, message, (float) i / allAssets.Length );
 					}
 
