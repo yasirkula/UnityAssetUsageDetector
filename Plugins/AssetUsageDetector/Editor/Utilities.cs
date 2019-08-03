@@ -2,7 +2,9 @@
 using System.Collections.Generic;
 using System.Reflection;
 using UnityEditor;
+using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using Object = UnityEngine.Object;
 
 namespace AssetUsageDetectorNamespace.Extras
@@ -337,6 +339,20 @@ namespace AssetUsageDetectorNamespace.Extras
 			return null;
 		}
 
+		// Check if all open scenes are saved (not dirty)
+		public static bool AreScenesSaved()
+		{
+			for( int i = 0; i < EditorSceneManager.loadedSceneCount; i++ )
+			{
+				Scene scene = EditorSceneManager.GetSceneAt( i );
+				if( scene.isDirty || string.IsNullOrEmpty( scene.path ) )
+					return false;
+			}
+
+			return true;
+		}
+
+		// Check if all the objects inside the list are null
 		public static bool IsEmpty( this List<ObjectToSearch> objectsToSearch )
 		{
 			if( objectsToSearch == null )
@@ -351,15 +367,34 @@ namespace AssetUsageDetectorNamespace.Extras
 			return true;
 		}
 
-		public static bool IsEmpty( this List<Object> searchInAssetsSubset )
+		// Check if all the objects inside the list are null
+		public static bool IsEmpty( this List<Object> objects )
 		{
-			if( searchInAssetsSubset == null )
+			if( objects == null )
 				return true;
 
-			for( int i = 0; i < searchInAssetsSubset.Count; i++ )
+			for( int i = 0; i < objects.Count; i++ )
 			{
-				if( searchInAssetsSubset[i] != null && !searchInAssetsSubset[i].Equals( null ) )
+				if( objects[i] != null && !objects[i].Equals( null ) )
 					return false;
+			}
+
+			return true;
+		}
+
+		// Check if all the objects that are enumerated are null
+		public static bool IsEmpty( this IEnumerable<Object> objects )
+		{
+			if( objects == null )
+				return true;
+
+			using( IEnumerator<Object> enumerator = objects.GetEnumerator() )
+			{
+				while( enumerator.MoveNext() )
+				{
+					if( enumerator.Current != null && !enumerator.Current.Equals( null ) )
+						return false;
+				}
 			}
 
 			return true;

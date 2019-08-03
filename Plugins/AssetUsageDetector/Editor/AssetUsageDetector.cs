@@ -10,7 +10,6 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
 using System;
-using System.Runtime.Serialization.Formatters.Binary;
 using System.IO;
 #if UNITY_2017_1_OR_NEWER
 using UnityEngine.U2D;
@@ -45,26 +44,39 @@ namespace AssetUsageDetectorNamespace
 			public BindingFlags fieldModifiers, propertyModifiers;
 
 			public bool noAssetDatabaseChanges;
+
+			public Parameters()
+			{
+				objectsToSearch = null;
+				searchInScenes = SceneSearchMode.AllScenes;
+				searchInAssetsFolder = true;
+				searchInAssetsSubset = null;
+				searchDepthLimit = 4;
+				fieldModifiers = BindingFlags.Public | BindingFlags.NonPublic;
+				propertyModifiers = BindingFlags.Public | BindingFlags.NonPublic;
+				noAssetDatabaseChanges = false;
+			}
 		}
 
-		[Serializable]
 		private class CacheEntry
 		{
 			public enum Result { Unknown = 0, No = 1, Yes = 2 };
 
-			public string[] dependencies;
 			public string hash;
-			public bool hasSelfDependency;
+			public string[] dependencies;
 
-			[NonSerialized]
 			public bool verified;
-
-			[NonSerialized]
 			public Result searchResult;
 
 			public CacheEntry( string path )
 			{
 				Verify( path );
+			}
+
+			public CacheEntry( string hash, string[] dependencies )
+			{
+				this.hash = hash;
+				this.dependencies = dependencies;
 			}
 
 			public void Verify( string path )
@@ -73,32 +85,13 @@ namespace AssetUsageDetectorNamespace
 				if( this.hash != hash )
 				{
 					this.hash = hash;
-
 					dependencies = AssetDatabase.GetDependencies( path, false );
-					hasSelfDependency = false;
-
-					for( int i = 0; i < dependencies.Length; i++ )
-					{
-						if( dependencies[i] == path )
-						{
-							int newSize = dependencies.Length - 1;
-							if( i < newSize )
-								dependencies[i] = dependencies[newSize];
-
-							Array.Resize( ref dependencies, newSize );
-							hasSelfDependency = true;
-
-							break;
-						}
-					}
 				}
 
 				verified = true;
 			}
 		}
 		#endregion
-
-		private const string DEPENDENCY_CACHE_PATH = "Library/AssetUsageDetector.cache"; // Path of the cache file
 
 		private HashSet<Object> objectsToSearchSet; // A set that contains the searched asset(s) and their sub-assets (if any)
 
@@ -140,6 +133,8 @@ namespace AssetUsageDetectorNamespace
 		private List<ReferenceNode> nodesPool = new List<ReferenceNode>( 32 );
 		private List<VariableGetterHolder> validVariables = new List<VariableGetterHolder>( 32 );
 
+		private string CachePath { get { return Application.dataPath + "/../Library/AssetUsageDetector.cache"; } } // Path of the cache file
+
 		// Search for references!
 		public SearchResult Run( Parameters searchParameters )
 		{
@@ -163,8 +158,8 @@ namespace AssetUsageDetectorNamespace
 				searchedObjectsCount = 0;
 				searchStartTime = EditorApplication.timeSinceStartup;
 
-				this.fieldModifiers = searchParameters.fieldModifiers;
-				this.propertyModifiers = searchParameters.propertyModifiers;
+				this.fieldModifiers = searchParameters.fieldModifiers | BindingFlags.Instance | BindingFlags.DeclaredOnly;
+				this.propertyModifiers = searchParameters.propertyModifiers | BindingFlags.Instance | BindingFlags.DeclaredOnly;
 				this.searchDepthLimit = searchParameters.searchDepthLimit;
 
 				// Initialize commonly used variables
@@ -268,6 +263,10 @@ namespace AssetUsageDetectorNamespace
 
 				foreach( string filePath in folderContentsSet )
 				{
+					// Skip scene assets
+					if( filePath.EndsWith( ".unity" ) )
+						continue;
+
 					Object[] assets = AssetDatabase.LoadAllAssetsAtPath( filePath );
 					if( assets == null || assets.Length == 0 )
 						continue;
@@ -303,8 +302,18 @@ namespace AssetUsageDetectorNamespace
 				}
 
 				// Find the scenes to search for references
+				HashSet<string> openScenes = null;
 				if( EditorApplication.isPlaying )
-					searchParameters.searchInScenes = ( searchParameters.searchInScenes & SceneSearchMode.OpenScenes ) == SceneSearchMode.OpenScenes ? SceneSearchMode.OpenScenes : SceneSearchMode.None;
+				{
+					// In Play mode, only open scenes can be searched
+					openScenes = new HashSet<string>();
+					for( int i = 0; i < EditorSceneManager.loadedSceneCount; i++ )
+					{
+						Scene scene = EditorSceneManager.GetSceneAt( i );
+						if( scene.IsValid() )
+							openScenes.Add( scene.path );
+					}
+				}
 
 				HashSet<string> scenesToSearch = new HashSet<string>();
 				if( ( searchParameters.searchInScenes & SceneSearchMode.AllScenes ) == SceneSearchMode.AllScenes )
@@ -312,7 +321,11 @@ namespace AssetUsageDetectorNamespace
 					// Get all scenes from the Assets folder
 					string[] sceneGuids = AssetDatabase.FindAssets( "t:SceneAsset" );
 					for( int i = 0; i < sceneGuids.Length; i++ )
-						scenesToSearch.Add( AssetDatabase.GUIDToAssetPath( sceneGuids[i] ) );
+					{
+						string scenePath = AssetDatabase.GUIDToAssetPath( sceneGuids[i] );
+						if( !EditorApplication.isPlaying || openScenes.Contains( scenePath ) )
+							scenesToSearch.Add( scenePath );
+					}
 				}
 				else
 				{
@@ -334,7 +347,7 @@ namespace AssetUsageDetectorNamespace
 						EditorBuildSettingsScene[] scenesTemp = EditorBuildSettings.scenes;
 						for( int i = 0; i < scenesTemp.Length; i++ )
 						{
-							if( searchInScenesInBuildTickedAll || scenesTemp[i].enabled )
+							if( ( searchInScenesInBuildTickedAll || scenesTemp[i].enabled ) && ( !EditorApplication.isPlaying || openScenes.Contains( scenesTemp[i].path ) ) )
 								scenesToSearch.Add( scenesTemp[i].path );
 						}
 					}
@@ -924,6 +937,11 @@ namespace AssetUsageDetectorNamespace
 					referenceNode.AddLinkTo( SearchObject( keyframes[j].value ), "Keyframe: " + keyframes[j].time );
 			}
 
+			// Get all events from animation clip
+			AnimationEvent[] events = AnimationUtility.GetAnimationEvents( clip );
+			for( int i = 0; i < events.Length; i++ )
+				referenceNode.AddLinkTo( SearchObject( events[i].objectReferenceParameter ), "AnimationEvent: " + events[i].time );
+
 			return referenceNode;
 		}
 
@@ -1118,12 +1136,6 @@ namespace AssetUsageDetectorNamespace
 			if( cacheEntry.searchResult != CacheEntry.Result.Unknown )
 				return cacheEntry.searchResult == CacheEntry.Result.Yes;
 
-			if( cacheEntry.hasSelfDependency && assetsToSearchPathsSet.Contains( assetPath ) )
-			{
-				cacheEntry.searchResult = CacheEntry.Result.Yes;
-				return true;
-			}
-
 			cacheEntry.searchResult = CacheEntry.Result.No;
 
 			string[] dependencies = cacheEntry.dependencies;
@@ -1214,33 +1226,61 @@ namespace AssetUsageDetectorNamespace
 			if( assetDependencyCache == null )
 				return;
 
-			string cachePath = Application.dataPath + "/../" + DEPENDENCY_CACHE_PATH;
-			using( FileStream stream = new FileStream( cachePath, FileMode.Create ) )
+			try
 			{
-				try
+				using( FileStream stream = new FileStream( CachePath, FileMode.Create ) )
+				using( BinaryWriter writer = new BinaryWriter( stream ) )
 				{
-					new BinaryFormatter().Serialize( stream, assetDependencyCache );
+					writer.Write( assetDependencyCache.Count );
+
+					foreach( var keyValuePair in assetDependencyCache )
+					{
+						CacheEntry cacheEntry = keyValuePair.Value;
+						string[] dependencies = cacheEntry.dependencies;
+
+						writer.Write( keyValuePair.Key );
+						writer.Write( cacheEntry.hash );
+						writer.Write( dependencies.Length );
+
+						for( int i = 0; i < dependencies.Length; i++ )
+							writer.Write( dependencies[i] );
+					}
 				}
-				catch( Exception e )
-				{
-					Debug.LogException( e );
-				}
+			}
+			catch( Exception e )
+			{
+				Debug.LogException( e );
 			}
 		}
 
 		private void LoadCache()
 		{
-			string cachePath = Application.dataPath + "/../" + DEPENDENCY_CACHE_PATH;
-			if( File.Exists( cachePath ) )
+			if( File.Exists( CachePath ) )
 			{
-				using( FileStream stream = new FileStream( cachePath, FileMode.Open, FileAccess.Read ) )
+				using( FileStream stream = new FileStream( CachePath, FileMode.Open, FileAccess.Read ) )
+				using( BinaryReader reader = new BinaryReader( stream ) )
 				{
 					try
 					{
-						assetDependencyCache = (Dictionary<string, CacheEntry>) new BinaryFormatter().Deserialize( stream );
+						int cacheSize = reader.ReadInt32();
+						assetDependencyCache = new Dictionary<string, CacheEntry>( cacheSize );
+
+						for( int i = 0; i < cacheSize; i++ )
+						{
+							string assetPath = reader.ReadString();
+							string hash = reader.ReadString();
+
+							int dependenciesLength = reader.ReadInt32();
+							string[] dependencies = new string[dependenciesLength];
+							for( int j = 0; j < dependenciesLength; j++ )
+								dependencies[j] = reader.ReadString();
+
+							assetDependencyCache[assetPath] = new CacheEntry( hash, dependencies );
+						}
 					}
 					catch( Exception e )
 					{
+						assetDependencyCache = null;
 						Debug.LogException( e );
 					}
 				}

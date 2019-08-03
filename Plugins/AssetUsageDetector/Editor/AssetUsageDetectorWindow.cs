@@ -2,8 +2,6 @@
 
 using UnityEngine;
 using UnityEditor;
-using UnityEngine.SceneManagement;
-using UnityEditor.SceneManagement;
 using System.Collections.Generic;
 using System.Reflection;
 using Object = UnityEngine.Object;
@@ -66,6 +64,55 @@ namespace AssetUsageDetectorNamespace.Extras
 			window.Show();
 		}
 
+		// Quickly initiate search for the selected assets
+		[MenuItem( "Assets/Search for References", priority = 1000 )]
+		private static void SearchSelectedAssetReferences()
+		{
+			ShowAndSearch( Selection.objects );
+		}
+
+		// Show the menu item only if there is a selection in the Editor
+		[MenuItem( "Assets/Search for References", validate = true )]
+		private static bool SearchSelectedAssetReferencesValidate()
+		{
+			return Selection.objects.Length > 0;
+		}
+
+		// Quickly show the AssetUsageDetector window and initiate a search
+		public static void ShowAndSearch( IEnumerable<Object> searchObjects )
+		{
+			ShowAndSearch( new AssetUsageDetector.Parameters() { objectsToSearch = searchObjects } );
+		}
+
+		// Quickly show the AssetUsageDetector window and initiate a search
+		public static void ShowAndSearch( AssetUsageDetector.Parameters searchParameters )
+		{
+			if( searchParameters == null )
+				Debug.LogError( "searchParameters can't be null!" );
+			else if( searchParameters.objectsToSearch.IsEmpty() )
+				Debug.LogError( "searchParameters.objectsToSearch can't be empty!" );
+			else if( !EditorApplication.isPlaying && !Utilities.AreScenesSaved() )
+				Debug.LogError( "Save open scenes first!" );
+			else
+			{
+				Init();
+				AssetUsageDetectorWindow window = GetWindow<AssetUsageDetectorWindow>();
+
+				if( window.objectsToSearch == null )
+					window.objectsToSearch = new List<ObjectToSearch>();
+				else
+					window.objectsToSearch.Clear();
+
+				foreach( Object obj in searchParameters.objectsToSearch )
+					window.objectsToSearch.Add( new ObjectToSearch( obj ) );
+
+				window.errorMessage = string.Empty;
+				window.currentPhase = Phase.Processing;
+				window.searchResult = window.core.Run( searchParameters );
+				window.currentPhase = Phase.Complete;
+			}
+		}
+
 		private void OnDestroy()
 		{
 			if( core != null )
@@ -111,8 +158,8 @@ namespace AssetUsageDetectorNamespace.Extras
 			searchDepthLimit = EditorPrefs.GetInt( PREFS_SEARCH_DEPTH_LIMIT, 4 );
 
 			// Fetch public, protected and private non-static fields and properties from objects by default
-			fieldModifiers = (BindingFlags) EditorPrefs.GetInt( PREFS_SEARCH_FIELDS, (int) ( BindingFlags.Instance | BindingFlags.DeclaredOnly | BindingFlags.Public | BindingFlags.NonPublic ) );
-			propertyModifiers = (BindingFlags) EditorPrefs.GetInt( PREFS_SEARCH_PROPERTIES, (int) ( BindingFlags.Instance | BindingFlags.DeclaredOnly | BindingFlags.Public | BindingFlags.NonPublic ) );
+			fieldModifiers = (BindingFlags) EditorPrefs.GetInt( PREFS_SEARCH_FIELDS, (int) ( BindingFlags.Public | BindingFlags.NonPublic ) );
+			propertyModifiers = (BindingFlags) EditorPrefs.GetInt( PREFS_SEARCH_PROPERTIES, (int) ( BindingFlags.Public | BindingFlags.NonPublic ) );
 
 			try
 			{
@@ -168,7 +215,7 @@ namespace AssetUsageDetectorNamespace.Extras
 
 				GUILayout.Space( 10 );
 
-				GUILayout.Box( "SEARCH IN", Utilities.GL_EXPAND_WIDTH );
+				GUILayout.Box( "SEARCH IN", Utilities.BoxGUIStyle, Utilities.GL_EXPAND_WIDTH );
 
 				searchInAssetsFolder = EditorGUILayout.ToggleLeft( "Project view (Assets folder)", searchInAssetsFolder );
 
@@ -221,7 +268,7 @@ namespace AssetUsageDetectorNamespace.Extras
 
 				GUILayout.Space( 10 );
 
-				GUILayout.Box( "SEARCH SETTINGS", Utilities.GL_EXPAND_WIDTH );
+				GUILayout.Box( "SEARCH SETTINGS", Utilities.BoxGUIStyle, Utilities.GL_EXPAND_WIDTH );
 
 				GUILayout.BeginHorizontal();
 
@@ -279,7 +326,7 @@ namespace AssetUsageDetectorNamespace.Extras
 				{
 					if( objectsToSearch.IsEmpty() )
 						errorMessage = "ADD AN ASSET TO THE LIST FIRST!";
-					else if( !EditorApplication.isPlaying && !AreScenesSaved() )
+					else if( !EditorApplication.isPlaying && !Utilities.AreScenesSaved() )
 					{
 						// Don't start the search if at least one scene is currently dirty (not saved)
 						errorMessage = "SAVE OPEN SCENES FIRST!";
@@ -348,13 +395,13 @@ namespace AssetUsageDetectorNamespace.Extras
 
 				Color c = GUI.color;
 				GUI.color = Color.green;
-				GUILayout.Box( "Don't forget to save scene(s) if you made any changes!", Utilities.GL_EXPAND_WIDTH );
+				GUILayout.Box( "Don't forget to save scene(s) if you made any changes!", Utilities.BoxGUIStyle, Utilities.GL_EXPAND_WIDTH );
 				GUI.color = c;
 
 				GUILayout.Space( 10 );
 
 				if( searchResult.NumberOfGroups == 0 )
-					GUILayout.Box( "No results found...", Utilities.GL_EXPAND_WIDTH );
+					GUILayout.Box( "No results found...", Utilities.BoxGUIStyle, Utilities.GL_EXPAND_WIDTH );
 				else
 				{
 					GUILayout.BeginHorizontal();
@@ -609,19 +656,6 @@ namespace AssetUsageDetectorNamespace.Extras
 
 				GUILayout.EndHorizontal();
 			}
-		}
-
-		// Check if all open scenes are saved (not dirty)
-		private bool AreScenesSaved()
-		{
-			for( int i = 0; i < EditorSceneManager.loadedSceneCount; i++ )
-			{
-				Scene scene = EditorSceneManager.GetSceneAt( i );
-				if( scene.isDirty || string.IsNullOrEmpty( scene.path ) )
-					return false;
-			}
-
-			return true;
 		}
 
 		private void ReturnToSetupPhase( bool restoreInitialSceneSetup )
