@@ -1042,11 +1042,7 @@ namespace AssetUsageDetectorNamespace
 							continue;
 
 						// Skip primitive types
-						Type fieldType = fields[i].FieldType;
-						if( fieldType.IsPrimitive || fieldType == typeof( string ) || fieldType.IsEnum )
-							continue;
-
-						if( fieldType.IsPrimitiveUnityType() )
+						if( fields[i].FieldType.IsPrimitiveUnityType() )
 							continue;
 
 						VariableGetVal getter = fields[i].CreateGetter( type );
@@ -1071,11 +1067,7 @@ namespace AssetUsageDetectorNamespace
 							continue;
 
 						// Skip primitive types
-						Type propertyType = properties[i].PropertyType;
-						if( propertyType.IsPrimitive || propertyType == typeof( string ) || propertyType.IsEnum )
-							continue;
-
-						if( propertyType.IsPrimitiveUnityType() )
+						if( properties[i].PropertyType.IsPrimitiveUnityType() )
 							continue;
 
 						// Additional filtering for properties:
@@ -1104,7 +1096,7 @@ namespace AssetUsageDetectorNamespace
 						else
 						{
 							VariableGetVal getter = properties[i].CreateGetter();
-							if( getter != null )
+							if( getter != null && !properties[i].IsOverridden() ) // No need to check properties with 'override' keyword
 								validVariables.Add( new VariableGetterHolder( properties[i], getter, properties[i].IsSerializable() ) );
 						}
 					}

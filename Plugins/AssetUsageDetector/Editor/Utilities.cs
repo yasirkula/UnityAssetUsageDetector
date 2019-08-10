@@ -16,7 +16,19 @@ namespace AssetUsageDetectorNamespace.Extras
 				typeof( string ), typeof( Vector4 ), typeof( Vector3 ), typeof( Vector2 ), typeof( Rect ),
 				typeof( Quaternion ), typeof( Color ), typeof( Color32 ), typeof( LayerMask ),
 				typeof( Matrix4x4 ), typeof( AnimationCurve ), typeof( Gradient ), typeof( RectOffset ),
-				typeof( Assembly ) // Searching assembly variables for reference throws InvalidCastException on .NET 4.0 runtime
+				typeof( Assembly ), // Searching assembly variables for reference throws InvalidCastException on .NET 4.0 runtime
+				typeof( bool[] ), typeof( byte[] ), typeof( sbyte[] ), typeof( char[] ), typeof( decimal[] ),
+				typeof( double[] ), typeof( float[] ), typeof( int[] ), typeof( uint[] ), typeof( long[] ),
+				typeof( ulong[] ), typeof( short[] ), typeof( ushort[] ), typeof( string[] ),
+				typeof( Vector4[] ), typeof( Vector3[] ), typeof( Vector2[] ), typeof( Rect[] ),
+				typeof( Quaternion[] ), typeof( Color[] ), typeof( Color32[] ), typeof( LayerMask[] ),
+				typeof( Matrix4x4[] ), typeof( AnimationCurve[] ), typeof( Gradient[] ), typeof( RectOffset[] ), typeof( Assembly[] ),
+				typeof( List<bool> ), typeof( List<byte> ), typeof( List<sbyte> ), typeof( List<char> ), typeof( List<decimal> ),
+				typeof( List<double> ), typeof( List<float> ), typeof( List<int> ), typeof( List<uint> ), typeof( List<long> ),
+				typeof( List<ulong> ), typeof( List<short> ), typeof( List<ushort> ), typeof( List<string> ),
+				typeof( List<Vector4> ), typeof( List<Vector3> ), typeof( List<Vector2> ), typeof( List<Rect> ),
+				typeof( List<Quaternion> ), typeof( List<Color> ), typeof( List<Color32> ), typeof( List<LayerMask> ),
+				typeof( List<Matrix4x4> ), typeof( List<AnimationCurve> ), typeof( List<Gradient> ), typeof( List<RectOffset> ), typeof( List<Assembly> )
 		};
 
 		private static readonly HashSet<string> folderContentsSet = new HashSet<string>();
@@ -296,7 +308,14 @@ namespace AssetUsageDetectorNamespace.Extras
 		// Check if the type is a common Unity type (let's call them primitives)
 		public static bool IsPrimitiveUnityType( this Type type )
 		{
-			return type.IsPrimitive || primitiveUnityTypes.Contains( type );
+			return type.IsPrimitive || primitiveUnityTypes.Contains( type ) || type.IsEnum;
+		}
+
+		// Check if property has override keyword
+		public static bool IsOverridden( this PropertyInfo propertyInfo )
+		{
+			MethodInfo mi = propertyInfo.GetGetMethod( true );
+			return mi.GetBaseDefinition().DeclaringType != mi.DeclaringType;
 		}
 
 		// Get <get> function for a field

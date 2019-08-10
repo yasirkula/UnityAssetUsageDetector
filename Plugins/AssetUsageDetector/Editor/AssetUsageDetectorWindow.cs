@@ -52,6 +52,8 @@ namespace AssetUsageDetectorNamespace.Extras
 
 		private Vector2 scrollPosition = Vector2.zero;
 
+		private static AssetUsageDetectorWindow visibleWindow = null;
+
 		// Add "Asset Usage Detector" menu item to the Window menu
 		[MenuItem( "Window/Asset Usage Detector" )]
 		private static void Init()
@@ -88,29 +90,54 @@ namespace AssetUsageDetectorNamespace.Extras
 		public static void ShowAndSearch( AssetUsageDetector.Parameters searchParameters )
 		{
 			if( searchParameters == null )
-				Debug.LogError( "searchParameters can't be null!" );
-			else if( searchParameters.objectsToSearch.IsEmpty() )
-				Debug.LogError( "searchParameters.objectsToSearch can't be empty!" );
-			else if( !EditorApplication.isPlaying && !Utilities.AreScenesSaved() )
-				Debug.LogError( "Save open scenes first!" );
-			else
 			{
-				Init();
-				AssetUsageDetectorWindow window = GetWindow<AssetUsageDetectorWindow>();
-
-				if( window.objectsToSearch == null )
-					window.objectsToSearch = new List<ObjectToSearch>();
-				else
-					window.objectsToSearch.Clear();
-
-				foreach( Object obj in searchParameters.objectsToSearch )
-					window.objectsToSearch.Add( new ObjectToSearch( obj ) );
-
-				window.errorMessage = string.Empty;
-				window.currentPhase = Phase.Processing;
-				window.searchResult = window.core.Run( searchParameters );
-				window.currentPhase = Phase.Complete;
+				Debug.LogError( "searchParameters can't be null!" );
+				return;
 			}
+
+			if( searchParameters.objectsToSearch.IsEmpty() )
+			{
+				Debug.LogError( "searchParameters.objectsToSearch can't be empty!" );
+				return;
+			}
+
+			if( !EditorApplication.isPlaying && !Utilities.AreScenesSaved() )
+			{
+				if( visibleWindow == null || visibleWindow.currentPhase != Phase.Complete )
+				{
+					Debug.LogError( "Save open scenes first!" );
+					return;
+				}
+
+				if( !visibleWindow.ReturnToSetupPhase( true ) )
+				{
+					Debug.LogError( "Need to reset the previous search first!" );
+					return;
+				}
+			}
+
+			Init();
+
+			if( visibleWindow.objectsToSearch == null )
+				visibleWindow.objectsToSearch = new List<ObjectToSearch>();
+			else
+				visibleWindow.objectsToSearch.Clear();
+
+			foreach( Object obj in searchParameters.objectsToSearch )
+				visibleWindow.objectsToSearch.Add( new ObjectToSearch( obj ) );
+
+			// This enumerator includes sub-assets in the search
+			searchParameters.objectsToSearch = new ObjectToSearchEnumerator( visibleWindow.objectsToSearch );
+
+			visibleWindow.errorMessage = string.Empty;
+			visibleWindow.currentPhase = Phase.Processing;
+			visibleWindow.searchResult = visibleWindow.core.Run( searchParameters );
+			visibleWindow.currentPhase = Phase.Complete;
+		}
+
+		private void OnEnable()
+		{
+			visibleWindow = this;
 		}
 
 		private void OnDestroy()
@@ -125,6 +152,8 @@ namespace AssetUsageDetectorNamespace.Extras
 				if( EditorUtility.DisplayDialog( "Scenes", "Restore initial scene setup?", "Yes", "Leave it as is" ) )
 					searchResult.RestoreInitialSceneSetup();
 			}
+
+			visibleWindow = null;
 		}
 
 		private void SavePrefs()
@@ -658,15 +687,17 @@ namespace AssetUsageDetectorNamespace.Extras
 			}
 		}
 
-		private void ReturnToSetupPhase( bool restoreInitialSceneSetup )
+		private bool ReturnToSetupPhase( bool restoreInitialSceneSetup )
 		{
 			if( searchResult != null && restoreInitialSceneSetup && !EditorApplication.isPlaying && !searchResult.RestoreInitialSceneSetup() )
-				return;
+				return false;
 
 			searchResult = null;
 
 			errorMessage = string.Empty;
 			currentPhase = Phase.Setup;
+
+			return true;
 		}
 	}
 }

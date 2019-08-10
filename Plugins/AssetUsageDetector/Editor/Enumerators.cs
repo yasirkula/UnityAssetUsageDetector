@@ -28,79 +28,89 @@ namespace AssetUsageDetectorNamespace.Extras
 		}
 	}
 
-	public class ObjectToSearchEnumerator : IEnumerable<Object>, IEnumerator<Object>
+	public class ObjectToSearchEnumerator : IEnumerable<Object>
 	{
-		public Object Current
+		public class Enumerator : IEnumerator<Object>
 		{
-			get
+			public Object Current
 			{
-				if( subAssetIndex < 0 )
-					return source[index].obj;
+				get
+				{
+					if( subAssetIndex < 0 )
+						return source[index].obj;
 
-				return source[index].subAssets[subAssetIndex].subAsset;
+					return source[index].subAssets[subAssetIndex].subAsset;
+				}
+			}
+
+			object IEnumerator.Current { get { return Current; } }
+
+			private List<ObjectToSearch> source;
+			private int index;
+			private int subAssetIndex;
+
+			public Enumerator( List<ObjectToSearch> source )
+			{
+				this.source = source;
+				Reset();
+			}
+
+			public void Dispose()
+			{
+				source = null;
+			}
+
+			public bool MoveNext()
+			{
+				if( subAssetIndex < -1 )
+				{
+					subAssetIndex = -1;
+
+					if( ++index >= source.Count )
+						return false;
+
+					// Skip folder assets in the enumeration, AssetUsageDetector expands encountered folders automatically
+					// and we don't want that to happen as source[index].subAssets already contains the folder's contents
+					if( !source[index].obj.IsFolder() )
+						return true;
+				}
+
+				List<ObjectToSearch.SubAsset> subAssets = source[index].subAssets;
+				if( subAssets != null )
+				{
+					while( ++subAssetIndex < subAssets.Count && !subAssets[subAssetIndex].shouldSearch )
+						continue;
+
+					if( subAssetIndex < subAssets.Count )
+						return true;
+				}
+
+				subAssetIndex = -2;
+				return MoveNext();
+			}
+
+			public void Reset()
+			{
+				index = -1;
+				subAssetIndex = -2;
 			}
 		}
 
-		object IEnumerator.Current { get { return Current; } }
-
-		private List<ObjectToSearch> source;
-		private int index;
-		private int subAssetIndex;
+		private readonly List<ObjectToSearch> source;
 
 		public ObjectToSearchEnumerator( List<ObjectToSearch> source )
 		{
 			this.source = source;
-			Reset();
-		}
-
-		public void Dispose()
-		{
-			source = null;
-		}
-
-		public bool MoveNext()
-		{
-			if( subAssetIndex < -1 )
-			{
-				subAssetIndex = -1;
-
-				if( ++index >= source.Count )
-					return false;
-
-				// Skip folder assets in the enumeration, AssetUsageDetector expands encountered folders automatically
-				// and we don't want that to happen as source[index].subAssets already contains the folder's contents
-				if( !source[index].obj.IsFolder() )
-					return true;
-			}
-
-			List<ObjectToSearch.SubAsset> subAssets = source[index].subAssets;
-			if( subAssets != null )
-			{
-				while( ++subAssetIndex < subAssets.Count && !subAssets[subAssetIndex].shouldSearch )
-					continue;
-
-				if( subAssetIndex < subAssets.Count )
-					return true;
-			}
-
-			subAssetIndex = -2;
-			return MoveNext();
-		}
-
-		public void Reset()
-		{
-			index = -1;
-			subAssetIndex = -2;
 		}
 
 		public IEnumerator<Object> GetEnumerator()
 		{
-			return this;
+			return new Enumerator( source );
 		}
 
 		IEnumerator IEnumerable.GetEnumerator()
 		{
-			return this;
+			return GetEnumerator();
 		}
 	}
 }
