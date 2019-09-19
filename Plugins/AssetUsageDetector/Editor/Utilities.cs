@@ -418,5 +418,35 @@ namespace AssetUsageDetectorNamespace.Extras
 
 			return true;
 		}
+
+		public static bool ContainsFast<T>( this List<T> list, T element )
+		{
+			if( !( element is ValueType ) )
+			{
+				for( int i = list.Count - 1; i >= 0; i-- )
+				{
+					if( ReferenceEquals( list[i], element ) )
+						return true;
+				}
+			}
+			else
+			{
+				for( int i = list.Count - 1; i >= 0; i-- )
+				{
+					if( element.Equals( list[i] ) )
+						return true;
+				}
+			}
+
+			return false;
+		}
+
+		public static void RemoveAtFast<T>( this List<T> list, int index )
+		{
+			int lastElementIndex = list.Count - 1;
+
+			list[index] = list[lastElementIndex];
+			list.RemoveAt( lastElementIndex );
+		}
 	}
 }

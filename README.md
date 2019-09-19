@@ -12,7 +12,7 @@ This editor extension helps you figure out at which places an asset or GameObjec
 
 ### B. HOW TO USE
 
-- Import **AssetUsageDetector.unitypackage** to your project
+- Import [AssetUsageDetector.unitypackage](https://github.com/yasirkula/UnityAssetUsageDetector/releases) to your project
 - Open **Window - Asset Usage Detector** window, configure the settings and hit **GO!**
   - or, use the **Assets - Search For References** shortcut to find the selected object(s)' references
   

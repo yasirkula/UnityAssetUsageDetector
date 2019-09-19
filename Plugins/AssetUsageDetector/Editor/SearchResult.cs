@@ -58,7 +58,7 @@ namespace AssetUsageDetectorNamespace
 		public SearchResultGroup this[int index] { get { return result[index]; } }
 
 		public bool SearchCompletedSuccessfully { get { return success; } }
-		public bool InitialSceneSetupConfigured { get { return initialSceneSetup != null; } }
+		public bool InitialSceneSetupConfigured { get { return initialSceneSetup != null && initialSceneSetup.Length > 0; } }
 
 		public SearchResult( bool success, List<SearchResultGroup> result, SceneSetup[] initialSceneSetup )
 		{
@@ -158,7 +158,7 @@ namespace AssetUsageDetectorNamespace
 		// Returns true if initial scene setup is restored successfully
 		public bool RestoreInitialSceneSetup()
 		{
-			if( initialSceneSetup == null )
+			if( initialSceneSetup == null || initialSceneSetup.Length == 0 )
 				return true;
 
 			if( EditorApplication.isPlaying || !EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo() )
@@ -284,36 +284,58 @@ namespace AssetUsageDetectorNamespace
 		}
 
 		// Initializes commonly used variables of the nodes
-		public void InitializeNodes()
+		public void InitializeNodes( Func<object, ReferenceNode> nodeGetter )
 		{
+			// Remove root nodes that don't have any outgoing links or have null node objects (somehow)
 			for( int i = references.Count - 1; i >= 0; i-- )
 			{
-				ReferenceNode node = references[i];
-				if( node.NumberOfOutgoingLinks == 0 )
-					references.RemoveAt( i );
+				if( references[i].NumberOfOutgoingLinks == 0 )
+					references.RemoveAtFast( i );
 				else
 				{
-					// For simplicity's sake, get rid of root nodes that are
-					// already part of another node's hierarchy
-					bool isRootNodeChildOfOtherNode = false;
-					for( int j = references.Count - 1; j >= 0; j-- )
-					{
-						if( i == j )
-							continue;
-
-						if( references[j].NodeExistsInChildrenRecursive( node ) )
-						{
-							isRootNodeChildOfOtherNode = true;
-							break;
-						}
-					}
-
-					if( isRootNodeChildOfOtherNode )
-						references.RemoveAt( i );
-					else
-						node.InitializeRecursively();
+					object nodeObject = references[i].nodeObject;
+					if( nodeObject == null || nodeObject.Equals( null ) )
+						references.RemoveAtFast( i );
 				}
 			}
+
+			// For simplicity's sake, get rid of root nodes that are already part of another node's hierarchy
+			for( int i = references.Count - 1; i >= 0; i-- )
+			{
+				if( IsRootNodePartOfAnotherRootNode( i ) )
+					references.RemoveAtFast( i );
+			}
+
+			// For clarity, a reference path shouldn't start with a sub-asset but instead with its corresponding main asset
+			for( int i = references.Count - 1; i >= 0; i-- )
+			{
+				object nodeObject = references[i].nodeObject;
+				if( nodeObject.IsAsset() && !AssetDatabase.IsMainAsset( (Object) nodeObject ) )
+				{
+					string assetPath = AssetDatabase.GetAssetPath( (Object) nodeObject );
+					if( string.IsNullOrEmpty( assetPath ) )
+						continue;
+
+					Object mainAsset = AssetDatabase.LoadMainAssetAtPath( assetPath );
+					if( mainAsset == null || mainAsset.Equals( null ) )
+						continue;
+
+					if( nodeObject is Component && ( (Component) nodeObject ).gameObject == mainAsset )
+						continue;
+
+					// Get a ReferenceNode for the main asset, add a link to the sub-asset's node and change the root node
+					ReferenceNode newRootNode = nodeGetter( mainAsset );
+					newRootNode.AddLinkTo( references[i], ( nodeObject is Component || nodeObject is GameObject ) ? "Child object" : "Sub-asset" );
+					references[i] = newRootNode;
+
+					// Make sure that the new root node isn't already a part of another node's hierarchy
+					if( IsRootNodePartOfAnotherRootNode( i ) )
+						references.RemoveAtFast( i );
+				}
+			}
+
+			for( int i = references.Count - 1; i >= 0; i-- )
+				references[i].InitializeRecursively();
 		}
 
 		// Check if node exists in this results set
@@ -322,6 +344,21 @@ namespace AssetUsageDetectorNamespace
 			for( int i = 0; i < references.Count; i++ )
 			{
 				if( references[i] == node )
+					return true;
+			}
+
+			return false;
+		}
+
+		private bool IsRootNodePartOfAnotherRootNode( int index )
+		{
+			ReferenceNode node = references[index];
+			for( int i = references.Count - 1; i >= 0; i-- )
+			{
+				if( index == i )
+					continue;
+
+				if( references[i].nodeObject == node.nodeObject || references[i].NodeExistsInChildrenRecursive( node ) )
 					return true;
 			}
 
@@ -533,7 +570,7 @@ namespace AssetUsageDetectorNamespace
 		// Add a one-way connection to another node
 		public void AddLinkTo( ReferenceNode nextNode, string description = null )
 		{
-			if( nextNode != null )
+			if( nextNode != null && nextNode != this )
 			{
 				if( !string.IsNullOrEmpty( description ) )
 					description = "[" + description + "]";
