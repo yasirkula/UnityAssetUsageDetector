@@ -321,7 +321,7 @@ namespace AssetUsageDetectorNamespace.Extras
 
 				if( !EditorApplication.isPlaying )
 				{
-					searchInScenesInBuild = EditorGUILayout.ToggleLeft( "Scenes in Build Settings", true );
+					searchInScenesInBuild = EditorGUILayout.ToggleLeft( "Scenes in Build Settings", searchInScenesInBuild );
 
 					if( searchInScenesInBuild )
 					{
