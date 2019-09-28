@@ -153,8 +153,10 @@ namespace AssetUsageDetectorNamespace
 		private int searchedObjectsCount; // Number of searched objects
 		private double searchStartTime;
 
-		private List<ReferenceNode> nodesPool = new List<ReferenceNode>( 32 );
-		private List<VariableGetterHolder> validVariables = new List<VariableGetterHolder>( 32 );
+		private readonly List<ReferenceNode> nodesPool = new List<ReferenceNode>( 32 );
+		private readonly List<VariableGetterHolder> validVariables = new List<VariableGetterHolder>( 32 );
+
+		private readonly string reflectionNameSpace = typeof( Assembly ).Namespace;
 
 		private string CachePath { get { return Application.dataPath + "/../Library/AssetUsageDetector.cache"; } } // Path of the cache file
 
@@ -1152,7 +1154,12 @@ namespace AssetUsageDetectorNamespace
 							continue;
 
 						// Skip primitive types
-						if( fields[i].FieldType.IsPrimitiveUnityType() )
+						Type variableType = fields[i].FieldType;
+						if( variableType.IsPrimitiveUnityType() )
+							continue;
+
+						// Searching assembly variables for reference throws InvalidCastException on .NET 4.0 runtime
+						if( typeof( Type ).IsAssignableFrom( variableType ) || variableType.Namespace == reflectionNameSpace )
 							continue;
 
 						// Additional filtering for fields:
@@ -1184,7 +1191,12 @@ namespace AssetUsageDetectorNamespace
 							continue;
 
 						// Skip primitive types
-						if( properties[i].PropertyType.IsPrimitiveUnityType() )
+						Type variableType = properties[i].PropertyType;
+						if( variableType.IsPrimitiveUnityType() )
+							continue;
+
+						// Searching assembly variables for reference throws InvalidCastException on .NET 4.0 runtime
+						if( typeof( Type ).IsAssignableFrom( variableType ) || variableType.Namespace == reflectionNameSpace )
 							continue;
 
 						// No need to check properties with 'override' keyword
