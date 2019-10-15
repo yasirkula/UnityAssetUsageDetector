@@ -310,13 +310,6 @@ namespace AssetUsageDetectorNamespace.Extras
 			return type.IsPrimitive || primitiveUnityTypes.Contains( type ) || type.IsEnum;
 		}
 
-		// Check if property has override keyword
-		public static bool IsOverridden( this PropertyInfo propertyInfo )
-		{
-			MethodInfo mi = propertyInfo.GetGetMethod( true );
-			return mi.GetBaseDefinition().DeclaringType != mi.DeclaringType;
-		}
-
 		// Get <get> function for a field
 		public static VariableGetVal CreateGetter( this FieldInfo fieldInfo, Type type )
 		{
@@ -339,22 +332,12 @@ namespace AssetUsageDetectorNamespace.Extras
 		// Get <get> function for a property
 		public static VariableGetVal CreateGetter( this PropertyInfo propertyInfo )
 		{
-			// Ignore indexer properties
-			if( propertyInfo.GetIndexParameters().Length > 0 )
-				return null;
-
 			// Can't use PropertyWrapper (which uses CreateDelegate) for property getters of structs
 			if( propertyInfo.DeclaringType.IsValueType )
 				return propertyInfo.CanRead ? ( ( obj ) => propertyInfo.GetValue( obj, null ) ) : (VariableGetVal) null;
 
-			MethodInfo mi = propertyInfo.GetGetMethod( true );
-			if( mi != null )
-			{
-				Type GenType = typeof( PropertyWrapper<,> ).MakeGenericType( propertyInfo.DeclaringType, propertyInfo.PropertyType );
-				return ( (IPropertyAccessor) Activator.CreateInstance( GenType, mi ) ).GetValue;
-			}
-
-			return null;
+			Type GenType = typeof( PropertyWrapper<,> ).MakeGenericType( propertyInfo.DeclaringType, propertyInfo.PropertyType );
+			return ( (IPropertyAccessor) Activator.CreateInstance( GenType, propertyInfo.GetGetMethod( true ) ) ).GetValue;
 		}
 
 		// Check if all open scenes are saved (not dirty)

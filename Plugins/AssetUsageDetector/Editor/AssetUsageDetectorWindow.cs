@@ -306,7 +306,7 @@ namespace AssetUsageDetectorNamespace.Extras
 					searchInAssetsSubsetDrawer.Draw( searchInAssetsSubset );
 					excludedAssetsDrawer.Draw( excludedAssets );
 
-					dontSearchInSourceAssets = EditorGUILayout.ToggleLeft( "Don't search 'Asset(s)' themselves for references", dontSearchInSourceAssets );
+					dontSearchInSourceAssets = EditorGUILayout.ToggleLeft( "Don't search \"Find references of\" themselves for references", dontSearchInSourceAssets );
 
 					GUILayout.EndVertical();
 					GUILayout.EndHorizontal();

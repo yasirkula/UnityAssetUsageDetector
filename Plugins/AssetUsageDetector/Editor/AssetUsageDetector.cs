@@ -111,7 +111,10 @@ namespace AssetUsageDetectorNamespace
 					fileSizes = new long[dependencies.Length];
 
 				for( int i = 0; i < dependencies.Length; i++ )
-					fileSizes[i] = new FileInfo( dependencies[i] ).Length;
+				{
+					FileInfo assetFile = new FileInfo( dependencies[i] );
+					fileSizes[i] = assetFile.Exists ? assetFile.Length : 0L;
+				}
 			}
 		}
 		#endregion
@@ -384,12 +387,17 @@ namespace AssetUsageDetectorNamespace
 				// Initialize the nodes of searched asset(s)
 				foreach( Object obj in objectsToSearchSet )
 				{
-					BeginSearchObject( obj );
-
 					string objHash = obj.Hash();
-					ReferenceNode referenceNode;
-					if( !searchedObjects.TryGetValue( objHash, out referenceNode ) || referenceNode == null )
-						searchedObjects[objHash] = PopReferenceNode( obj );
+					if( searchParameters.dontSearchInSourceAssets )
+						searchedObjects.Add( objHash, PopReferenceNode( obj ) );
+					else
+					{
+						BeginSearchObject( obj );
+
+						ReferenceNode referenceNode;
+						if( !searchedObjects.TryGetValue( objHash, out referenceNode ) || referenceNode == null )
+							searchedObjects[objHash] = PopReferenceNode( obj );
+					}
 				}
 
 				// Progressbar values
@@ -1149,12 +1157,14 @@ namespace AssetUsageDetectorNamespace
 					FieldInfo[] fields = currType.GetFields( fieldModifiers );
 					for( int i = 0; i < fields.Length; i++ )
 					{
+						FieldInfo field = fields[i];
+
 						// Skip obsolete fields
-						if( Attribute.IsDefined( fields[i], typeof( ObsoleteAttribute ) ) )
+						if( Attribute.IsDefined( field, typeof( ObsoleteAttribute ) ) )
 							continue;
 
 						// Skip primitive types
-						Type variableType = fields[i].FieldType;
+						Type variableType = field.FieldType;
 						if( variableType.IsPrimitiveUnityType() )
 							continue;
 
@@ -1162,16 +1172,20 @@ namespace AssetUsageDetectorNamespace
 						if( typeof( Type ).IsAssignableFrom( variableType ) || variableType.Namespace == reflectionNameSpace )
 							continue;
 
+						// Searching pointer variables for reference throws ArgumentException
+						if( variableType.IsPointer )
+							continue;
+
 						// Additional filtering for fields:
 						// 1- Ignore "m_RectTransform", "m_CanvasRenderer" and "m_Canvas" fields of Graphic components
-						string fieldName = fields[i].Name;
+						string fieldName = field.Name;
 						if( typeof( Graphic ).IsAssignableFrom( currType ) &&
 							( fieldName == "m_RectTransform" || fieldName == "m_CanvasRenderer" || fieldName == "m_Canvas" ) )
 							continue;
 
-						VariableGetVal getter = fields[i].CreateGetter( type );
+						VariableGetVal getter = field.CreateGetter( type );
 						if( getter != null )
-							validVariables.Add( new VariableGetterHolder( fields[i], getter, fields[i].IsSerializable() ) );
+							validVariables.Add( new VariableGetterHolder( field, getter, field.IsSerializable() ) );
 					}
 
 					currType = currType.BaseType;
@@ -1186,12 +1200,14 @@ namespace AssetUsageDetectorNamespace
 					PropertyInfo[] properties = currType.GetProperties( propertyModifiers );
 					for( int i = 0; i < properties.Length; i++ )
 					{
+						PropertyInfo property = properties[i];
+
 						// Skip obsolete properties
-						if( Attribute.IsDefined( properties[i], typeof( ObsoleteAttribute ) ) )
+						if( Attribute.IsDefined( property, typeof( ObsoleteAttribute ) ) )
 							continue;
 
 						// Skip primitive types
-						Type variableType = properties[i].PropertyType;
+						Type variableType = property.PropertyType;
 						if( variableType.IsPrimitiveUnityType() )
 							continue;
 
@@ -1199,15 +1215,28 @@ namespace AssetUsageDetectorNamespace
 						if( typeof( Type ).IsAssignableFrom( variableType ) || variableType.Namespace == reflectionNameSpace )
 							continue;
 
+						// Searching pointer variables for reference throws ArgumentException
+						if( variableType.IsPointer )
+							continue;
+
+						// Skip properties without a getter function
+						MethodInfo propertyGetter = property.GetGetMethod( true );
+						if( propertyGetter == null )
+							continue;
+
+						// Skip indexer properties
+						if( property.GetIndexParameters().Length > 0 )
+							continue;
+
 						// No need to check properties with 'override' keyword
-						if( properties[i].IsOverridden() )
+						if( propertyGetter.GetBaseDefinition().DeclaringType != propertyGetter.DeclaringType )
 							continue;
 
 						// Additional filtering for properties:
 						// 1- Ignore "gameObject", "transform", "rectTransform" and "attachedRigidbody" properties of Component's to get more useful results
 						// 2- Ignore "canvasRenderer" and "canvas" properties of Graphic components
 						// 3 & 4- Prevent accessing properties of Unity that instantiate an existing resource (causing memory leak)
-						string propertyName = properties[i].Name;
+						string propertyName = property.Name;
 						if( typeof( Component ).IsAssignableFrom( currType ) && ( propertyName == "gameObject" ||
 							propertyName == "transform" || propertyName == "attachedRigidbody" || propertyName == "rectTransform" ) )
 							continue;
@@ -1230,9 +1259,9 @@ namespace AssetUsageDetectorNamespace
 							continue;
 						else
 						{
-							VariableGetVal getter = properties[i].CreateGetter();
+							VariableGetVal getter = property.CreateGetter();
 							if( getter != null )
-								validVariables.Add( new VariableGetterHolder( properties[i], getter, properties[i].IsSerializable() ) );
+								validVariables.Add( new VariableGetterHolder( property, getter, property.IsSerializable() ) );
 						}
 					}
 
@@ -1271,13 +1300,16 @@ namespace AssetUsageDetectorNamespace
 			{
 				// If a dependency was renamed (which doesn't affect the verified hash, unfortunately),
 				// force refresh the asset's dependencies and search it again
-				FileInfo assetFile = new FileInfo( dependencies[i] );
-				if( !assetFile.Exists || assetFile.Length != fileSizes[i] )
+				if( !Directory.Exists( dependencies[i] ) ) // Calling FileInfo.Length on a directory throws FileNotFoundException
 				{
-					cacheEntry.Refresh( assetPath );
-					cacheEntry.searchResult = CacheEntry.Result.Unknown;
+					FileInfo assetFile = new FileInfo( dependencies[i] );
+					if( !assetFile.Exists || assetFile.Length != fileSizes[i] )
+					{
+						cacheEntry.Refresh( assetPath );
+						cacheEntry.searchResult = CacheEntry.Result.Unknown;
 
-					return AssetHasAnyReference( assetPath );
+						return AssetHasAnyReference( assetPath );
+					}
 				}
 
 				if( assetsToSearchPathsSet.Contains( dependencies[i] ) )

@@ -138,7 +138,7 @@ namespace AssetUsageDetectorNamespace.Extras
 
 	public class ObjectToSearchListDrawer : ListDrawer<ObjectToSearch>
 	{
-		public ObjectToSearchListDrawer() : base( "Asset(s):", true )
+		public ObjectToSearchListDrawer() : base( "Find references of:", true )
 		{
 		}
 
