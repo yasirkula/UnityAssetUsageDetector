@@ -1128,6 +1128,8 @@ namespace AssetUsageDetectorNamespace
 				{ }
 				catch( MissingReferenceException )
 				{ }
+				catch( MissingComponentException )
+				{ }
 			}
 		}
 
