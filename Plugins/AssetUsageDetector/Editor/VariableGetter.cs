@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Reflection;
+using UnityEngine;
 
 namespace AssetUsageDetectorNamespace.Extras
 {
@@ -32,7 +33,15 @@ namespace AssetUsageDetectorNamespace.Extras
 
 		public object Get( object obj )
 		{
-			return getter( obj );
+			try
+			{
+				return getter( obj );
+			}
+			catch( Exception e )
+			{
+				Debug.LogException( e );
+				return null;
+			}
 		}
 	}
 

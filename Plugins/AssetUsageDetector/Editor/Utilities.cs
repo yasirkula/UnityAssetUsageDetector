@@ -12,25 +12,36 @@ namespace AssetUsageDetectorNamespace.Extras
 	public static class Utilities
 	{
 		// A set of commonly used Unity types
-		private static readonly HashSet<Type> primitiveUnityTypes = new HashSet<Type>() {
-				typeof( string ), typeof( Vector4 ), typeof( Vector3 ), typeof( Vector2 ), typeof( Rect ),
-				typeof( Quaternion ), typeof( Color ), typeof( Color32 ), typeof( LayerMask ),
-				typeof( Matrix4x4 ), typeof( AnimationCurve ), typeof( Gradient ), typeof( RectOffset ),
-				typeof( bool[] ), typeof( byte[] ), typeof( sbyte[] ), typeof( char[] ), typeof( decimal[] ),
-				typeof( double[] ), typeof( float[] ), typeof( int[] ), typeof( uint[] ), typeof( long[] ),
-				typeof( ulong[] ), typeof( short[] ), typeof( ushort[] ), typeof( string[] ),
-				typeof( Vector4[] ), typeof( Vector3[] ), typeof( Vector2[] ), typeof( Rect[] ),
-				typeof( Quaternion[] ), typeof( Color[] ), typeof( Color32[] ), typeof( LayerMask[] ),
-				typeof( Matrix4x4[] ), typeof( AnimationCurve[] ), typeof( Gradient[] ), typeof( RectOffset[] ),
-				typeof( List<bool> ), typeof( List<byte> ), typeof( List<sbyte> ), typeof( List<char> ), typeof( List<decimal> ),
-				typeof( List<double> ), typeof( List<float> ), typeof( List<int> ), typeof( List<uint> ), typeof( List<long> ),
-				typeof( List<ulong> ), typeof( List<short> ), typeof( List<ushort> ), typeof( List<string> ),
-				typeof( List<Vector4> ), typeof( List<Vector3> ), typeof( List<Vector2> ), typeof( List<Rect> ),
-				typeof( List<Quaternion> ), typeof( List<Color> ), typeof( List<Color32> ), typeof( List<LayerMask> ),
-				typeof( List<Matrix4x4> ), typeof( List<AnimationCurve> ), typeof( List<Gradient> ), typeof( List<RectOffset> )
+		private static readonly HashSet<Type> primitiveUnityTypes = new HashSet<Type>()
+		{
+			typeof( string ), typeof( Vector4 ), typeof( Vector3 ), typeof( Vector2 ), typeof( Rect ),
+			typeof( Quaternion ), typeof( Color ), typeof( Color32 ), typeof( LayerMask ), typeof( Bounds ),
+			typeof( Matrix4x4 ), typeof( AnimationCurve ), typeof( Gradient ), typeof( RectOffset ),
+			typeof( bool[] ), typeof( byte[] ), typeof( sbyte[] ), typeof( char[] ), typeof( decimal[] ),
+			typeof( double[] ), typeof( float[] ), typeof( int[] ), typeof( uint[] ), typeof( long[] ),
+			typeof( ulong[] ), typeof( short[] ), typeof( ushort[] ), typeof( string[] ),
+			typeof( Vector4[] ), typeof( Vector3[] ), typeof( Vector2[] ), typeof( Rect[] ),
+			typeof( Quaternion[] ), typeof( Color[] ), typeof( Color32[] ), typeof( LayerMask[] ), typeof( Bounds[] ),
+			typeof( Matrix4x4[] ), typeof( AnimationCurve[] ), typeof( Gradient[] ), typeof( RectOffset[] ),
+			typeof( List<bool> ), typeof( List<byte> ), typeof( List<sbyte> ), typeof( List<char> ), typeof( List<decimal> ),
+			typeof( List<double> ), typeof( List<float> ), typeof( List<int> ), typeof( List<uint> ), typeof( List<long> ),
+			typeof( List<ulong> ), typeof( List<short> ), typeof( List<ushort> ), typeof( List<string> ),
+			typeof( List<Vector4> ), typeof( List<Vector3> ), typeof( List<Vector2> ), typeof( List<Rect> ),
+			typeof( List<Quaternion> ), typeof( List<Color> ), typeof( List<Color32> ), typeof( List<LayerMask> ), typeof( List<Bounds> ),
+			typeof( List<Matrix4x4> ), typeof( List<AnimationCurve> ), typeof( List<Gradient> ), typeof( List<RectOffset> ),
+#if UNITY_2017_2_OR_NEWER
+			typeof( Vector3Int ), typeof( Vector2Int ), typeof( RectInt ), typeof( BoundsInt ),
+			typeof( Vector3Int[] ), typeof( Vector2Int[] ), typeof( RectInt[] ), typeof( BoundsInt[] ),
+			typeof( List<Vector3Int> ), typeof( List<Vector2Int> ), typeof( List<RectInt> ), typeof( List<BoundsInt> )
+#endif
 		};
 
 		private static readonly HashSet<string> folderContentsSet = new HashSet<string>();
+
+#if UNITY_2018_3_OR_NEWER
+		private static int previousPingedPrefabInstanceId;
+		private static double previousPingedPrefabPingTime;
+#endif
 
 		public static readonly GUILayoutOption GL_EXPAND_WIDTH = GUILayout.ExpandWidth( true );
 		public static readonly GUILayoutOption GL_EXPAND_HEIGHT = GUILayout.ExpandHeight( true );
@@ -142,9 +153,9 @@ namespace AssetUsageDetectorNamespace.Extras
 
 			Event e = Event.current;
 
-			// If CTRL key is pressed, do a multi-select;
+			// If CTRL or Shift keys are pressed, do a multi-select;
 			// otherwise select only the clicked object and ping it in editor
-			if( !e.control )
+			if( !e.control && !e.shift )
 				Selection.activeObject = obj.PingInEditor();
 			else
 			{
@@ -211,23 +222,26 @@ namespace AssetUsageDetectorNamespace.Extras
 				{
 					string assetPath = AssetDatabase.GetAssetPath( objTR.gameObject );
 					var openPrefabStage = UnityEditor.Experimental.SceneManagement.PrefabStageUtility.GetCurrentPrefabStage();
+
+					// Try to open the prefab stage of pinged prefabs if they are double clicked
+					if( previousPingedPrefabInstanceId == objTR.GetInstanceID() && EditorApplication.timeSinceStartup - previousPingedPrefabPingTime <= 0.3f &&
+						( openPrefabStage == null || !openPrefabStage.stageHandle.IsValid() || assetPath != openPrefabStage.prefabAssetPath ) )
+					{
+						AssetDatabase.OpenAsset( objTR.gameObject );
+						openPrefabStage = UnityEditor.Experimental.SceneManagement.PrefabStageUtility.GetCurrentPrefabStage();
+					}
+
+					previousPingedPrefabInstanceId = objTR.GetInstanceID();
+					previousPingedPrefabPingTime = EditorApplication.timeSinceStartup;
+
 					if( openPrefabStage != null && openPrefabStage.stageHandle.IsValid() && assetPath == openPrefabStage.prefabAssetPath )
 					{
-						// Ping the object in prefab stage
-						Transform targetParent = objTR;
-						Transform selectedObject = ( (GameObject) obj ).transform;
-						objTR = openPrefabStage.prefabContentsRoot.transform;
-						while( targetParent != selectedObject )
+						GameObject prefabStageGO = FollowSymmetricHierarchy( (GameObject) obj, openPrefabStage.prefabContentsRoot );
+						if( prefabStageGO != null )
 						{
-							Transform temp = selectedObject;
-							while( temp.parent != targetParent )
-								temp = temp.parent;
-
-							objTR = objTR.GetChild( temp.GetSiblingIndex() );
-							targetParent = temp;
+							objTR = prefabStageGO.transform;
+							selection = objTR.gameObject;
 						}
-
-						selection = objTR.gameObject;
 					}
 #if UNITY_2019_1_OR_NEWER
 					else if( obj != objTR.gameObject )
@@ -251,6 +265,38 @@ namespace AssetUsageDetectorNamespace.Extras
 
 			EditorGUIUtility.PingObject( obj );
 			return selection;
+		}
+
+		public static GameObject FollowSymmetricHierarchy( this GameObject go, GameObject symmetricRoot )
+		{
+			Transform target = go.transform;
+			Transform root1 = target.root;
+			Transform root2 = symmetricRoot.transform;
+			while( root1 != target )
+			{
+				Transform temp = target;
+				while( temp.parent != root1 )
+					temp = temp.parent;
+
+				Transform newRoot2;
+				int siblingIndex = temp.GetSiblingIndex();
+				if( siblingIndex < root2.childCount )
+				{
+					newRoot2 = root2.GetChild( siblingIndex );
+					if( newRoot2.name != temp.name )
+						newRoot2 = root2.Find( temp.name );
+				}
+				else
+					newRoot2 = root2.Find( temp.name );
+
+				if( newRoot2 == null )
+					return null;
+
+				root2 = newRoot2;
+				root1 = temp;
+			}
+
+			return root2.gameObject;
 		}
 
 		// Check if the field is serializable

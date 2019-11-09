@@ -11,14 +11,17 @@ namespace AssetUsageDetectorNamespace
 	[Serializable]
 	public class SearchResultDrawParameters
 	{
+		public SearchResult searchResult;
 		public PathDrawingMode pathDrawingMode;
 		public bool showTooltips;
+		public bool noAssetDatabaseChanges;
 		public string tooltip;
 
-		public SearchResultDrawParameters( PathDrawingMode pathDrawingMode, bool showTooltips )
+		public SearchResultDrawParameters( PathDrawingMode pathDrawingMode, bool showTooltips, bool noAssetDatabaseChanges )
 		{
 			this.pathDrawingMode = pathDrawingMode;
 			this.showTooltips = showTooltips;
+			this.noAssetDatabaseChanges = noAssetDatabaseChanges;
 		}
 	}
 
@@ -31,7 +34,9 @@ namespace AssetUsageDetectorNamespace
 		public class SerializableResultGroup
 		{
 			public string title;
-			public bool clickable;
+			public SearchResultGroup.GroupType type;
+			public bool isExpanded;
+			public bool pendingSearch;
 
 			public List<int> initialSerializedNodes;
 		}
@@ -51,6 +56,9 @@ namespace AssetUsageDetectorNamespace
 		private List<SearchResultGroup> result;
 		private SceneSetup[] initialSceneSetup;
 
+		private AssetUsageDetector searchHandler;
+		private AssetUsageDetector.Parameters m_searchParameters;
+
 		private List<SerializableNode> serializedNodes;
 		private List<SerializableResultGroup> serializedGroups;
 
@@ -59,8 +67,9 @@ namespace AssetUsageDetectorNamespace
 
 		public bool SearchCompletedSuccessfully { get { return success; } }
 		public bool InitialSceneSetupConfigured { get { return initialSceneSetup != null && initialSceneSetup.Length > 0; } }
+		public AssetUsageDetector.Parameters SearchParameters { get { return m_searchParameters; } }
 
-		public SearchResult( bool success, List<SearchResultGroup> result, SceneSetup[] initialSceneSetup )
+		public SearchResult( bool success, List<SearchResultGroup> result, SceneSetup[] initialSceneSetup, AssetUsageDetector searchHandler, AssetUsageDetector.Parameters searchParameters )
 		{
 			if( result == null )
 				result = new List<SearchResultGroup>( 0 );
@@ -68,10 +77,107 @@ namespace AssetUsageDetectorNamespace
 			this.success = success;
 			this.result = result;
 			this.initialSceneSetup = initialSceneSetup;
+			this.searchHandler = searchHandler;
+			this.m_searchParameters = searchParameters;
+		}
+
+		public void RefreshSearchResultGroup( SearchResultGroup searchResultGroup, bool noAssetDatabaseChanges )
+		{
+			if( searchResultGroup == null )
+			{
+				Debug.LogError( "SearchResultGroup is null!" );
+				return;
+			}
+
+			int searchResultGroupIndex = -1;
+			for( int i = 0; i < result.Count; i++ )
+			{
+				if( result[i] == searchResultGroup )
+				{
+					searchResultGroupIndex = i;
+					break;
+				}
+			}
+
+			if( searchResultGroupIndex < 0 )
+			{
+				Debug.LogError( "SearchResultGroup is not a part of SearchResult!" );
+				return;
+			}
+
+			if( searchResultGroup.Type == SearchResultGroup.GroupType.Scene && EditorApplication.isPlaying && !EditorSceneManager.GetSceneByPath( searchResultGroup.Title ).isLoaded )
+			{
+				Debug.LogError( "Can't search unloaded scene while in Play Mode!" );
+				return;
+			}
+
+			if( searchHandler == null )
+				searchHandler = new AssetUsageDetector();
+
+			SceneSearchMode searchInScenes = m_searchParameters.searchInScenes;
+			Object[] searchInScenesSubset = m_searchParameters.searchInScenesSubset;
+			bool searchInAssetsFolder = m_searchParameters.searchInAssetsFolder;
+			Object[] searchInAssetsSubset = m_searchParameters.searchInAssetsSubset;
+
+			try
+			{
+				if( searchResultGroup.Type == SearchResultGroup.GroupType.Assets )
+				{
+					m_searchParameters.searchInScenes = SceneSearchMode.None;
+					m_searchParameters.searchInScenesSubset = null;
+				}
+				else if( searchResultGroup.Type == SearchResultGroup.GroupType.Scene )
+				{
+					m_searchParameters.searchInScenes = SceneSearchMode.None;
+					m_searchParameters.searchInScenesSubset = new Object[1] { AssetDatabase.LoadAssetAtPath<SceneAsset>( searchResultGroup.Title ) };
+					m_searchParameters.searchInAssetsFolder = false;
+					m_searchParameters.searchInAssetsSubset = null;
+				}
+				else
+				{
+					m_searchParameters.searchInScenes = (SceneSearchMode) 1024; // A unique value to search only the DontDestroyOnLoad scene
+					m_searchParameters.searchInScenesSubset = null;
+					m_searchParameters.searchInAssetsFolder = false;
+					m_searchParameters.searchInAssetsSubset = null;
+				}
+
+				m_searchParameters.lazySceneSearch = false;
+				m_searchParameters.noAssetDatabaseChanges = noAssetDatabaseChanges;
+
+				// Make sure the AssetDatabase is up-to-date
+				AssetDatabase.SaveAssets();
+
+				List<SearchResultGroup> searchResult = searchHandler.Run( m_searchParameters ).result;
+				if( searchResult != null )
+				{
+					int newSearchResultGroupIndex = -1;
+					for( int i = 0; i < searchResult.Count; i++ )
+					{
+						if( searchResultGroup.Title == searchResult[i].Title )
+						{
+							newSearchResultGroupIndex = i;
+							break;
+						}
+					}
+
+					if( newSearchResultGroupIndex >= 0 )
+						result[searchResultGroupIndex] = searchResult[newSearchResultGroupIndex];
+					else
+						searchResultGroup.Clear();
+				}
+			}
+			finally
+			{
+				m_searchParameters.searchInScenes = searchInScenes;
+				m_searchParameters.searchInScenesSubset = searchInScenesSubset;
+				m_searchParameters.searchInAssetsFolder = searchInAssetsFolder;
+				m_searchParameters.searchInAssetsSubset = searchInAssetsSubset;
+			}
 		}
 
 		public void DrawOnGUI( SearchResultDrawParameters parameters )
 		{
+			parameters.searchResult = this;
 			parameters.tooltip = null;
 
 			for( int i = 0; i < result.Count; i++ )
@@ -232,7 +338,7 @@ namespace AssetUsageDetectorNamespace
 
 			for( int i = 0; i < serializedGroups.Count; i++ )
 			{
-				result.Add( new SearchResultGroup( serializedGroups[i].title, serializedGroups[i].clickable ) );
+				result.Add( new SearchResultGroup( serializedGroups[i].title, serializedGroups[i].type, serializedGroups[i].isExpanded, serializedGroups[i].pendingSearch ) );
 				result[i].Deserialize( serializedGroups[i], allNodes );
 			}
 
@@ -244,6 +350,8 @@ namespace AssetUsageDetectorNamespace
 	// Custom class to hold the results for a single scene or Assets folder
 	public class SearchResultGroup
 	{
+		public enum GroupType { Assets = 0, Scene = 1, DontDestroyOnLoad = 2 };
+
 		// Custom struct to hold a single path to a reference
 		public struct ReferencePath
 		{
@@ -257,8 +365,10 @@ namespace AssetUsageDetectorNamespace
 			}
 		}
 
-		private readonly string title;
-		private readonly bool clickable;
+		public string Title { get; private set; }
+		public GroupType Type { get; private set; }
+		public bool IsExpanded { get; private set; }
+		public bool PendingSearch { get; private set; }
 
 		private readonly List<ReferenceNode> references;
 		private List<ReferencePath> referencePathsShortUnique;
@@ -267,10 +377,12 @@ namespace AssetUsageDetectorNamespace
 		public int NumberOfReferences { get { return references.Count; } }
 		public ReferenceNode this[int index] { get { return references[index]; } }
 
-		public SearchResultGroup( string title, bool clickable )
+		public SearchResultGroup( string title, GroupType type, bool isExpanded = true, bool pendingSearch = false )
 		{
-			this.title = title;
-			this.clickable = clickable;
+			Title = title;
+			Type = type;
+			IsExpanded = isExpanded;
+			PendingSearch = pendingSearch;
 
 			references = new List<ReferenceNode>();
 			referencePathsShortUnique = null;
@@ -281,6 +393,17 @@ namespace AssetUsageDetectorNamespace
 		public void AddReference( ReferenceNode node )
 		{
 			references.Add( node );
+		}
+
+		// Removes all nodes
+		public void Clear()
+		{
+			references.Clear();
+
+			if( referencePathsShortUnique != null )
+				referencePathsShortUnique.Clear();
+			if( referencePathsShortest != null )
+				referencePathsShortest.Clear();
 		}
 
 		// Initializes commonly used variables of the nodes
@@ -368,6 +491,9 @@ namespace AssetUsageDetectorNamespace
 		// Add all the Object's in this container to the set
 		public void AddObjectsTo( HashSet<Object> objectsSet )
 		{
+			if( PendingSearch )
+				return;
+
 			CalculateShortestPathsToReferences();
 
 			for( int i = 0; i < referencePathsShortUnique.Count; i++ )
@@ -381,6 +507,9 @@ namespace AssetUsageDetectorNamespace
 		// Add all the GameObject's in this container to the set
 		public void AddGameObjectsTo( HashSet<GameObject> gameObjectsSet )
 		{
+			if( PendingSearch )
+				return;
+
 			CalculateShortestPathsToReferences();
 
 			for( int i = 0; i < referencePathsShortUnique.Count; i++ )
@@ -397,7 +526,7 @@ namespace AssetUsageDetectorNamespace
 		}
 
 		// Calculate short unique paths to the references
-		public void CalculateShortestPathsToReferences()
+		private void CalculateShortestPathsToReferences()
 		{
 			if( referencePathsShortUnique != null )
 				return;
@@ -439,51 +568,83 @@ namespace AssetUsageDetectorNamespace
 			Color c = GUI.color;
 			GUI.color = Color.cyan;
 
-			if( GUILayout.Button( title, Utilities.BoxGUIStyle, Utilities.GL_EXPAND_WIDTH, Utilities.GL_HEIGHT_40 ) && clickable )
+			Rect rect = EditorGUILayout.GetControlRect( Utilities.GL_EXPAND_WIDTH, Utilities.GL_HEIGHT_40 );
+			float width = rect.width;
+			rect.width = 40f;
+			if( GUI.Button( rect, IsExpanded ? "v" : ">" ) )
+			{
+				IsExpanded = !IsExpanded;
+				GUIUtility.ExitGUI();
+			}
+
+			rect.x += 40f;
+			rect.width = width - ( parameters.searchResult != null ? 140f : 40f );
+			if( GUI.Button( rect, Title, Utilities.BoxGUIStyle ) && Type == GroupType.Scene )
 			{
 				// If the container (scene, usually) is clicked, highlight it on Project view
-				AssetDatabase.LoadAssetAtPath<SceneAsset>( title ).SelectInEditor();
+				AssetDatabase.LoadAssetAtPath<SceneAsset>( Title ).SelectInEditor();
 			}
 
-			GUI.color = Color.yellow;
-
-			if( parameters.pathDrawingMode == PathDrawingMode.Full )
+			if( parameters.searchResult != null )
 			{
-				for( int i = 0; i < references.Count; i++ )
+				rect.x += width - 140f;
+				rect.width = 100f;
+				if( GUI.Button( rect, "Refresh" ) )
 				{
-					GUILayout.Space( 5 );
-					references[i].DrawOnGUIRecursively( parameters, null );
+					parameters.searchResult.RefreshSearchResultGroup( this, parameters.noAssetDatabaseChanges );
+					GUIUtility.ExitGUI();
 				}
 			}
-			else
+
+			if( IsExpanded )
 			{
-				if( referencePathsShortUnique == null )
-					CalculateShortestPathsToReferences();
+				GUI.color = Color.yellow;
 
-				List<ReferencePath> pathsToDraw;
-				if( parameters.pathDrawingMode == PathDrawingMode.ShortRelevantParts )
-					pathsToDraw = referencePathsShortUnique;
+				if( PendingSearch )
+					GUILayout.Box( "Lazy Search: this scene potentially has some references, hit Refresh to find them", Utilities.BoxGUIStyle );
+				else if( references.Count == 0 )
+					GUILayout.Box( "No references found...", Utilities.BoxGUIStyle );
 				else
-					pathsToDraw = referencePathsShortest;
-
-				for( int i = 0; i < pathsToDraw.Count; i++ )
 				{
-					GUILayout.Space( 5 );
-
-					GUILayout.BeginHorizontal();
-
-					ReferencePath path = pathsToDraw[i];
-					path.startNode.DrawOnGUI( parameters, null );
-
-					ReferenceNode currentNode = path.startNode;
-					for( int j = 0; j < path.pathLinksToFollow.Length; j++ )
+					if( parameters.pathDrawingMode == PathDrawingMode.Full )
 					{
-						ReferenceNode.Link link = currentNode[path.pathLinksToFollow[j]];
-						link.targetNode.DrawOnGUI( parameters, link.description );
-						currentNode = link.targetNode;
+						for( int i = 0; i < references.Count; i++ )
+						{
+							GUILayout.Space( 5 );
+							references[i].DrawOnGUIRecursively( parameters, null );
+						}
 					}
+					else
+					{
+						if( referencePathsShortUnique == null )
+							CalculateShortestPathsToReferences();
 
-					GUILayout.EndHorizontal();
+						List<ReferencePath> pathsToDraw;
+						if( parameters.pathDrawingMode == PathDrawingMode.ShortRelevantParts )
+							pathsToDraw = referencePathsShortUnique;
+						else
+							pathsToDraw = referencePathsShortest;
+
+						for( int i = 0; i < pathsToDraw.Count; i++ )
+						{
+							GUILayout.Space( 5 );
+
+							GUILayout.BeginHorizontal();
+
+							ReferencePath path = pathsToDraw[i];
+							path.startNode.DrawOnGUI( parameters, null );
+
+							ReferenceNode currentNode = path.startNode;
+							for( int j = 0; j < path.pathLinksToFollow.Length; j++ )
+							{
+								ReferenceNode.Link link = currentNode[path.pathLinksToFollow[j]];
+								link.targetNode.DrawOnGUI( parameters, link.description );
+								currentNode = link.targetNode;
+							}
+
+							GUILayout.EndHorizontal();
+						}
+					}
 				}
 			}
 
@@ -497,8 +658,10 @@ namespace AssetUsageDetectorNamespace
 		{
 			SearchResult.SerializableResultGroup serializedResultGroup = new SearchResult.SerializableResultGroup()
 			{
-				title = title,
-				clickable = clickable
+				title = Title,
+				type = Type,
+				isExpanded = IsExpanded,
+				pendingSearch = PendingSearch
 			};
 
 			if( references != null )

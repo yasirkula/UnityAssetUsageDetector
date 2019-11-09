@@ -46,8 +46,22 @@ namespace AssetUsageDetectorNamespace.Extras
 							{
 								if( draggedObjects[i] != null && !draggedObjects[i].Equals( null ) )
 								{
+									bool replacedNullElement = false;
+									for( int j = 0; j < list.Count; j++ )
+									{
+										if( IsElementNull( list[j] ) )
+										{
+											list[j] = CreateElement( draggedObjects[i] );
+
+											replacedNullElement = true;
+											break;
+										}
+									}
+
+									if( !replacedNullElement )
+										list.Add( CreateElement( draggedObjects[i] ) );
+
 									hasChanged = true;
-									list.Add( CreateElement( draggedObjects[i] ) );
 								}
 							}
 						}
@@ -107,6 +121,7 @@ namespace AssetUsageDetectorNamespace.Extras
 		protected abstract T CreateElement( Object source );
 		protected abstract Object GetObjectFromElement( T element );
 		protected abstract void SetObjectOfElement( List<T> list, int index, Object value );
+		protected abstract bool IsElementNull( T element );
 		protected abstract void PostElementDrawer( T element );
 	}
 
@@ -129,6 +144,11 @@ namespace AssetUsageDetectorNamespace.Extras
 		protected override void SetObjectOfElement( List<Object> list, int index, Object value )
 		{
 			list[index] = value;
+		}
+
+		protected override bool IsElementNull( Object element )
+		{
+			return element == null || element.Equals( null );
 		}
 
 		protected override void PostElementDrawer( Object element )
@@ -156,6 +176,11 @@ namespace AssetUsageDetectorNamespace.Extras
 		{
 			list[index].obj = value;
 			list[index].RefreshSubAssets();
+		}
+
+		protected override bool IsElementNull( ObjectToSearch element )
+		{
+			return element == null || element.obj == null || element.obj.Equals( null );
 		}
 
 		protected override void PostElementDrawer( ObjectToSearch element )

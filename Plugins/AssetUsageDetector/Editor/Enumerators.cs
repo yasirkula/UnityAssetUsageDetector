@@ -112,5 +112,19 @@ namespace AssetUsageDetectorNamespace.Extras
 		{
 			return GetEnumerator();
 		}
+
+		public Object[] ToArray()
+		{
+			int count = 0;
+			foreach( Object obj in this )
+				count++;
+
+			Object[] result = new Object[count];
+			int index = 0;
+			foreach( Object obj in this )
+				result[index++] = obj;
+
+			return result;
+		}
 	}
 }

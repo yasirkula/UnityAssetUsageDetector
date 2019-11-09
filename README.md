@@ -14,14 +14,12 @@ This editor extension helps you figure out at which places an asset or GameObjec
 
 - Import [AssetUsageDetector.unitypackage](https://github.com/yasirkula/UnityAssetUsageDetector/releases) to your project
 - Open **Window - Asset Usage Detector** window, configure the settings and hit **GO!**
-  - or, use the **Assets - Search For References** shortcut to find the selected object(s)' references
-  
-**NOTE:** If your project uses an older version of AssetUsageDetector, delete the older version before updating the plugin.
+  - or, right click an object and select **Search For References**
 
 ### C. FEATURES
 
 - You can search for references of any object that extends *UnityEngine.Object*
-- Seaches every corner of your project with its *reflection* based search algorithm (even non-Unity objects, structs and data types like dictionaries are searched)
+- Extensive search algorithm that uses *SerializedObject* and *reflection* to find references
 - Can search in multiple scenes at once
 - Can show complete paths to the references or only the most relevant parts of the paths (see the demonstration below)
 
