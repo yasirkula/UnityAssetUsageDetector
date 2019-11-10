@@ -1305,16 +1305,19 @@ namespace AssetUsageDetectorNamespace
 					{
 						// If the field is IEnumerable (possibly an array or collection), search through members of it
 						// Note that Transform IEnumerable (children of the transform) is not iterated
+						int index = 0;
 						foreach( object element in (IEnumerable) variableValue )
 						{
 							ReferenceNode searchResult = SearchObject( element );
 							if( searchResult != null )
 							{
 								if( searchResult != referenceNode )
-									referenceNode.AddLinkTo( searchResult, ( variables[i].isProperty ? "Property (IEnumerable): " : "Variable (IEnumerable): " ) + variables[i].name );
+									referenceNode.AddLinkTo( searchResult, string.Concat( variables[i].isProperty ? "Property: " : "Variable: ", variables[i].name, "[", index + "]" ) );
 								else
 									PoolReferenceNode( searchResult );
 							}
+
+							index++;
 						}
 					}
 				}
