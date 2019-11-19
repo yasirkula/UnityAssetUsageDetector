@@ -48,6 +48,7 @@ namespace AssetUsageDetectorNamespace.Extras
 		public static readonly GUILayoutOption GL_WIDTH_25 = GUILayout.Width( 25 );
 		public static readonly GUILayoutOption GL_WIDTH_100 = GUILayout.Width( 100 );
 		public static readonly GUILayoutOption GL_WIDTH_250 = GUILayout.Width( 250 );
+		public static readonly GUILayoutOption GL_HEIGHT_0 = GUILayout.Height( 0 );
 		public static readonly GUILayoutOption GL_HEIGHT_30 = GUILayout.Height( 30 );
 		public static readonly GUILayoutOption GL_HEIGHT_35 = GUILayout.Height( 35 );
 		public static readonly GUILayoutOption GL_HEIGHT_40 = GUILayout.Height( 40 );

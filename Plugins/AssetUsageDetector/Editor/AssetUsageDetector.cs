@@ -44,7 +44,7 @@ namespace AssetUsageDetectorNamespace
 			public bool searchInAssetsFolder = true;
 			public Object[] searchInAssetsSubset = null;
 			public Object[] excludedAssetsFromSearch = null;
-			public bool dontSearchInSourceAssets = false;
+			public bool dontSearchInSourceAssets = true;
 			public Object[] excludedScenesFromSearch = null;
 
 			public int searchDepthLimit = 4;
@@ -148,10 +148,12 @@ namespace AssetUsageDetectorNamespace
 
 		private int searchDepthLimit; // Depth limit for recursively searching variables of objects
 
-		private Object currentObject;
+		private Object currentSearchedObject;
 		private int currentDepth;
 
+		private bool searchingSourceAssets;
 		private bool isInPlayMode;
+
 #if UNITY_2018_3_OR_NEWER
 		private UnityEditor.Experimental.SceneManagement.PrefabStage openPrefabStage;
 		private GameObject openPrefabStagePrefabAsset;
@@ -302,7 +304,7 @@ namespace AssetUsageDetectorNamespace
 					if( obj.IsFolder() )
 						folderContentsSet.UnionWith( Utilities.EnumerateFolderContents( obj ) );
 					else
-						AddSearchedObjectToFilteredSets( obj );
+						AddSearchedObjectToFilteredSets( obj, true );
 				}
 
 				foreach( string filePath in folderContentsSet )
@@ -316,7 +318,7 @@ namespace AssetUsageDetectorNamespace
 						continue;
 
 					for( int i = 0; i < assets.Length; i++ )
-						AddSearchedObjectToFilteredSets( assets[i] );
+						AddSearchedObjectToFilteredSets( assets[i], true );
 				}
 
 				foreach( Object obj in objectsToSearchSet )
@@ -431,19 +433,7 @@ namespace AssetUsageDetectorNamespace
 
 				// Initialize the nodes of searched asset(s)
 				foreach( Object obj in objectsToSearchSet )
-				{
-					string objHash = obj.Hash();
-					if( searchParameters.dontSearchInSourceAssets )
-						searchedObjects.Add( objHash, PopReferenceNode( obj ) );
-					else
-					{
-						BeginSearchObject( obj );
-
-						ReferenceNode referenceNode;
-						if( !searchedObjects.TryGetValue( objHash, out referenceNode ) || referenceNode == null )
-							searchedObjects[objHash] = PopReferenceNode( obj );
-					}
-				}
+					searchedObjects.Add( obj.Hash(), PopReferenceNode( obj ) );
 
 				// Progressbar values
 				int searchProgress = 0;
@@ -613,6 +603,20 @@ namespace AssetUsageDetectorNamespace
 						searchResult.Add( currentSearchResultGroup );
 				}
 
+				// Searching source assets last prevents some references from being excluded due to callStack.ContainsFast
+				if( !searchParameters.dontSearchInSourceAssets )
+				{
+					searchingSourceAssets = true;
+
+					foreach( Object obj in objectsToSearchSet )
+					{
+						currentSearchedObject = obj;
+						SearchObject( obj );
+					}
+
+					searchingSourceAssets = false;
+				}
+
 				InitializeSearchResultNodes( searchResult );
 
 				// Log some c00l stuff to console
@@ -656,7 +660,7 @@ namespace AssetUsageDetectorNamespace
 			finally
 			{
 				currentSearchResultGroup = null;
-				currentObject = null;
+				currentSearchedObject = null;
 
 				EditorUtility.ClearProgressBar();
 
@@ -682,7 +686,7 @@ namespace AssetUsageDetectorNamespace
 		}
 
 		// Checks if object is asset or scene object and adds it to the corresponding HashSet(s)
-		private void AddSearchedObjectToFilteredSets( Object obj )
+		private void AddSearchedObjectToFilteredSets( Object obj, bool expandGameObjects )
 		{
 			if( obj == null || obj.Equals( null ) )
 				return;
@@ -698,7 +702,7 @@ namespace AssetUsageDetectorNamespace
 			{
 				GameObject prefabStageObjectSource = ( (GameObject) obj ).FollowSymmetricHierarchy( openPrefabStagePrefabAsset );
 				if( prefabStageObjectSource != null )
-					AddSearchedObjectToFilteredSets( prefabStageObjectSource );
+					AddSearchedObjectToFilteredSets( prefabStageObjectSource, expandGameObjects );
 			}
 #endif
 
@@ -749,7 +753,7 @@ namespace AssetUsageDetectorNamespace
 					sceneObjectsToSearchScenesSet.Add( ( (Component) obj ).gameObject.scene.path );
 			}
 
-			if( obj is GameObject )
+			if( expandGameObjects && obj is GameObject )
 			{
 				// If searched asset is a GameObject, include its components in the search
 				Component[] components = ( (GameObject) obj ).GetComponents<Component>();
@@ -765,6 +769,11 @@ namespace AssetUsageDetectorNamespace
 					else
 						sceneObjectsToSearchSet.Add( components[i] );
 				}
+			}
+			else if( obj is Component )
+			{
+				// Include searched components' GameObjects in the search, as well
+				AddSearchedObjectToFilteredSets( ( (Component) obj ).gameObject, false );
 			}
 		}
 
@@ -846,10 +855,10 @@ namespace AssetUsageDetectorNamespace
 			if( obj is SceneAsset )
 				return;
 
-			currentObject = obj;
+			currentSearchedObject = obj;
 
 			ReferenceNode searchResult = SearchObject( obj );
-			if( searchResult != null && currentSearchResultGroup != null )
+			if( searchResult != null )
 				currentSearchResultGroup.AddReference( searchResult );
 		}
 
@@ -863,16 +872,21 @@ namespace AssetUsageDetectorNamespace
 			if( callStack.ContainsFast( obj ) )
 				return null;
 
+			bool searchingSourceAsset = searchingSourceAssets && ReferenceEquals( currentSearchedObject, obj );
+
 			// Hashing does not work well with structs all the time, don't cache search results for structs
 			string objHash = null;
 			if( !( obj is ValueType ) )
 			{
 				objHash = obj.Hash();
 
-				// If object was searched before, return the cached result
-				ReferenceNode cachedResult;
-				if( searchedObjects.TryGetValue( objHash, out cachedResult ) )
-					return cachedResult;
+				if( !searchingSourceAsset )
+				{
+					// If object was searched before, return the cached result
+					ReferenceNode cachedResult;
+					if( searchedObjects.TryGetValue( objHash, out cachedResult ) )
+						return cachedResult;
+				}
 			}
 
 			searchedObjectsCount++;
@@ -881,21 +895,6 @@ namespace AssetUsageDetectorNamespace
 			Object unityObject = obj as Object;
 			if( unityObject != null )
 			{
-				// If we hit a searched asset
-				if( objectsToSearchSet.Contains( unityObject ) )
-				{
-					// If we were searching for references of the searched asset that we hit (or a component of it),
-					// ignore the hit since the searched asset doesn't have a meaningful reference to itself at the moment
-					// If there is a meaningful reference, it will become available when calling the SearchX functions below
-					if( currentObject != unityObject && ( !( unityObject is Component ) || currentObject != ( (Component) unityObject ).gameObject ) )
-					{
-						result = PopReferenceNode( unityObject );
-						searchedObjects.Add( objHash, result );
-
-						return result;
-					}
-				}
-
 				// If the Object is an asset, search it in detail only if its dependencies contain at least one of the searched asset(s)
 				if( unityObject.IsAsset() && ( assetsToSearchSet.Count == 0 || !AssetHasAnyReference( AssetDatabase.GetAssetPath( unityObject ) ) ) )
 				{
@@ -945,7 +944,15 @@ namespace AssetUsageDetectorNamespace
 			// and if the object is a UnityEngine.Object (if not, cache the result only if we have actually found something
 			// or we are at the root of the search; i.e. currentDepth == 0)
 			if( objHash != null && ( result != null || unityObject != null || currentDepth == 0 ) )
-				searchedObjects.Add( objHash, result );
+			{
+				if( !searchingSourceAsset )
+					searchedObjects.Add( objHash, result );
+				else if( result != null )
+				{
+					result.CopyReferencesTo( searchedObjects[objHash] );
+					PoolReferenceNode( result );
+				}
+			}
 
 			return result;
 		}
@@ -1253,12 +1260,13 @@ namespace AssetUsageDetectorNamespace
 								break;
 						}
 
-						if( searchResult != null )
+						if( searchResult != null && searchResult != referenceNode )
 						{
-							if( searchResult != referenceNode )
-								referenceNode.AddLinkTo( searchResult, "Variable: " + iterator.propertyPath );
-							else
-								PoolReferenceNode( searchResult );
+							string propertyPath = iterator.propertyPath;
+
+							// m_RD.texture is a redundant reference that shows up when searching sprites
+							if( !propertyPath.EndsWith( "m_RD.texture", StringComparison.Ordinal ) )
+								referenceNode.AddLinkTo( searchResult, "Variable: " + propertyPath );
 						}
 					} while( iterator.NextVisible( enterChildren ) );
 
@@ -1292,13 +1300,8 @@ namespace AssetUsageDetectorNamespace
 					if( !( variableValue is ICollection ) )
 					{
 						ReferenceNode searchResult = SearchObject( variableValue );
-						if( searchResult != null )
-						{
-							if( searchResult != referenceNode )
-								referenceNode.AddLinkTo( searchResult, ( variables[i].isProperty ? "Property: " : "Variable: " ) + variables[i].name );
-							else
-								PoolReferenceNode( searchResult );
-						}
+						if( searchResult != null && searchResult != referenceNode )
+							referenceNode.AddLinkTo( searchResult, ( variables[i].isProperty ? "Property: " : "Variable: " ) + variables[i].name );
 					}
 
 					if( variableValue is IEnumerable && !( variableValue is Transform ) )
@@ -1309,13 +1312,8 @@ namespace AssetUsageDetectorNamespace
 						foreach( object element in (IEnumerable) variableValue )
 						{
 							ReferenceNode searchResult = SearchObject( element );
-							if( searchResult != null )
-							{
-								if( searchResult != referenceNode )
-									referenceNode.AddLinkTo( searchResult, string.Concat( variables[i].isProperty ? "Property: " : "Variable: ", variables[i].name, "[", index + "]" ) );
-								else
-									PoolReferenceNode( searchResult );
-							}
+							if( searchResult != null && searchResult != referenceNode )
+								referenceNode.AddLinkTo( searchResult, string.Concat( variables[i].isProperty ? "Property: " : "Variable: ", variables[i].name, "[", index + "]" ) );
 
 							index++;
 						}

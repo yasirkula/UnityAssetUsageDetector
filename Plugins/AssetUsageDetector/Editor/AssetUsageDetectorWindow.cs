@@ -232,7 +232,7 @@ namespace AssetUsageDetectorNamespace.Extras
 			ParseSceneSearchMode( (SceneSearchMode) EditorPrefs.GetInt( PREFS_SEARCH_SCENES, (int) ( SceneSearchMode.OpenScenes | SceneSearchMode.ScenesInBuildSettingsTickedOnly | SceneSearchMode.AllScenes ) ) );
 
 			searchInAssetsFolder = EditorPrefs.GetBool( PREFS_SEARCH_ASSETS, true );
-			dontSearchInSourceAssets = EditorPrefs.GetBool( PREFS_DONT_SEARCH_SOURCE_ASSETS, false );
+			dontSearchInSourceAssets = EditorPrefs.GetBool( PREFS_DONT_SEARCH_SOURCE_ASSETS, true );
 			searchDepthLimit = EditorPrefs.GetInt( PREFS_SEARCH_DEPTH_LIMIT, 4 );
 
 			// Fetch public, protected and private non-static fields and properties from objects by default
@@ -514,7 +514,7 @@ namespace AssetUsageDetectorNamespace.Extras
 
 					GUILayout.Space( 35 );
 
-					if( EditorGUILayout.ToggleLeft( "Full: Draw the complete paths to the references (can be slow with too many references)", searchResultDrawParameters.pathDrawingMode == PathDrawingMode.Full ) )
+					if( EditorGUILayout.ToggleLeft( "Full: Draw the complete paths to the references", searchResultDrawParameters.pathDrawingMode == PathDrawingMode.Full ) )
 						searchResultDrawParameters.pathDrawingMode = PathDrawingMode.Full;
 
 					GUILayout.EndHorizontal();
