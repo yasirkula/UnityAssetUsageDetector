@@ -129,8 +129,11 @@ namespace AssetUsageDetectorNamespace
 		private readonly Dictionary<Type, VariableGetterHolder[]> typeToVariables = new Dictionary<Type, VariableGetterHolder[]>( 4096 );
 		// An optimization to search an object only once (key is a hash of the searched object)
 		private readonly Dictionary<string, ReferenceNode> searchedObjects = new Dictionary<string, ReferenceNode>( 32768 );
+		// An optimization to fetch an animation clip's curve bindings only once
+		private readonly Dictionary<AnimationClip, EditorCurveBinding[]> animationClipUniqueBindings = new Dictionary<AnimationClip, EditorCurveBinding[]>( 256 );
 		// An optimization to fetch the dependencies of an asset only once (key is the path of the asset)
 		private Dictionary<string, CacheEntry> assetDependencyCache;
+		private CacheEntry lastRefreshedCacheEntry;
 
 		// Dictionary to quickly find the function to search a specific type with
 		private Dictionary<Type, Func<Object, ReferenceNode>> typeToSearchFunction;
@@ -145,6 +148,7 @@ namespace AssetUsageDetectorNamespace
 		private bool searchMaterialsForTexture;
 
 		private bool searchSerializableVariablesOnly;
+		private bool prevSearchSerializableVariablesOnly;
 
 		private int searchDepthLimit; // Depth limit for recursively searching variables of objects
 
@@ -167,8 +171,6 @@ namespace AssetUsageDetectorNamespace
 
 		private readonly List<ReferenceNode> nodesPool = new List<ReferenceNode>( 32 );
 		private readonly List<VariableGetterHolder> validVariables = new List<VariableGetterHolder>( 32 );
-
-		private readonly string reflectionNameSpace = typeof( Assembly ).Namespace;
 
 		private string CachePath { get { return Application.dataPath + "/../Library/AssetUsageDetector.cache"; } } // Path of the cache file
 
@@ -235,14 +237,16 @@ namespace AssetUsageDetectorNamespace
 				this.fieldModifiers = searchParameters.fieldModifiers | BindingFlags.Instance | BindingFlags.DeclaredOnly;
 				this.propertyModifiers = searchParameters.propertyModifiers | BindingFlags.Instance | BindingFlags.DeclaredOnly;
 				this.searchDepthLimit = searchParameters.searchDepthLimit;
+				this.searchSerializableVariablesOnly = !searchParameters.searchNonSerializableVariables;
 
 				// Initialize commonly used variables
 				searchResult = new List<SearchResultGroup>(); // Overall search results
 
-				if( prevFieldModifiers != fieldModifiers || prevPropertyModifiers != propertyModifiers )
+				if( prevFieldModifiers != fieldModifiers || prevPropertyModifiers != propertyModifiers || prevSearchSerializableVariablesOnly != searchSerializableVariablesOnly )
 					typeToVariables.Clear();
 
 				searchedObjects.Clear();
+				animationClipUniqueBindings.Clear();
 				callStack.Clear();
 				objectsToSearchSet.Clear();
 				sceneObjectsToSearchSet.Clear();
@@ -264,6 +268,8 @@ namespace AssetUsageDetectorNamespace
 
 				foreach( var cacheEntry in assetDependencyCache.Values )
 					cacheEntry.searchResult = CacheEntry.Result.Unknown;
+
+				lastRefreshedCacheEntry = null;
 
 				if( typeToSearchFunction == null )
 				{
@@ -287,6 +293,7 @@ namespace AssetUsageDetectorNamespace
 
 				prevFieldModifiers = fieldModifiers;
 				prevPropertyModifiers = propertyModifiers;
+				prevSearchSerializableVariablesOnly = searchSerializableVariablesOnly;
 
 				searchPrefabConnections = false;
 				searchMonoBehavioursForScript = false;
@@ -428,9 +435,6 @@ namespace AssetUsageDetectorNamespace
 					} );
 				}
 
-				// By default, search only serializable variables for references
-				searchSerializableVariablesOnly = !searchParameters.searchNonSerializableVariables;
-
 				// Initialize the nodes of searched asset(s)
 				foreach( Object obj in objectsToSearchSet )
 					searchedObjects.Add( obj.Hash(), PopReferenceNode( obj ) );
@@ -539,7 +543,7 @@ namespace AssetUsageDetectorNamespace
 						searchResult.Add( currentSearchResultGroup );
 				}
 
-				// Search non-serializable variables for references only if we are currently searching a scene and the editor is in play mode
+				// Search non-serializable variables for references while searching a scene in play mode
 				if( isInPlayMode )
 					searchSerializableVariablesOnly = false;
 
@@ -626,18 +630,17 @@ namespace AssetUsageDetectorNamespace
 			}
 			catch( Exception e )
 			{
-				Debug.LogException( e );
-
+				StringBuilder sb = new StringBuilder( objectsToSearchSet.Count * 50 + callStack.Count * 50 + 500 );
+				sb.AppendLine( "<b>AssetUsageDetector Error:</b>" ).AppendLine();
 				if( callStack.Count > 0 )
 				{
-					StringBuilder sb = new StringBuilder( callStack.Count * 50 );
 					sb.AppendLine( "Stack contents: " );
-					for( int i = 0; i < callStack.Count; i++ )
+					for( int i = callStack.Count - 1; i >= 0; i-- )
 					{
 						sb.Append( i ).Append( ": " );
 
 						Object unityObject = callStack[i] as Object;
-						if( unityObject != null )
+						if( unityObject )
 							sb.Append( unityObject.name ).Append( " (" ).Append( unityObject.GetType() ).AppendLine( ")" );
 						else if( callStack[i] != null )
 							sb.Append( callStack[i].GetType() ).AppendLine( " object" );
@@ -645,8 +648,20 @@ namespace AssetUsageDetectorNamespace
 							sb.AppendLine( "<<destroyed>>" );
 					}
 
-					Debug.LogError( sb.ToString() );
+					sb.AppendLine();
 				}
+
+				sb.AppendLine( "Searching references of: " );
+				foreach( Object obj in objectsToSearchSet )
+				{
+					if( obj )
+						sb.Append( obj.name ).Append( " (" ).Append( obj.GetType() ).AppendLine( ")" );
+				}
+
+				sb.AppendLine();
+				sb.Append( e ).AppendLine();
+
+				Debug.LogError( sb.ToString() );
 
 				try
 				{
@@ -1012,11 +1027,17 @@ namespace AssetUsageDetectorNamespace
 				// If this component is an Animation, search its animation clips for references
 				foreach( AnimationState anim in (Animation) component )
 					referenceNode.AddLinkTo( SearchObject( anim.clip ) );
+
+				// Search the objects that are animated by this Animation component for references
+				SearchAnimatedObjects( referenceNode );
 			}
 			else if( component is Animator )
 			{
-				// If this component is an Animator, search its animation clips for references
+				// If this component is an Animator, search its animation clips for references (via AnimatorController)
 				referenceNode.AddLinkTo( SearchObject( ( (Animator) component ).runtimeAnimatorController ) );
+
+				// Search the objects that are animated by this Animator component for references
+				SearchAnimatedObjects( referenceNode );
 			}
 #if UNITY_2017_2_OR_NEWER
 			else if( component is Tilemap )
@@ -1227,6 +1248,85 @@ namespace AssetUsageDetectorNamespace
 		}
 #endif
 
+		// Find references from an Animation/Animator component to the objects that it animates
+		private void SearchAnimatedObjects( ReferenceNode referenceNode )
+		{
+			GameObject root = ( (Component) referenceNode.nodeObject ).gameObject;
+			AnimationClip[] clips = AnimationUtility.GetAnimationClips( root );
+			for( int i = 0; i < clips.Length; i++ )
+			{
+				AnimationClip clip = clips[i];
+				bool isClipUnique = true;
+				for( int j = i - 1; j >= 0; j-- )
+				{
+					if( clips[j] == clip )
+					{
+						isClipUnique = false;
+						break;
+					}
+				}
+
+				if( !isClipUnique )
+					continue;
+
+				EditorCurveBinding[] uniqueBindings;
+				if( !animationClipUniqueBindings.TryGetValue( clip, out uniqueBindings ) )
+				{
+					// Calculate all the "unique" paths that the animation clip's curves have
+					// Both float curves (GetCurveBindings) and object reference curves (GetObjectReferenceCurveBindings) are checked
+					List<EditorCurveBinding> _uniqueBindings = new List<EditorCurveBinding>( 2 );
+					EditorCurveBinding[] bindings = AnimationUtility.GetCurveBindings( clip );
+					for( int j = 0; j < bindings.Length; j++ )
+					{
+						string bindingPath = bindings[j].path;
+						if( string.IsNullOrEmpty( bindingPath ) ) // Ignore the root animated object
+							continue;
+
+						bool isBindingUnique = true;
+						for( int k = _uniqueBindings.Count - 1; k >= 0; k-- )
+						{
+							if( bindingPath == _uniqueBindings[k].path )
+							{
+								isBindingUnique = false;
+								break;
+							}
+						}
+
+						if( isBindingUnique )
+							_uniqueBindings.Add( bindings[j] );
+					}
+
+					bindings = AnimationUtility.GetObjectReferenceCurveBindings( clip );
+					for( int j = 0; j < bindings.Length; j++ )
+					{
+						string bindingPath = bindings[j].path;
+						if( string.IsNullOrEmpty( bindingPath ) ) // Ignore the root animated object
+							continue;
+
+						bool isBindingUnique = true;
+						for( int k = _uniqueBindings.Count - 1; k >= 0; k-- )
+						{
+							if( bindingPath == _uniqueBindings[k].path )
+							{
+								isBindingUnique = false;
+								break;
+							}
+						}
+
+						if( isBindingUnique )
+							_uniqueBindings.Add( bindings[j] );
+					}
+
+					uniqueBindings = _uniqueBindings.ToArray();
+					animationClipUniqueBindings[clip] = uniqueBindings;
+				}
+
+				string clipName = clip.name;
+				for( int j = 0; j < uniqueBindings.Length; j++ )
+					referenceNode.AddLinkTo( SearchObject( AnimationUtility.GetAnimatedObject( root, uniqueBindings[j] ) ), "Animated via clip: " + clipName );
+			}
+		}
+
 		// Search through field and properties of an object for references with SerializedObject
 		private void SearchWithSerializedObject( ReferenceNode referenceNode )
 		{
@@ -1319,12 +1419,10 @@ namespace AssetUsageDetectorNamespace
 						}
 					}
 				}
-				catch( UnassignedReferenceException )
-				{ }
-				catch( MissingReferenceException )
-				{ }
-				catch( MissingComponentException )
-				{ }
+				catch( UnassignedReferenceException ) { }
+				catch( MissingReferenceException ) { }
+				catch( MissingComponentException ) { }
+				catch( NotImplementedException ) { }
 			}
 		}
 
@@ -1341,7 +1439,7 @@ namespace AssetUsageDetectorNamespace
 			// 2- skip primitive types, enums and strings
 			// 3- skip common Unity types that can't hold any references (e.g. Vector3, Rect, Color, Quaternion)
 			// 
-			// P.S. IsPrimitiveUnityType() extension function handles steps 2) and 3)
+			// P.S. IsIgnoredUnityType() extension function handles steps 2) and 3)
 
 			validVariables.Clear();
 
@@ -1361,16 +1459,7 @@ namespace AssetUsageDetectorNamespace
 							continue;
 
 						// Skip primitive types
-						Type variableType = field.FieldType;
-						if( variableType.IsPrimitiveUnityType() )
-							continue;
-
-						// Searching assembly variables for reference throws InvalidCastException on .NET 4.0 runtime
-						if( typeof( Type ).IsAssignableFrom( variableType ) || variableType.Namespace == reflectionNameSpace )
-							continue;
-
-						// Searching pointer variables for reference throws ArgumentException
-						if( variableType.IsPointer )
+						if( field.FieldType.IsIgnoredUnityType() )
 							continue;
 
 						// Additional filtering for fields:
@@ -1382,7 +1471,7 @@ namespace AssetUsageDetectorNamespace
 
 						VariableGetVal getter = field.CreateGetter( type );
 						if( getter != null )
-							validVariables.Add( new VariableGetterHolder( field, getter, field.IsSerializable() ) );
+							validVariables.Add( new VariableGetterHolder( field, getter, searchSerializableVariablesOnly ? field.IsSerializable() : true ) );
 					}
 
 					currType = currType.BaseType;
@@ -1404,16 +1493,7 @@ namespace AssetUsageDetectorNamespace
 							continue;
 
 						// Skip primitive types
-						Type variableType = property.PropertyType;
-						if( variableType.IsPrimitiveUnityType() )
-							continue;
-
-						// Searching assembly variables for reference throws InvalidCastException on .NET 4.0 runtime
-						if( typeof( Type ).IsAssignableFrom( variableType ) || variableType.Namespace == reflectionNameSpace )
-							continue;
-
-						// Searching pointer variables for reference throws ArgumentException
-						if( variableType.IsPointer )
+						if( property.PropertyType.IsIgnoredUnityType() )
 							continue;
 
 						// Skip properties without a getter function
@@ -1458,7 +1538,7 @@ namespace AssetUsageDetectorNamespace
 						{
 							VariableGetVal getter = property.CreateGetter();
 							if( getter != null )
-								validVariables.Add( new VariableGetterHolder( property, getter, property.IsSerializable() ) );
+								validVariables.Add( new VariableGetterHolder( property, getter, searchSerializableVariablesOnly ? property.IsSerializable() : true ) );
 						}
 					}
 
@@ -1506,8 +1586,55 @@ namespace AssetUsageDetectorNamespace
 					FileInfo assetFile = new FileInfo( dependencies[i] );
 					if( !assetFile.Exists || assetFile.Length != fileSizes[i] )
 					{
+						// Although not reproduced, it is reported that this section caused StackOverflowException due to infinite loop,
+						// if that happens, log useful information to help reproduce the issue
+						if( lastRefreshedCacheEntry == cacheEntry )
+						{
+							StringBuilder sb = new StringBuilder( 1000 );
+							sb.AppendLine( "<b>Infinite loop while refreshing a cache entry, please report it to the author.</b>" ).AppendLine();
+							sb.Append( "Asset path: " ).AppendLine( assetPath );
+
+							for( int j = 0; j < 2; j++ )
+							{
+								if( j == 1 )
+								{
+									cacheEntry.Refresh( assetPath );
+									dependencies = cacheEntry.dependencies;
+									fileSizes = cacheEntry.fileSizes;
+								}
+
+								sb.AppendLine().AppendLine( j == 0 ? "Old Dependencies:" : "New Dependencies" );
+								for( int k = 0; k < dependencies.Length; k++ )
+								{
+									sb.Append( "- " ).Append( dependencies[k] );
+
+									if( Directory.Exists( dependencies[k] ) )
+									{
+										sb.Append( " (Dir)" );
+										if( fileSizes[k] != 0L )
+											sb.Append( " WasCachedAsFile: " ).Append( fileSizes[k] );
+									}
+									else
+									{
+										assetFile = new FileInfo( dependencies[k] );
+										sb.Append( " (File) " ).Append( "CachedSize: " ).Append( fileSizes[k] );
+										if( assetFile.Exists )
+											sb.Append( " RealSize: " ).Append( assetFile.Length );
+										else
+											sb.Append( " NoLongerExists" );
+									}
+
+									sb.AppendLine();
+								}
+							}
+
+							Debug.LogError( sb.ToString() );
+							return false;
+						}
+
 						cacheEntry.Refresh( assetPath );
 						cacheEntry.searchResult = CacheEntry.Result.Unknown;
+						lastRefreshedCacheEntry = cacheEntry;
 
 						return AssetHasAnyReference( assetPath );
 					}
@@ -1659,7 +1786,7 @@ namespace AssetUsageDetectorNamespace
 					catch( Exception e )
 					{
 						assetDependencyCache = null;
-						Debug.LogException( e );
+						Debug.LogWarning( "Couldn't load cache (probably cache format has changed in an update), will regenerate cache.\n" + e.ToString() );
 					}
 				}
 			}

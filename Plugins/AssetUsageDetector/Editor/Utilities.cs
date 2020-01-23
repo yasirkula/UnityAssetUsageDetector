@@ -1,6 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
+#if UNITY_2018_1_OR_NEWER
+using Unity.Collections;
+#endif
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -35,6 +38,11 @@ namespace AssetUsageDetectorNamespace.Extras
 			typeof( List<Vector3Int> ), typeof( List<Vector2Int> ), typeof( List<RectInt> ), typeof( List<BoundsInt> )
 #endif
 		};
+
+		private static readonly string reflectionNamespace = typeof( Assembly ).Namespace;
+#if UNITY_2018_1_OR_NEWER
+		private static readonly string nativeCollectionsNamespace = typeof( NativeArray<int> ).Namespace;
+#endif
 
 		private static readonly HashSet<string> folderContentsSet = new HashSet<string>();
 
@@ -351,10 +359,27 @@ namespace AssetUsageDetectorNamespace.Extras
 			return Attribute.IsDefined( type, typeof( SerializableAttribute ), false );
 		}
 
-		// Check if the type is a common Unity type (let's call them primitives)
-		public static bool IsPrimitiveUnityType( this Type type )
+		// Check if instances of this type should be searched for references
+		public static bool IsIgnoredUnityType( this Type type )
 		{
-			return type.IsPrimitive || primitiveUnityTypes.Contains( type ) || type.IsEnum;
+			if( type.IsPrimitive || primitiveUnityTypes.Contains( type ) || type.IsEnum )
+				return true;
+
+#if UNITY_2018_1_OR_NEWER
+			// Searching NativeArrays for reference can throw InvalidOperationException if the collection is disposed
+			if( type.Namespace == nativeCollectionsNamespace )
+				return true;
+#endif
+
+			// Searching assembly variables for reference throws InvalidCastException on .NET 4.0 runtime
+			if( typeof( Type ).IsAssignableFrom( type ) || type.Namespace == reflectionNamespace )
+				return true;
+
+			// Searching pointer variables for reference throws ArgumentException
+			if( type.IsPointer )
+				return true;
+
+			return false;
 		}
 
 		// Get <get> function for a field

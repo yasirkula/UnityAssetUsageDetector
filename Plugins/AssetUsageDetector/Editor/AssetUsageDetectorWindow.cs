@@ -523,7 +523,7 @@ namespace AssetUsageDetectorNamespace.Extras
 
 					GUILayout.Space( 35 );
 
-					if( EditorGUILayout.ToggleLeft( "Shorter: Draw only the most relevant unique parts of the complete paths that start with a UnityEngine.Object", searchResultDrawParameters.pathDrawingMode == PathDrawingMode.ShortRelevantParts ) )
+					if( EditorGUILayout.ToggleLeft( "Shorter: Draw only the most relevant parts (that start with a UnityEngine.Object) of the complete paths", searchResultDrawParameters.pathDrawingMode == PathDrawingMode.ShortRelevantParts ) )
 						searchResultDrawParameters.pathDrawingMode = PathDrawingMode.ShortRelevantParts;
 
 					GUILayout.EndHorizontal();
@@ -532,7 +532,7 @@ namespace AssetUsageDetectorNamespace.Extras
 
 					GUILayout.Space( 35 );
 
-					if( EditorGUILayout.ToggleLeft( "Shortest: Draw only the last two nodes of complete paths that are unique", searchResultDrawParameters.pathDrawingMode == PathDrawingMode.Shortest ) )
+					if( EditorGUILayout.ToggleLeft( "Shortest: Draw only the last two nodes of complete paths", searchResultDrawParameters.pathDrawingMode == PathDrawingMode.Shortest ) )
 						searchResultDrawParameters.pathDrawingMode = PathDrawingMode.Shortest;
 
 					GUILayout.EndHorizontal();

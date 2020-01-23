@@ -225,7 +225,13 @@ namespace AssetUsageDetectorNamespace
 				Vector2 size = Utilities.TooltipGUIStyle.CalcSize( new GUIContent( parameters.tooltip ) );
 				size.x += 10f;
 
-				GUI.Box( new Rect( new Vector2( mousePos.x - size.x * 0.5f, mousePos.y - size.y ), size ), parameters.tooltip, Utilities.TooltipGUIStyle );
+				Rect tooltipRect = new Rect( new Vector2( mousePos.x - size.x * 0.5f, mousePos.y - size.y ), size );
+				if( tooltipRect.xMin < 0f )
+					tooltipRect.x -= tooltipRect.xMin;
+				else if( tooltipRect.xMax > parameters.guiRect.width )
+					tooltipRect.x -= tooltipRect.xMax - parameters.guiRect.width;
+
+				GUI.Box( tooltipRect, parameters.tooltip, Utilities.TooltipGUIStyle );
 			}
 
 			if( parameters.shouldRefreshEditorWindow )

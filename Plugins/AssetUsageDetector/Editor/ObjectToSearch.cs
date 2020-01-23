@@ -56,74 +56,95 @@ namespace AssetUsageDetectorNamespace.Extras
 			if( target == null || target.Equals( null ) )
 				return;
 
-			if( !target.IsAsset() || !AssetDatabase.IsMainAsset( target ) || target is SceneAsset )
-				return;
-
-			if( includeTarget )
+			if( !target.IsAsset() )
 			{
-				if( !currentSubAssets.Contains( target ) )
+				GameObject go = target as GameObject;
+				if( !go || !go.scene.IsValid() )
+					return;
+
+				// If this is a scene object, add its child objects to the sub-assets list
+				// but don't include them in the search by default
+				Transform goTransform = go.transform;
+				Transform[] children = go.GetComponentsInChildren<Transform>();
+				for( int i = 0; i < children.Length; i++ )
 				{
-					subAssets.Add( new SubAsset( target, true ) );
-					currentSubAssets.Add( target );
+					if( ReferenceEquals( children[i], goTransform ) )
+						continue;
+
+					subAssets.Add( new SubAsset( children[i].gameObject, false ) );
 				}
 			}
 			else
 			{
-				// If asset is a directory, add all of its contents as sub-assets recursively
-				if( target.IsFolder() )
-				{
-					foreach( string filePath in Utilities.EnumerateFolderContents( target ) )
-						AddSubAssets( AssetDatabase.LoadAssetAtPath<Object>( filePath ), true );
-
+				if( !AssetDatabase.IsMainAsset( target ) || target is SceneAsset )
 					return;
-				}
-			}
 
-			// Find sub-asset(s) of the asset (if any)
-			Object[] assets = AssetDatabase.LoadAllAssetsAtPath( AssetDatabase.GetAssetPath( target ) );
-			for( int i = 0; i < assets.Length; i++ )
-			{
-				Object asset = assets[i];
-				if( asset == null || asset.Equals( null ) || asset is Component )
-					continue;
-
-				if( currentSubAssets.Contains( asset ) )
-					continue;
-
-				if( asset != target )
+				if( includeTarget )
 				{
-					subAssets.Add( new SubAsset( asset, true ) );
-					currentSubAssets.Add( asset );
+					if( !currentSubAssets.Contains( target ) )
+					{
+						subAssets.Add( new SubAsset( target, true ) );
+						currentSubAssets.Add( target );
+					}
+				}
+				else
+				{
+					// If asset is a directory, add all of its contents as sub-assets recursively
+					if( target.IsFolder() )
+					{
+						foreach( string filePath in Utilities.EnumerateFolderContents( target ) )
+							AddSubAssets( AssetDatabase.LoadAssetAtPath<Object>( filePath ), true );
+
+						return;
+					}
 				}
 
-				// MonoScripts are a special case such that other MonoScript objects
-				// that extend this MonoScript are also considered a sub-asset
-				if( asset is MonoScript )
+				// Find sub-asset(s) of the asset (if any)
+				Object[] assets = AssetDatabase.LoadAllAssetsAtPath( AssetDatabase.GetAssetPath( target ) );
+				for( int i = 0; i < assets.Length; i++ )
 				{
-					Type monoScriptType = ( (MonoScript) asset ).GetClass();
-					if( monoScriptType == null || ( !monoScriptType.IsInterface && !typeof( Component ).IsAssignableFrom( monoScriptType ) ) )
+					Object asset = assets[i];
+					if( asset == null || asset.Equals( null ) || asset is Component )
 						continue;
 
-					// Find all MonoScript objects in the project
-					if( monoScriptsInProject == null )
+					if( currentSubAssets.Contains( asset ) )
+						continue;
+
+					if( asset != target )
 					{
-						string[] monoScriptGuids = AssetDatabase.FindAssets( "t:MonoScript" );
-						monoScriptsInProject = new MonoScript[monoScriptGuids.Length];
-						for( int k = 0; k < monoScriptGuids.Length; k++ )
-							monoScriptsInProject[k] = AssetDatabase.LoadAssetAtPath<MonoScript>( AssetDatabase.GUIDToAssetPath( monoScriptGuids[k] ) );
+						subAssets.Add( new SubAsset( asset, true ) );
+						currentSubAssets.Add( asset );
 					}
 
-					// Add any MonoScript objects that extend this MonoScript as a sub-asset
-					for( int j = 0; j < monoScriptsInProject.Length; j++ )
+					// MonoScripts are a special case such that other MonoScript objects
+					// that extend this MonoScript are also considered a sub-asset
+					if( asset is MonoScript )
 					{
-						Type otherMonoScriptType = monoScriptsInProject[j].GetClass();
-						if( otherMonoScriptType == null || monoScriptType == otherMonoScriptType || !monoScriptType.IsAssignableFrom( otherMonoScriptType ) )
+						Type monoScriptType = ( (MonoScript) asset ).GetClass();
+						if( monoScriptType == null || ( !monoScriptType.IsInterface && !typeof( Component ).IsAssignableFrom( monoScriptType ) ) )
 							continue;
 
-						if( !currentSubAssets.Contains( monoScriptsInProject[j] ) )
+						// Find all MonoScript objects in the project
+						if( monoScriptsInProject == null )
 						{
-							subAssets.Add( new SubAsset( monoScriptsInProject[j], true ) );
-							currentSubAssets.Add( monoScriptsInProject[j] );
+							string[] monoScriptGuids = AssetDatabase.FindAssets( "t:MonoScript" );
+							monoScriptsInProject = new MonoScript[monoScriptGuids.Length];
+							for( int k = 0; k < monoScriptGuids.Length; k++ )
+								monoScriptsInProject[k] = AssetDatabase.LoadAssetAtPath<MonoScript>( AssetDatabase.GUIDToAssetPath( monoScriptGuids[k] ) );
+						}
+
+						// Add any MonoScript objects that extend this MonoScript as a sub-asset
+						for( int j = 0; j < monoScriptsInProject.Length; j++ )
+						{
+							Type otherMonoScriptType = monoScriptsInProject[j].GetClass();
+							if( otherMonoScriptType == null || monoScriptType == otherMonoScriptType || !monoScriptType.IsAssignableFrom( otherMonoScriptType ) )
+								continue;
+
+							if( !currentSubAssets.Contains( monoScriptsInProject[j] ) )
+							{
+								subAssets.Add( new SubAsset( monoScriptsInProject[j], true ) );
+								currentSubAssets.Add( monoScriptsInProject[j] );
+							}
 						}
 					}
 				}
