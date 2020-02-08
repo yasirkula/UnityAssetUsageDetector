@@ -121,6 +121,8 @@ namespace AssetUsageDetectorNamespace
 		private readonly HashSet<string> assetsToSearchPathsSet = new HashSet<string>();
 		// The root prefab objects in assetsToSearch that will be used to search for prefab references
 		private readonly List<GameObject> assetsToSearchRootPrefabs = new List<GameObject>( 4 );
+		// Path(s) of the assets that should be excluded from the search
+		private readonly HashSet<string> excludedAssetsPathsSet = new HashSet<string>();
 
 		// Results for the currently searched scene
 		private SearchResultGroup currentSearchResultGroup;
@@ -155,6 +157,7 @@ namespace AssetUsageDetectorNamespace
 		private Object currentSearchedObject;
 		private int currentDepth;
 
+		private bool dontSearchInSourceAssets;
 		private bool searchingSourceAssets;
 		private bool isInPlayMode;
 
@@ -238,6 +241,7 @@ namespace AssetUsageDetectorNamespace
 				this.propertyModifiers = searchParameters.propertyModifiers | BindingFlags.Instance | BindingFlags.DeclaredOnly;
 				this.searchDepthLimit = searchParameters.searchDepthLimit;
 				this.searchSerializableVariablesOnly = !searchParameters.searchNonSerializableVariables;
+				this.dontSearchInSourceAssets = searchParameters.dontSearchInSourceAssets;
 
 				// Initialize commonly used variables
 				searchResult = new List<SearchResultGroup>(); // Overall search results
@@ -254,6 +258,7 @@ namespace AssetUsageDetectorNamespace
 				assetsToSearchSet.Clear();
 				assetsToSearchPathsSet.Clear();
 				assetsToSearchRootPrefabs.Clear();
+				excludedAssetsPathsSet.Clear();
 
 				if( assetDependencyCache == null )
 				{
@@ -485,7 +490,6 @@ namespace AssetUsageDetectorNamespace
 					}
 
 					// Calculate the path(s) of the assets that won't be searched for references
-					HashSet<string> excludedAssetsPathsSet = new HashSet<string>();
 					if( searchParameters.excludedAssetsFromSearch != null )
 					{
 						foreach( Object obj in searchParameters.excludedAssetsFromSearch )
@@ -502,9 +506,6 @@ namespace AssetUsageDetectorNamespace
 								excludedAssetsPathsSet.Add( AssetDatabase.GetAssetPath( obj ) );
 						}
 					}
-
-					if( searchParameters.dontSearchInSourceAssets )
-						excludedAssetsPathsSet.UnionWith( assetsToSearchPathsSet );
 
 					if( EditorUtility.DisplayCancelableProgressBar( "Please wait...", "Searching assets", 0f ) )
 						throw new Exception( "Search aborted" );
@@ -608,7 +609,7 @@ namespace AssetUsageDetectorNamespace
 				}
 
 				// Searching source assets last prevents some references from being excluded due to callStack.ContainsFast
-				if( !searchParameters.dontSearchInSourceAssets )
+				if( !dontSearchInSourceAssets )
 				{
 					searchingSourceAssets = true;
 
@@ -728,7 +729,11 @@ namespace AssetUsageDetectorNamespace
 
 				string assetPath = AssetDatabase.GetAssetPath( obj );
 				if( !string.IsNullOrEmpty( assetPath ) )
+				{
 					assetsToSearchPathsSet.Add( assetPath );
+					if( dontSearchInSourceAssets && AssetDatabase.IsMainAsset( obj ) )
+						excludedAssetsPathsSet.Add( assetPath );
+				}
 
 				GameObject go = null;
 				if( obj is GameObject )
@@ -743,7 +748,6 @@ namespace AssetUsageDetectorNamespace
 					for( int i = assetsToSearchRootPrefabs.Count - 1; i >= 0; i-- )
 					{
 						Transform rootTransform = assetsToSearchRootPrefabs[i].transform;
-
 						if( transform.IsChildOf( rootTransform ) )
 						{
 							shouldAddRootPrefabEntry = false;

@@ -194,6 +194,18 @@ namespace AssetUsageDetectorNamespace.Extras
 		private void OnEnable()
 		{
 			visibleWindow = this;
+
+#if UNITY_2018_3_OR_NEWER
+			UnityEditor.Experimental.SceneManagement.PrefabStage.prefabStageClosing -= ReplacePrefabStageObjectsWithAssets;
+			UnityEditor.Experimental.SceneManagement.PrefabStage.prefabStageClosing += ReplacePrefabStageObjectsWithAssets;
+#endif
+		}
+
+		private void OnDisable()
+		{
+#if UNITY_2018_3_OR_NEWER
+			UnityEditor.Experimental.SceneManagement.PrefabStage.prefabStageClosing -= ReplacePrefabStageObjectsWithAssets;
+#endif
 		}
 
 		private void OnDestroy()
@@ -565,25 +577,7 @@ namespace AssetUsageDetectorNamespace.Extras
 				SavePrefs();
 
 #if UNITY_2018_3_OR_NEWER
-				// Try replacing prefab stage objects with their corresponding prefab assets
-				var openPrefabStage = UnityEditor.Experimental.SceneManagement.PrefabStageUtility.GetCurrentPrefabStage();
-				if( openPrefabStage != null && openPrefabStage.stageHandle.IsValid() )
-				{
-					GameObject openPrefabStagePrefabAsset = AssetDatabase.LoadAssetAtPath<GameObject>( openPrefabStage.prefabAssetPath );
-					if( openPrefabStagePrefabAsset != null )
-					{
-						for( int i = 0; i < objectsToSearch.Count; i++ )
-						{
-							if( objectsToSearch[i].obj != null && !objectsToSearch[i].obj.Equals( null ) &&
-								objectsToSearch[i].obj is GameObject && openPrefabStage.IsPartOfPrefabContents( (GameObject) objectsToSearch[i].obj ) )
-							{
-								GameObject prefabStageObjectSource = ( (GameObject) objectsToSearch[i].obj ).FollowSymmetricHierarchy( openPrefabStagePrefabAsset );
-								if( prefabStageObjectSource != null )
-									objectsToSearch[i].obj = prefabStageObjectSource;
-							}
-						}
-					}
-				}
+				ReplacePrefabStageObjectsWithAssets( UnityEditor.Experimental.SceneManagement.PrefabStageUtility.GetCurrentPrefabStage() );
 #endif
 
 				// Start searching
@@ -608,6 +602,42 @@ namespace AssetUsageDetectorNamespace.Extras
 				currentPhase = Phase.Complete;
 			}
 		}
+
+#if UNITY_2018_3_OR_NEWER
+		// Try replacing searched objects who are part of currently open prefab stage with their corresponding prefab assets
+		public void ReplacePrefabStageObjectsWithAssets( UnityEditor.Experimental.SceneManagement.PrefabStage prefabStage )
+		{
+			if( prefabStage == null || !prefabStage.stageHandle.IsValid() )
+				return;
+
+			GameObject prefabAsset = AssetDatabase.LoadAssetAtPath<GameObject>( prefabStage.prefabAssetPath );
+			if( prefabAsset == null )
+				return;
+
+			for( int i = 0; i < objectsToSearch.Count; i++ )
+			{
+				Object obj = objectsToSearch[i].obj;
+				if( obj != null && !obj.Equals( null ) && obj is GameObject && prefabStage.IsPartOfPrefabContents( (GameObject) obj ) )
+				{
+					GameObject prefabStageObjectSource = ( (GameObject) obj ).FollowSymmetricHierarchy( prefabAsset );
+					if( prefabStageObjectSource != null )
+						objectsToSearch[i].obj = prefabStageObjectSource;
+
+					List<ObjectToSearch.SubAsset> subAssets = objectsToSearch[i].subAssets;
+					for( int j = 0; j < subAssets.Count; j++ )
+					{
+						obj = subAssets[j].subAsset;
+						if( obj != null && !obj.Equals( null ) && obj is GameObject && prefabStage.IsPartOfPrefabContents( (GameObject) obj ) )
+						{
+							prefabStageObjectSource = ( (GameObject) obj ).FollowSymmetricHierarchy( prefabAsset );
+							if( prefabStageObjectSource != null )
+								subAssets[j].subAsset = prefabStageObjectSource;
+						}
+					}
+				}
+			}
+		}
+#endif
 
 		private bool ReturnToSetupPhase( bool restoreInitialSceneSetup )
 		{
