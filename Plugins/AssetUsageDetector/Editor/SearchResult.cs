@@ -1,5 +1,4 @@
-﻿using AssetUsageDetectorNamespace.Extras;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -629,7 +628,7 @@ namespace AssetUsageDetectorNamespace
 
 			referencePathsShortUnique = new List<ReferencePath>( 32 );
 			for( int i = 0; i < references.Count; i++ )
-				references[i].CalculateShortUniquePaths( referencePathsShortUnique );
+				references[i].CalculateShortUniquePaths( referencePathsShortUnique, Type == GroupType.Scene || Type == GroupType.DontDestroyOnLoad );
 
 			referencePathsShortest = new List<ReferencePath>( referencePathsShortUnique.Count );
 			for( int i = 0; i < referencePathsShortUnique.Count; i++ )
@@ -1019,13 +1018,13 @@ namespace AssetUsageDetectorNamespace
 		}
 
 		// Calculate short unique paths that start with this node
-		public void CalculateShortUniquePaths( List<SearchResultGroup.ReferencePath> currentPaths )
+		public void CalculateShortUniquePaths( List<SearchResultGroup.ReferencePath> currentPaths, bool startPathsWithSceneObjects )
 		{
-			CalculateShortUniquePaths( currentPaths, new List<ReferenceNode>( 8 ), new List<int>( 8 ) { -1 }, 0, new List<ReferenceNode>( 8 ) );
+			CalculateShortUniquePaths( currentPaths, startPathsWithSceneObjects, new List<ReferenceNode>( 8 ), new List<int>( 8 ) { -1 }, 0, new List<ReferenceNode>( 8 ) );
 		}
 
 		// Just some boring calculations to find the short unique paths recursively
-		private void CalculateShortUniquePaths( List<SearchResultGroup.ReferencePath> shortestPaths, List<ReferenceNode> currentPath, List<int> currentPathIndices, int latestObjectIndexInPath, List<ReferenceNode> stack )
+		private void CalculateShortUniquePaths( List<SearchResultGroup.ReferencePath> shortestPaths, bool startPathsWithSceneObjects, List<ReferenceNode> currentPath, List<int> currentPathIndices, int latestObjectIndexInPath, List<ReferenceNode> stack )
 		{
 			int currentIndex = currentPath.Count;
 			currentPath.Add( this );
@@ -1066,14 +1065,17 @@ namespace AssetUsageDetectorNamespace
 			else
 			{
 				if( instanceId.HasValue ) // nodeObject is Unity object
-					latestObjectIndexInPath = currentIndex;
+				{
+					if( !startPathsWithSceneObjects || !AssetDatabase.Contains( instanceId.Value ) )
+						latestObjectIndexInPath = currentIndex;
+				}
 
 				for( int i = 0; i < links.Count; i++ )
 				{
 					currentPathIndices.Add( i );
 					stack.Add( this );
 
-					links[i].targetNode.CalculateShortUniquePaths( shortestPaths, currentPath, currentPathIndices, latestObjectIndexInPath, stack );
+					links[i].targetNode.CalculateShortUniquePaths( shortestPaths, startPathsWithSceneObjects, currentPath, currentPathIndices, latestObjectIndexInPath, stack );
 
 					stack.RemoveAt( stack.Count - 1 );
 					currentPathIndices.RemoveAt( currentIndex + 1 );

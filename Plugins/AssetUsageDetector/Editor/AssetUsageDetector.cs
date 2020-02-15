@@ -1,6 +1,5 @@
 // Asset Usage Detector - by Suleyman Yasir KULA (yasirkula@gmail.com)
 
-using AssetUsageDetectorNamespace.Extras;
 using UnityEngine;
 using UnityEditor;
 using UnityEditor.Animations;

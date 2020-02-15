@@ -10,7 +10,7 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 using Object = UnityEngine.Object;
 
-namespace AssetUsageDetectorNamespace.Extras
+namespace AssetUsageDetectorNamespace
 {
 	public static class Utilities
 	{

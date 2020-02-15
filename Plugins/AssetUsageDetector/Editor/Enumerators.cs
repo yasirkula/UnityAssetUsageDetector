@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace AssetUsageDetectorNamespace.Extras
+namespace AssetUsageDetectorNamespace
 {
 	public class EmptyEnumerator<T> : IEnumerable<T>, IEnumerator<T>
 	{

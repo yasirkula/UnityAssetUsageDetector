@@ -2,7 +2,7 @@
 using System.Reflection;
 using UnityEngine;
 
-namespace AssetUsageDetectorNamespace.Extras
+namespace AssetUsageDetectorNamespace
 {
 	// Delegate to get the value of a variable (either field or property)
 	public delegate object VariableGetVal( object obj );

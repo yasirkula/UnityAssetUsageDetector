@@ -2,7 +2,7 @@
 using UnityEditor;
 using UnityEngine;
 
-namespace AssetUsageDetectorNamespace.Extras
+namespace AssetUsageDetectorNamespace
 {
 	public abstract class ListDrawer<T>
 	{
