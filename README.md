@@ -2,7 +2,7 @@
 
 ![screenshot1](screenshots/img1.png)
 
-**Available on Asset Store:** https://www.assetstore.unity3d.com/en/#!/content/112837
+**Available on Asset Store:** https://assetstore.unity.com/packages/tools/utilities/asset-usage-detector-112837
 
 **Forum Thread:** https://forum.unity.com/threads/asset-usage-detector-find-references-to-an-asset-object-open-source.408134/
 
