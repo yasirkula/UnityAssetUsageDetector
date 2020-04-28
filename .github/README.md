@@ -12,9 +12,18 @@
 
 This editor extension helps you figure out at which places an asset or GameObject is used, i.e. lists the objects that refer to the asset. It is possible to search for references in the Assets folder (Project view) and/or in the scene(s) of your project. You can also search for references while in Play mode!
 
-### B. HOW TO USE
+## INSTALLATION
 
-- Import [AssetUsageDetector.unitypackage](https://github.com/yasirkula/UnityAssetUsageDetector/releases) to your project
+There are 4 ways to install this plugin:
+
+- import [AssetUsageDetector.unitypackage](https://github.com/yasirkula/UnityAssetUsageDetector/releases) via *Assets-Import Package*
+- clone/[download](https://github.com/yasirkula/UnityAssetUsageDetector/archive/master.zip) this repository and move the *Plugins* folder to your Unity project's *Assets* folder
+- import it from [Asset Store](https://assetstore.unity.com/packages/tools/utilities/asset-usage-detector-112837)
+- *(via Package Manager)* add the following line to *Packages/manifest.json*:
+  - `"com.yasirkula.assetusagedetector": "https://github.com/yasirkula/UnityAssetUsageDetector.git",`
+
+### B. HOW TO
+
 - Open **Window - Asset Usage Detector** window, configure the settings and hit **GO!**
   - or, right click an object and select **Search For References**
 
