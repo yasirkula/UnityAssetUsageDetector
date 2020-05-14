@@ -21,6 +21,8 @@ There are 4 ways to install this plugin:
 - import it from [Asset Store](https://assetstore.unity.com/packages/tools/utilities/asset-usage-detector-112837)
 - *(via Package Manager)* add the following line to *Packages/manifest.json*:
   - `"com.yasirkula.assetusagedetector": "https://github.com/yasirkula/UnityAssetUsageDetector.git",`
+- *(via [OpenUPM](https://openupm.com))* after installing [openupm-cli](https://github.com/openupm/openupm-cli), run the following command:
+  - `openupm add com.yasirkula.assetusagedetector`
 
 ## HOW TO
 
