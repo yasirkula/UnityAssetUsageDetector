@@ -14,7 +14,7 @@ This editor extension helps you figure out at which places an asset or GameObjec
 
 ## INSTALLATION
 
-There are 4 ways to install this plugin:
+There are 5 ways to install this plugin:
 
 - import [AssetUsageDetector.unitypackage](https://github.com/yasirkula/UnityAssetUsageDetector/releases) via *Assets-Import Package*
 - clone/[download](https://github.com/yasirkula/UnityAssetUsageDetector/archive/master.zip) this repository and move the *Plugins* folder to your Unity project's *Assets* folder
