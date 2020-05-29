@@ -217,7 +217,7 @@ namespace AssetUsageDetectorNamespace
 			// To work nicely with GUILayout and scroll view
 			EditorGUILayout.GetControlRect( Utilities.GL_EXPAND_WIDTH, GUILayout.Height( guiHeight ) );
 
-			if( parameters.tooltip != null )
+			if( !string.IsNullOrEmpty( parameters.tooltip ) )
 			{
 				// Show tooltip at mouse position
 				Vector2 mousePos = Event.current.mousePosition;

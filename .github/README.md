@@ -28,6 +28,7 @@ There are 5 ways to install this plugin:
 
 - Open **Window - Asset Usage Detector** window, configure the settings and hit **GO!**
   - or, right click an object and select **Search For References**
+- In the search results page, each row represents a reference to the searched Object(s). Rows can be traversed from left to right to see how the references are formed. If a node's label contains text inside square brackets (e.g. *\[Child object\]*), then that text describes how that node is connected to the node to its left
 
 ## FEATURES
 

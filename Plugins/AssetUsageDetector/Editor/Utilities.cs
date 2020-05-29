@@ -99,6 +99,7 @@ namespace AssetUsageDetectorNamespace
 					normalState = m_tooltipGUIStyle.normal;
 
 					normalState.background = null;
+					normalState.scaledBackgrounds = new Texture2D[0];
 					normalState.textColor = Color.black;
 				}
 

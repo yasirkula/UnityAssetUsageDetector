@@ -14,10 +14,13 @@ using UnityEngine.UI;
 using System.Text;
 #if UNITY_2017_1_OR_NEWER
 using UnityEngine.U2D;
+using UnityEngine.Playables;
+#endif
 #if UNITY_2018_2_OR_NEWER
 using UnityEditor.U2D;
 #endif
-using UnityEngine.Playables;
+#if UNITY_2017_3_OR_NEWER
+using UnityEditor.Compilation;
 #endif
 #if UNITY_2017_2_OR_NEWER
 using UnityEngine.Tilemaps;
@@ -104,6 +107,17 @@ namespace AssetUsageDetectorNamespace
 				}
 			}
 		}
+
+#if UNITY_2017_3_OR_NEWER
+#pragma warning disable 0649 // The fields' values are assigned via JsonUtility
+		[Serializable]
+		private struct AssemblyDefinitionReferences
+		{
+			public string reference; // Used by AssemblyDefinitionReferenceAssets
+			public List<string> references; // Used by AssemblyDefinitionAssets
+		}
+#pragma warning restore 0649
+#endif
 		#endregion
 
 		// A set that contains the searched asset(s) and their sub-assets (if any)
@@ -122,6 +136,11 @@ namespace AssetUsageDetectorNamespace
 		private readonly List<GameObject> assetsToSearchRootPrefabs = new List<GameObject>( 4 );
 		// Path(s) of the assets that should be excluded from the search
 		private readonly HashSet<string> excludedAssetsPathsSet = new HashSet<string>();
+
+#if UNITY_2017_3_OR_NEWER
+		// Path(s) of the Assembly Definition Files in objectsToSearchSet (Value: files themselves)
+		private readonly Dictionary<string, Object> assemblyDefinitionFilesToSearch = new Dictionary<string, Object>( 8 );
+#endif
 
 		// Results for the currently searched scene
 		private SearchResultGroup currentSearchResultGroup;
@@ -258,6 +277,9 @@ namespace AssetUsageDetectorNamespace
 				assetsToSearchPathsSet.Clear();
 				assetsToSearchRootPrefabs.Clear();
 				excludedAssetsPathsSet.Clear();
+#if UNITY_2017_3_OR_NEWER
+				assemblyDefinitionFilesToSearch.Clear();
+#endif
 
 				if( assetDependencyCache == null )
 				{
@@ -291,6 +313,12 @@ namespace AssetUsageDetectorNamespace
 						{ typeof( AnimationClip ), SearchAnimationClip },
 #if UNITY_2017_1_OR_NEWER
 						{ typeof( SpriteAtlas ), SearchSpriteAtlas },
+#endif
+#if UNITY_2017_3_OR_NEWER
+						{ typeof( UnityEditorInternal.AssemblyDefinitionAsset ), SearchAssemblyDefinitionFile },
+#endif
+#if UNITY_2019_2_OR_NEWER
+						{ typeof( UnityEditorInternal.AssemblyDefinitionReferenceAsset ), SearchAssemblyDefinitionFile },
 #endif
 					};
 				}
@@ -360,7 +388,7 @@ namespace AssetUsageDetectorNamespace
 
 				// Find the scenes to search for references
 				HashSet<string> scenesToSearch = new HashSet<string>();
-				if( searchParameters.searchInScenesSubset != null )
+				if( searchParameters.searchInScenesSubset != null && searchParameters.searchInScenesSubset.Length > 0 )
 				{
 					foreach( Object obj in searchParameters.searchInScenesSubset )
 					{
@@ -456,7 +484,7 @@ namespace AssetUsageDetectorNamespace
 
 					// Get the paths of all assets that are to be searched
 					IEnumerable<string> assetPaths;
-					if( searchParameters.searchInAssetsSubset == null )
+					if( searchParameters.searchInAssetsSubset == null || searchParameters.searchInAssetsSubset.Length == 0 )
 					{
 						string[] allAssetPaths = AssetDatabase.GetAllAssetPaths();
 						assetPaths = allAssetPaths;
@@ -505,6 +533,25 @@ namespace AssetUsageDetectorNamespace
 								excludedAssetsPathsSet.Add( AssetDatabase.GetAssetPath( obj ) );
 						}
 					}
+
+#if UNITY_2017_3_OR_NEWER
+					if( assemblyDefinitionFilesToSearch.Count > 0 )
+					{
+						// AssetDatabase.GetDependencies doesn't return references from Assembly Definition Files to their Assembly Definition References,
+						// so if we are searching for an Assembly Definition File's usages, we must search all Assembly Definition Files' references
+						// manually. By adding all these files to assetsToSearchPathsSet, we make sure that AssetHasAnyReference returns true for
+						// these assets and they don't get excluded from the search
+						string[] assemblyDefinitionFilesGuids = AssetDatabase.FindAssets( "t:AssemblyDefinitionAsset" );
+						for( int i = 0; i < assemblyDefinitionFilesGuids.Length; i++ )
+							assetsToSearchPathsSet.Add( AssetDatabase.GUIDToAssetPath( assemblyDefinitionFilesGuids[i] ) );
+
+#if UNITY_2019_2_OR_NEWER
+						assemblyDefinitionFilesGuids = AssetDatabase.FindAssets( "t:AssemblyDefinitionReferenceAsset" );
+						for( int i = 0; i < assemblyDefinitionFilesGuids.Length; i++ )
+							assetsToSearchPathsSet.Add( AssetDatabase.GUIDToAssetPath( assemblyDefinitionFilesGuids[i] ) );
+#endif
+					}
+#endif
 
 					if( EditorUtility.DisplayCancelableProgressBar( "Please wait...", "Searching assets", 0f ) )
 						throw new Exception( "Search aborted" );
@@ -760,6 +807,13 @@ namespace AssetUsageDetectorNamespace
 					if( shouldAddRootPrefabEntry )
 						assetsToSearchRootPrefabs.Add( go );
 				}
+#if UNITY_2017_3_OR_NEWER
+				else if( obj is UnityEditorInternal.AssemblyDefinitionAsset )
+				{
+					if( !string.IsNullOrEmpty( assetPath ) )
+						assemblyDefinitionFilesToSearch[assetPath] = obj;
+				}
+#endif
 			}
 			else
 			{
@@ -931,7 +985,7 @@ namespace AssetUsageDetectorNamespace
 				else
 				{
 					result = PopReferenceNode( unityObject );
-					SearchWithSerializedObject( result );
+					SearchVariablesWithSerializedObject( result );
 				}
 
 				callStack.RemoveAt( callStack.Count - 1 );
@@ -946,7 +1000,7 @@ namespace AssetUsageDetectorNamespace
 				currentDepth++;
 
 				result = PopReferenceNode( obj );
-				SearchFieldsAndPropertiesOf( result );
+				SearchVariablesWithReflection( result );
 
 				currentDepth--;
 				callStack.RemoveAt( callStack.Count - 1 );
@@ -1069,7 +1123,7 @@ namespace AssetUsageDetectorNamespace
 			}
 #endif
 
-			SearchWithSerializedObject( referenceNode );
+			SearchVariablesWithSerializedObject( referenceNode );
 			return referenceNode;
 		}
 
@@ -1251,6 +1305,43 @@ namespace AssetUsageDetectorNamespace
 		}
 #endif
 
+#if UNITY_2017_3_OR_NEWER
+		// Find references from an Assembly Definition File to its Assembly Definition References
+		private ReferenceNode SearchAssemblyDefinitionFile( Object unityObject )
+		{
+			if( assemblyDefinitionFilesToSearch.Count == 0 )
+				return null;
+
+			AssemblyDefinitionReferences assemblyDefinitionFile = JsonUtility.FromJson<AssemblyDefinitionReferences>( ( (TextAsset) unityObject ).text );
+			ReferenceNode referenceNode = PopReferenceNode( unityObject );
+
+			if( !string.IsNullOrEmpty( assemblyDefinitionFile.reference ) )
+			{
+				if( assemblyDefinitionFile.references == null )
+					assemblyDefinitionFile.references = new List<string>( 1 ) { assemblyDefinitionFile.reference };
+				else
+					assemblyDefinitionFile.references.Add( assemblyDefinitionFile.reference );
+			}
+
+			if( assemblyDefinitionFile.references != null )
+			{
+				for( int i = 0; i < assemblyDefinitionFile.references.Count; i++ )
+				{
+#if UNITY_2019_1_OR_NEWER
+					string assemblyPath = CompilationPipeline.GetAssemblyDefinitionFilePathFromAssemblyReference( assemblyDefinitionFile.references[i] );
+#else
+					string assemblyPath = CompilationPipeline.GetAssemblyDefinitionFilePathFromAssemblyName( assemblyDefinitionFile.references[i] );
+#endif
+					Object searchedAssemblyDefinitionFile;
+					if( assemblyDefinitionFilesToSearch.TryGetValue( assemblyPath, out searchedAssemblyDefinitionFile ) )
+						referenceNode.AddLinkTo( GetReferenceNode( searchedAssemblyDefinitionFile ), "Referenced Assembly" );
+				}
+			}
+
+			return referenceNode;
+		}
+#endif
+
 		// Find references from an Animation/Animator component to the objects that it animates
 		private void SearchAnimatedObjects( ReferenceNode referenceNode )
 		{
@@ -1330,8 +1421,8 @@ namespace AssetUsageDetectorNamespace
 			}
 		}
 
-		// Search through field and properties of an object for references with SerializedObject
-		private void SearchWithSerializedObject( ReferenceNode referenceNode )
+		// Search through variables of an object with SerializedObject
+		private void SearchVariablesWithSerializedObject( ReferenceNode referenceNode )
 		{
 			if( !isInPlayMode || referenceNode.nodeObject.IsAsset() )
 			{
@@ -1378,11 +1469,11 @@ namespace AssetUsageDetectorNamespace
 			}
 
 			// Use reflection algorithm as fallback
-			SearchFieldsAndPropertiesOf( referenceNode );
+			SearchVariablesWithReflection( referenceNode );
 		}
 
-		// Search through field and properties of an object for references
-		private void SearchFieldsAndPropertiesOf( ReferenceNode referenceNode )
+		// Search through variables of an object with reflection
+		private void SearchVariablesWithReflection( ReferenceNode referenceNode )
 		{
 			// Get filtered variables for this object
 			VariableGetterHolder[] variables = GetFilteredVariablesForType( referenceNode.nodeObject.GetType() );
