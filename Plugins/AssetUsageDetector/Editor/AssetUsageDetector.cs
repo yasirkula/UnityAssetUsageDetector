@@ -753,9 +753,6 @@ namespace AssetUsageDetectorNamespace
 			if( obj == null || obj.Equals( null ) )
 				return;
 
-			if( obj is SceneAsset )
-				return;
-
 			objectsToSearchSet.Add( obj );
 
 #if UNITY_2018_3_OR_NEWER
