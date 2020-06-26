@@ -16,6 +16,7 @@ namespace AssetUsageDetectorNamespace
 
 		private const string PREFS_SEARCH_SCENES = "AUD_SceneSearch";
 		private const string PREFS_SEARCH_ASSETS = "AUD_AssetsSearch";
+		private const string PREFS_SEARCH_PROJECT_SETTINGS = "AUD_ProjectSettingsSearch";
 		private const string PREFS_DONT_SEARCH_SOURCE_ASSETS = "AUD_AssetsExcludeSrc";
 		private const string PREFS_SEARCH_DEPTH_LIMIT = "AUD_Depth";
 		private const string PREFS_SEARCH_FIELDS = "AUD_Fields";
@@ -42,6 +43,7 @@ namespace AssetUsageDetectorNamespace
 		private bool searchInAllScenes = true; // All scenes (including scenes that are not in build)
 		private bool searchInAssetsFolder = true; // Assets in Project window
 		private bool dontSearchInSourceAssets = true; // objectsToSearch won't be searched for internal references
+		private bool searchInProjectSettings = true; // Player Settings, Graphics Settings etc.
 
 		private List<Object> searchInAssetsSubset = new List<Object>() { null }; // If not empty, only these assets are searched for references
 		private List<Object> excludedAssets = new List<Object>() { null }; // These assets won't be searched for references
@@ -186,6 +188,7 @@ namespace AssetUsageDetectorNamespace
 				mainWindow.ParseSceneSearchMode( searchParameters.searchInScenes );
 				mainWindow.searchInAssetsFolder = searchParameters.searchInAssetsFolder;
 				mainWindow.dontSearchInSourceAssets = searchParameters.dontSearchInSourceAssets;
+				mainWindow.searchInProjectSettings = searchParameters.searchInProjectSettings;
 				mainWindow.searchDepthLimit = searchParameters.searchDepthLimit;
 				mainWindow.fieldModifiers = searchParameters.fieldModifiers;
 				mainWindow.propertyModifiers = searchParameters.propertyModifiers;
@@ -269,6 +272,7 @@ namespace AssetUsageDetectorNamespace
 			EditorPrefs.SetInt( PREFS_SEARCH_SCENES, (int) GetSceneSearchMode( false ) );
 			EditorPrefs.SetBool( PREFS_SEARCH_ASSETS, searchInAssetsFolder );
 			EditorPrefs.SetBool( PREFS_DONT_SEARCH_SOURCE_ASSETS, dontSearchInSourceAssets );
+			EditorPrefs.SetBool( PREFS_SEARCH_PROJECT_SETTINGS, searchInProjectSettings );
 			EditorPrefs.SetInt( PREFS_SEARCH_DEPTH_LIMIT, searchDepthLimit );
 			EditorPrefs.SetInt( PREFS_SEARCH_FIELDS, (int) fieldModifiers );
 			EditorPrefs.SetInt( PREFS_SEARCH_PROPERTIES, (int) propertyModifiers );
@@ -285,6 +289,7 @@ namespace AssetUsageDetectorNamespace
 
 			searchInAssetsFolder = EditorPrefs.GetBool( PREFS_SEARCH_ASSETS, true );
 			dontSearchInSourceAssets = EditorPrefs.GetBool( PREFS_DONT_SEARCH_SOURCE_ASSETS, true );
+			searchInProjectSettings = EditorPrefs.GetBool( PREFS_SEARCH_PROJECT_SETTINGS, true );
 			searchDepthLimit = EditorPrefs.GetInt( PREFS_SEARCH_DEPTH_LIMIT, 4 );
 
 			// Fetch public, protected and private non-static fields and properties from objects by default
@@ -378,7 +383,12 @@ namespace AssetUsageDetectorNamespace
 
 				GUILayout.Space( 10 );
 
+				Color c = GUI.color;
+				GUI.color = Color.cyan;
+
 				GUILayout.Box( "SEARCH IN", Utilities.BoxGUIStyle, Utilities.GL_EXPAND_WIDTH );
+
+				GUI.color = c;
 
 				searchInAssetsFolder = EditorGUILayout.ToggleLeft( "Project window (Assets folder)", searchInAssetsFolder );
 
@@ -397,7 +407,7 @@ namespace AssetUsageDetectorNamespace
 					GUILayout.EndHorizontal();
 				}
 
-				GUILayout.Space( 10 );
+				Utilities.DrawSeparatorLine();
 
 				if( searchInAllScenes && !EditorApplication.isPlaying )
 					GUI.enabled = false;
@@ -432,6 +442,10 @@ namespace AssetUsageDetectorNamespace
 
 				GUILayout.EndVertical();
 				GUILayout.EndHorizontal();
+
+				Utilities.DrawSeparatorLine();
+
+				searchInProjectSettings = EditorGUILayout.ToggleLeft( "Project Settings (Player Settings, Graphics Settings etc.)", searchInProjectSettings );
 
 				GUILayout.Space( 10 );
 
@@ -487,7 +501,11 @@ namespace AssetUsageDetectorNamespace
 
 				//GUILayout.Space( 10 );
 
+				GUI.color = Color.cyan;
+
 				GUILayout.Box( "SETTINGS", Utilities.BoxGUIStyle, Utilities.GL_EXPAND_WIDTH );
+
+				GUI.color = c;
 
 				lazySceneSearch = EditorGUILayout.ToggleLeft( "Lazy scene search: scenes are searched in detail only when they are manually refreshed (faster search)", lazySceneSearch );
 				noAssetDatabaseChanges = EditorGUILayout.ToggleLeft( "I haven't modified any assets/scenes since the last search (faster search)", noAssetDatabaseChanges );
@@ -496,11 +514,14 @@ namespace AssetUsageDetectorNamespace
 				GUILayout.Space( 10 );
 
 				// Don't let the user press the GO button without any valid search location
-				if( !searchInAllScenes && !searchInOpenScenes && !searchInScenesInBuild && !searchInAssetsFolder )
+				if( !searchInAllScenes && !searchInOpenScenes && !searchInScenesInBuild && !searchInAssetsFolder && !searchInProjectSettings )
 					GUI.enabled = false;
 
 				if( GUILayout.Button( "GO!", Utilities.GL_HEIGHT_30 ) )
+				{
 					InitiateSearch();
+					GUIUtility.ExitGUI();
+				}
 			}
 			else if( currentPhase == Phase.Complete )
 			{
@@ -564,7 +585,7 @@ namespace AssetUsageDetectorNamespace
 					noAssetDatabaseChanges = EditorGUILayout.ToggleLeft( "I haven't modified any assets/scenes since the last search (faster Refresh)", noAssetDatabaseChanges );
 					searchResultDrawParameters.noAssetDatabaseChanges = noAssetDatabaseChanges;
 
-					GUILayout.Space( 10 );
+					Utilities.DrawSeparatorLine();
 
 					GUILayout.Label( "Path drawing mode:" );
 
@@ -636,6 +657,7 @@ namespace AssetUsageDetectorNamespace
 					excludedAssetsFromSearch = !excludedAssets.IsEmpty() ? excludedAssets.ToArray() : null,
 					dontSearchInSourceAssets = dontSearchInSourceAssets,
 					excludedScenesFromSearch = !excludedScenes.IsEmpty() ? excludedScenes.ToArray() : null,
+					searchInProjectSettings = searchInProjectSettings,
 					//fieldModifiers = fieldModifiers,
 					//propertyModifiers = propertyModifiers,
 					//searchDepthLimit = searchDepthLimit,

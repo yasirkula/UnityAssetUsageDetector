@@ -1,6 +1,6 @@
 {
   "name": "com.yasirkula.assetusagedetector",
   "displayName": "Asset Usage Detector",
-  "version": "1.7.9",
+  "version": "1.8.0",
   "description": "This editor extension helps you figure out at which places an asset or GameObject is used, i.e. lists the objects that refer to the asset. It is possible to search for references in the Assets folder (Project view) and/or in the scene(s) of your project. You can also search for references while in Play mode!"
 }

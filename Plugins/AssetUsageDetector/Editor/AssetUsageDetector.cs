@@ -43,11 +43,12 @@ namespace AssetUsageDetectorNamespace
 
 			public SceneSearchMode searchInScenes = SceneSearchMode.AllScenes;
 			public Object[] searchInScenesSubset = null;
+			public Object[] excludedScenesFromSearch = null;
 			public bool searchInAssetsFolder = true;
 			public Object[] searchInAssetsSubset = null;
 			public Object[] excludedAssetsFromSearch = null;
 			public bool dontSearchInSourceAssets = true;
-			public Object[] excludedScenesFromSearch = null;
+			public bool searchInProjectSettings = true;
 
 			public int searchDepthLimit = 4;
 			public BindingFlags fieldModifiers = BindingFlags.Public | BindingFlags.NonPublic;
@@ -467,6 +468,17 @@ namespace AssetUsageDetectorNamespace
 					} );
 				}
 
+				// Find Project Settings to search for references
+				// Don't search Project Settings if searched object(s) are all scene objects as Project Settings can't hold references to scene objects
+				string[] projectSettingsToSearch = new string[0];
+				if( searchParameters.searchInProjectSettings && assetsToSearchSet.Count > 0 )
+				{
+					string[] projectSettingsFiles = Directory.GetFiles( "ProjectSettings" );
+					projectSettingsToSearch = new string[projectSettingsFiles.Length];
+					for( int i = 0; i < projectSettingsFiles.Length; i++ )
+						projectSettingsToSearch[i] = "ProjectSettings/" + Path.GetFileName( projectSettingsFiles[i] );
+				}
+
 				// Initialize the nodes of searched asset(s)
 				foreach( Object obj in objectsToSearchSet )
 					searchedObjects.Add( obj.Hash(), PopReferenceNode( obj ) );
@@ -476,6 +488,9 @@ namespace AssetUsageDetectorNamespace
 				int searchTotalProgress = scenesToSearch.Count;
 				if( isInPlayMode && searchParameters.searchInScenes != SceneSearchMode.None )
 					searchTotalProgress++; // DontDestroyOnLoad scene
+
+				if( searchParameters.showDetailedProgressBar )
+					searchTotalProgress += projectSettingsToSearch.Length;
 
 				// Don't search assets if searched object(s) are all scene objects as assets can't hold references to scene objects
 				if( searchParameters.searchInAssetsFolder && assetsToSearchSet.Count > 0 )
@@ -590,6 +605,31 @@ namespace AssetUsageDetectorNamespace
 						searchResult.Add( currentSearchResultGroup );
 				}
 
+				// Search all assets inside ProjectSettings folder
+				if( projectSettingsToSearch.Length > 0 )
+				{
+					currentSearchResultGroup = new SearchResultGroup( "Project Settings", SearchResultGroup.GroupType.ProjectSettings );
+
+					if( EditorUtility.DisplayCancelableProgressBar( "Please wait...", "Searching Project Settings", (float) searchProgress / searchTotalProgress ) )
+						throw new Exception( "Search aborted" );
+
+					for( int i = 0; i < projectSettingsToSearch.Length; i++ )
+					{
+						if( searchParameters.showDetailedProgressBar && ++searchProgress % 30 == 1 && EditorUtility.DisplayCancelableProgressBar( "Please wait...", "Searching Project Settings", (float) searchProgress / searchTotalProgress ) )
+							throw new Exception( "Search aborted" );
+
+						Object[] assets = AssetDatabase.LoadAllAssetsAtPath( projectSettingsToSearch[i] );
+						if( assets != null && assets.Length > 0 )
+						{
+							for( int j = 0; j < assets.Length; j++ )
+								BeginSearchObject( assets[j] );
+						}
+					}
+
+					if( currentSearchResultGroup.NumberOfReferences > 0 )
+						searchResult.Add( currentSearchResultGroup );
+				}
+
 				// Search non-serializable variables for references while searching a scene in play mode
 				if( isInPlayMode )
 					searchSerializableVariablesOnly = false;
@@ -641,7 +681,7 @@ namespace AssetUsageDetectorNamespace
 				// Search through all the GameObjects under the DontDestroyOnLoad scene (if exists)
 				if( isInPlayMode && searchParameters.searchInScenes != SceneSearchMode.None )
 				{
-					if( searchParameters.showDetailedProgressBar && EditorUtility.DisplayCancelableProgressBar( "Please wait...", "Searching scene: DontDestroyOnLoad", 1f ) )
+					if( EditorUtility.DisplayCancelableProgressBar( "Please wait...", "Searching scene: DontDestroyOnLoad", 1f ) )
 						throw new Exception( "Search aborted" );
 
 					currentSearchResultGroup = new SearchResultGroup( "DontDestroyOnLoad", SearchResultGroup.GroupType.DontDestroyOnLoad );
@@ -965,10 +1005,21 @@ namespace AssetUsageDetectorNamespace
 			if( unityObject != null )
 			{
 				// If the Object is an asset, search it in detail only if its dependencies contain at least one of the searched asset(s)
-				if( unityObject.IsAsset() && ( assetsToSearchSet.Count == 0 || !AssetHasAnyReference( AssetDatabase.GetAssetPath( unityObject ) ) ) )
+				if( unityObject.IsAsset() )
 				{
-					searchedObjects.Add( objHash, null );
-					return null;
+					if( assetsToSearchSet.Count == 0 )
+					{
+						searchedObjects.Add( objHash, null );
+						return null;
+					}
+
+					// AssetHasAnyReference always returns false for Project Settings assets, ignore its result for them
+					string assetPath = AssetDatabase.GetAssetPath( unityObject );
+					if( !assetPath.StartsWith( "ProjectSettings/" ) && !AssetHasAnyReference( assetPath ) )
+					{
+						searchedObjects.Add( objHash, null );
+						return null;
+					}
 				}
 
 				callStack.Add( unityObject );

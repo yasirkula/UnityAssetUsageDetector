@@ -127,6 +127,7 @@ namespace AssetUsageDetectorNamespace
 			Object[] searchInScenesSubset = m_searchParameters.searchInScenesSubset;
 			bool searchInAssetsFolder = m_searchParameters.searchInAssetsFolder;
 			Object[] searchInAssetsSubset = m_searchParameters.searchInAssetsSubset;
+			bool searchInProjectSettings = m_searchParameters.searchInProjectSettings;
 
 			try
 			{
@@ -134,6 +135,15 @@ namespace AssetUsageDetectorNamespace
 				{
 					m_searchParameters.searchInScenes = SceneSearchMode.None;
 					m_searchParameters.searchInScenesSubset = null;
+					m_searchParameters.searchInProjectSettings = false;
+				}
+				else if( searchResultGroup.Type == SearchResultGroup.GroupType.ProjectSettings )
+				{
+					m_searchParameters.searchInScenes = SceneSearchMode.None;
+					m_searchParameters.searchInScenesSubset = null;
+					m_searchParameters.searchInAssetsFolder = false;
+					m_searchParameters.searchInAssetsSubset = null;
+					m_searchParameters.searchInProjectSettings = true;
 				}
 				else if( searchResultGroup.Type == SearchResultGroup.GroupType.Scene )
 				{
@@ -141,6 +151,7 @@ namespace AssetUsageDetectorNamespace
 					m_searchParameters.searchInScenesSubset = new Object[1] { AssetDatabase.LoadAssetAtPath<SceneAsset>( searchResultGroup.Title ) };
 					m_searchParameters.searchInAssetsFolder = false;
 					m_searchParameters.searchInAssetsSubset = null;
+					m_searchParameters.searchInProjectSettings = false;
 				}
 				else
 				{
@@ -148,6 +159,7 @@ namespace AssetUsageDetectorNamespace
 					m_searchParameters.searchInScenesSubset = null;
 					m_searchParameters.searchInAssetsFolder = false;
 					m_searchParameters.searchInAssetsSubset = null;
+					m_searchParameters.searchInProjectSettings = false;
 				}
 
 				m_searchParameters.lazySceneSearch = false;
@@ -188,6 +200,7 @@ namespace AssetUsageDetectorNamespace
 				m_searchParameters.searchInScenesSubset = searchInScenesSubset;
 				m_searchParameters.searchInAssetsFolder = searchInAssetsFolder;
 				m_searchParameters.searchInAssetsSubset = searchInAssetsSubset;
+				m_searchParameters.searchInProjectSettings = searchInProjectSettings;
 			}
 		}
 
@@ -413,7 +426,7 @@ namespace AssetUsageDetectorNamespace
 	// Custom class to hold the results for a single scene or Assets folder
 	public class SearchResultGroup
 	{
-		public enum GroupType { Assets = 0, Scene = 1, DontDestroyOnLoad = 2 };
+		public enum GroupType { Assets = 0, Scene = 1, DontDestroyOnLoad = 2, ProjectSettings = 3 };
 
 		// Custom struct to hold a single path to a reference
 		public struct ReferencePath

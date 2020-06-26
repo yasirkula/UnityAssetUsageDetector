@@ -57,6 +57,7 @@ namespace AssetUsageDetectorNamespace
 		public static readonly GUILayoutOption GL_WIDTH_100 = GUILayout.Width( 100 );
 		public static readonly GUILayoutOption GL_WIDTH_250 = GUILayout.Width( 250 );
 		public static readonly GUILayoutOption GL_HEIGHT_0 = GUILayout.Height( 0 );
+		public static readonly GUILayoutOption GL_HEIGHT_2 = GUILayout.Height( 2 );
 		public static readonly GUILayoutOption GL_HEIGHT_30 = GUILayout.Height( 30 );
 		public static readonly GUILayoutOption GL_HEIGHT_35 = GUILayout.Height( 35 );
 		public static readonly GUILayoutOption GL_HEIGHT_40 = GUILayout.Height( 40 );
@@ -105,7 +106,7 @@ namespace AssetUsageDetectorNamespace
 
 				if( normalState.background == null || normalState.background.Equals( null ) )
 				{
-					Texture2D backgroundTexture = new Texture2D( 1, 1 );
+					Texture2D backgroundTexture = new Texture2D( 1, 1 ) { hideFlags = HideFlags.HideAndDontSave };
 					backgroundTexture.SetPixel( 0, 0, new Color( 0.88f, 0.88f, 0.88f, 0.85f ) );
 					backgroundTexture.Apply();
 
@@ -472,6 +473,13 @@ namespace AssetUsageDetectorNamespace
 			}
 
 			return true;
+		}
+
+		public static void DrawSeparatorLine()
+		{
+			GUILayout.Space( 4 );
+			GUILayout.Box( "", GL_HEIGHT_2, GL_EXPAND_WIDTH );
+			GUILayout.Space( 4 );
 		}
 
 		public static bool ContainsFast<T>( this List<T> list, T element )
