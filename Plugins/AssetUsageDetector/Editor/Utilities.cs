@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Text;
 #if UNITY_2018_1_OR_NEWER
 using Unity.Collections;
 #endif
@@ -45,6 +46,8 @@ namespace AssetUsageDetectorNamespace
 #endif
 
 		private static readonly HashSet<string> folderContentsSet = new HashSet<string>();
+
+		private static readonly StringBuilder stringBuilder = new StringBuilder( 10 );
 
 #if UNITY_2018_3_OR_NEWER
 		private static int previousPingedPrefabInstanceId;
@@ -427,6 +430,34 @@ namespace AssetUsageDetectorNamespace
 			return true;
 		}
 
+		// Returns file extension in lowercase (period not included)
+		public static string GetFileExtension( string path )
+		{
+			int extensionIndex = path.LastIndexOf( '.' );
+			if( extensionIndex < 0 || extensionIndex >= path.Length - 1 )
+				return "";
+
+			stringBuilder.Length = 0;
+			for( extensionIndex++; extensionIndex < path.Length; extensionIndex++ )
+			{
+				char ch = path[extensionIndex];
+				if( ch >= 65 && ch <= 90 ) // A-Z
+					ch += (char) 32; // Converted to a-z
+
+				stringBuilder.Append( ch );
+			}
+
+			return stringBuilder.ToString();
+		}
+
+		// Draw horizontal line inside OnGUI
+		public static void DrawSeparatorLine()
+		{
+			GUILayout.Space( 4 );
+			GUILayout.Box( "", GL_HEIGHT_2, GL_EXPAND_WIDTH );
+			GUILayout.Space( 4 );
+		}
+
 		// Check if all the objects inside the list are null
 		public static bool IsEmpty( this List<ObjectToSearch> objectsToSearch )
 		{
@@ -475,11 +506,33 @@ namespace AssetUsageDetectorNamespace
 			return true;
 		}
 
-		public static void DrawSeparatorLine()
+		// Returns true is str starts with prefix
+		public static bool StartsWithFast( this string str, string prefix )
 		{
-			GUILayout.Space( 4 );
-			GUILayout.Box( "", GL_HEIGHT_2, GL_EXPAND_WIDTH );
-			GUILayout.Space( 4 );
+			int aLen = str.Length;
+			int bLen = prefix.Length;
+			int ap = 0; int bp = 0;
+			while( ap < aLen && bp < bLen && str[ap] == prefix[bp] )
+			{
+				ap++;
+				bp++;
+			}
+
+			return bp == bLen;
+		}
+
+		// Returns true is str ends with postfix
+		public static bool EndsWithFast( this string str, string postfix )
+		{
+			int ap = str.Length - 1;
+			int bp = postfix.Length - 1;
+			while( ap >= 0 && bp >= 0 && str[ap] == postfix[bp] )
+			{
+				ap--;
+				bp--;
+			}
+
+			return bp < 0;
 		}
 
 		public static bool ContainsFast<T>( this List<T> list, T element )

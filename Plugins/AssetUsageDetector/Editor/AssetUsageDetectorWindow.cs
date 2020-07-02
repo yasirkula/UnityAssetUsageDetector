@@ -71,6 +71,9 @@ namespace AssetUsageDetectorNamespace
 		private readonly ObjectListDrawer excludedAssetsDrawer = new ObjectListDrawer( "Don't search following asset(s):", false );
 		private readonly ObjectListDrawer excludedScenesDrawer = new ObjectListDrawer( "Don't search in following scene(s):", false );
 
+		private readonly GUIContent restoreInitialSceneSetupLabel = new GUIContent( "Restore initial scene setup (Recommended)", "For example, if scene A was open when the search was started and scenes A and B are open after the search is completed, clicking the \"Reset Search\" button will automatically close scene B" );
+		private readonly GUIContent showTooltipsLabel = new GUIContent( "Show tooltips", "Display nodes' contents in a tooltip when cursor hovers over them" );
+
 		private Vector2 scrollPosition = Vector2.zero;
 
 		private bool shouldRepositionSelf;
@@ -371,7 +374,7 @@ namespace AssetUsageDetectorNamespace
 				// If we are stuck at this phase, then we have encountered an exception
 				GUILayout.Label( ". . . Search in progress or something went wrong (check console) . . ." );
 
-				restoreInitialSceneSetup = EditorGUILayout.ToggleLeft( "Restore initial scene setup (Recommended)", restoreInitialSceneSetup );
+				restoreInitialSceneSetup = EditorGUILayout.ToggleLeft( restoreInitialSceneSetupLabel, restoreInitialSceneSetup );
 
 				if( GUILayout.Button( "RETURN", Utilities.GL_HEIGHT_30 ) )
 					ReturnToSetupPhase( restoreInitialSceneSetup );
@@ -533,7 +536,7 @@ namespace AssetUsageDetectorNamespace
 				GUILayout.Space( 10 );
 				GUI.enabled = true;
 
-				restoreInitialSceneSetup = EditorGUILayout.ToggleLeft( "Restore initial scene setup after search is reset (Recommended)", restoreInitialSceneSetup );
+				restoreInitialSceneSetup = EditorGUILayout.ToggleLeft( restoreInitialSceneSetupLabel, restoreInitialSceneSetup );
 
 				if( GUILayout.Button( "Reset Search", Utilities.GL_HEIGHT_30 ) )
 					ReturnToSetupPhase( restoreInitialSceneSetup );
@@ -581,7 +584,7 @@ namespace AssetUsageDetectorNamespace
 
 					//GUILayout.Space( 10 );
 
-					searchResultDrawParameters.showTooltips = EditorGUILayout.ToggleLeft( "Show tooltips", searchResultDrawParameters.showTooltips );
+					searchResultDrawParameters.showTooltips = EditorGUILayout.ToggleLeft( showTooltipsLabel, searchResultDrawParameters.showTooltips );
 					noAssetDatabaseChanges = EditorGUILayout.ToggleLeft( "I haven't modified any assets/scenes since the last search (faster Refresh)", noAssetDatabaseChanges );
 					searchResultDrawParameters.noAssetDatabaseChanges = noAssetDatabaseChanges;
 
@@ -611,7 +614,7 @@ namespace AssetUsageDetectorNamespace
 
 					GUILayout.Space( 35 );
 
-					if( EditorGUILayout.ToggleLeft( "Shortest: Draw only the last two nodes of complete paths", searchResultDrawParameters.pathDrawingMode == PathDrawingMode.Shortest ) )
+					if( EditorGUILayout.ToggleLeft( "Shortest: Draw only the last two nodes of the complete paths", searchResultDrawParameters.pathDrawingMode == PathDrawingMode.Shortest ) )
 						searchResultDrawParameters.pathDrawingMode = PathDrawingMode.Shortest;
 
 					GUILayout.EndHorizontal();
