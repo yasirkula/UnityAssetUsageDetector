@@ -41,7 +41,7 @@ namespace AssetUsageDetectorNamespace
 #if UNITY_2018_1_OR_NEWER
 #pragma warning disable 0649 // The fields' values are assigned via JsonUtility
 		[Serializable]
-		private struct ShaderGraphReferences
+		private struct ShaderGraphReferences // Used by old Shader Graph serialization format
 		{
 			[Serializable]
 			public struct JSONHolder
@@ -725,79 +725,122 @@ namespace AssetUsageDetectorNamespace
 			if( !searchTextureReferences && !searchShaderGraphsForSubGraphs && shaderIncludesToSearchSet.Count == 0 )
 				return null;
 
-			// Shader Graph assets are JSON files, they must be crawled manually to find references
-			ShaderGraphReferences shaderGraph = JsonUtility.FromJson<ShaderGraphReferences>( File.ReadAllText( AssetDatabase.GetAssetPath( unityObject ) ) );
 			ReferenceNode referenceNode = PopReferenceNode( unityObject );
 
-			if( shaderGraph.m_SerializedProperties != null )
+			// Shader Graph assets are JSON files, they must be crawled manually to find references
+			string graphJson = File.ReadAllText( AssetDatabase.GetAssetPath( unityObject ) );
+			if( graphJson.IndexOf( "\"m_ObjectId\"", 0, Mathf.Min( 200, graphJson.Length ) ) >= 0 )
 			{
-				for( int i = shaderGraph.m_SerializedProperties.Count - 1; i >= 0; i-- )
+				// New Shader Graph serialization format is used: https://github.com/Unity-Technologies/Graphics/pull/222
+				// Iterate over all these occurrences:   "guid\": \"GUID_VALUE\" (\" is used instead of " because it is a nested JSON)
+				IterateOverValuesInString( graphJson, "\"guid\\\"", '"', ( guid ) =>
 				{
-					string propertyJSON = shaderGraph.m_SerializedProperties[i].JSONnodeData;
-					if( string.IsNullOrEmpty( propertyJSON ) )
-						continue;
+					if( guid.Length > 1 )
+					{
+						if( guid[guid.Length - 1] == '\\' )
+							guid = guid.Substring( 0, guid.Length - 1 );
 
-					ShaderGraphReferences.PropertyData propertyData = JsonUtility.FromJson<ShaderGraphReferences.PropertyData>( propertyJSON );
-					if( propertyData.m_Value == null )
-						continue;
+						string referencePath = AssetDatabase.GUIDToAssetPath( guid );
+						if( !string.IsNullOrEmpty( referencePath ) && assetsToSearchPathsSet.Contains( referencePath ) )
+						{
+							Object reference = AssetDatabase.LoadMainAssetAtPath( referencePath );
+							if( objectsToSearchSet.Contains( reference ) )
+								referenceNode.AddLinkTo( GetReferenceNode( reference ), "Used in graph" );
+						}
+					}
+				} );
 
-					string texturePath = propertyData.m_Value.GetTexturePath();
-					if( string.IsNullOrEmpty( texturePath ) || !assetsToSearchPathsSet.Contains( texturePath ) )
-						continue;
-
-					Texture texture = AssetDatabase.LoadAssetAtPath<Texture>( texturePath );
-					if( objectsToSearchSet.Contains( texture ) )
-						referenceNode.AddLinkTo( GetReferenceNode( texture ), "Default Texture: " + propertyData.GetName() );
+				if( shaderIncludesToSearchSet.Count > 0 )
+				{
+					// Iterate over all these occurrences:   "m_FunctionSource": "GUID_VALUE" (this one is not nested JSON)
+					IterateOverValuesInString( graphJson, "\"m_FunctionSource\"", '"', ( guid ) =>
+					{
+						string referencePath = AssetDatabase.GUIDToAssetPath( guid );
+						if( !string.IsNullOrEmpty( referencePath ) && assetsToSearchPathsSet.Contains( referencePath ) )
+						{
+							Object reference = AssetDatabase.LoadMainAssetAtPath( referencePath );
+							if( objectsToSearchSet.Contains( reference ) )
+								referenceNode.AddLinkTo( GetReferenceNode( reference ), "Used in node: Custom Function" );
+						}
+					} );
 				}
 			}
-
-			if( shaderGraph.m_SerializableNodes != null )
+			else
 			{
-				for( int i = shaderGraph.m_SerializableNodes.Count - 1; i >= 0; i-- )
+				// Old Shader Graph serialization format is used. Although we could use the same search method as the new serialization format (which
+				// is potentially faster), this alternative search method yields more information about references
+				ShaderGraphReferences shaderGraph = JsonUtility.FromJson<ShaderGraphReferences>( graphJson );
+
+				if( shaderGraph.m_SerializedProperties != null )
 				{
-					string nodeJSON = shaderGraph.m_SerializableNodes[i].JSONnodeData;
-					if( string.IsNullOrEmpty( nodeJSON ) )
-						continue;
-
-					ShaderGraphReferences.NodeData nodeData = JsonUtility.FromJson<ShaderGraphReferences.NodeData>( nodeJSON );
-					if( !string.IsNullOrEmpty( nodeData.m_FunctionSource ) )
+					for( int i = shaderGraph.m_SerializedProperties.Count - 1; i >= 0; i-- )
 					{
-						string customFunctionPath = AssetDatabase.GUIDToAssetPath( nodeData.m_FunctionSource );
-						if( !string.IsNullOrEmpty( customFunctionPath ) && assetsToSearchPathsSet.Contains( customFunctionPath ) )
-						{
-							Object customFunction = AssetDatabase.LoadMainAssetAtPath( customFunctionPath );
-							if( objectsToSearchSet.Contains( customFunction ) )
-								referenceNode.AddLinkTo( GetReferenceNode( customFunction ), "Used in node: " + nodeData.m_Name );
-						}
-					}
-
-					if( searchShaderGraphsForSubGraphs )
-					{
-						string subGraphPath = nodeData.GetSubGraphPath();
-						if( !string.IsNullOrEmpty( subGraphPath ) && assetsToSearchPathsSet.Contains( subGraphPath ) )
-						{
-							Object subGraph = AssetDatabase.LoadMainAssetAtPath( subGraphPath );
-							if( objectsToSearchSet.Contains( subGraph ) )
-								referenceNode.AddLinkTo( GetReferenceNode( subGraph ), "Used as Sub-graph" );
-						}
-					}
-
-					if( nodeData.m_SerializableSlots == null )
-						continue;
-
-					for( int j = nodeData.m_SerializableSlots.Count - 1; j >= 0; j-- )
-					{
-						string nodeSlotJSON = nodeData.m_SerializableSlots[j].JSONnodeData;
-						if( string.IsNullOrEmpty( nodeSlotJSON ) )
+						string propertyJSON = shaderGraph.m_SerializedProperties[i].JSONnodeData;
+						if( string.IsNullOrEmpty( propertyJSON ) )
 							continue;
 
-						string texturePath = JsonUtility.FromJson<ShaderGraphReferences.NodeSlotData>( nodeSlotJSON ).GetTexturePath();
+						ShaderGraphReferences.PropertyData propertyData = JsonUtility.FromJson<ShaderGraphReferences.PropertyData>( propertyJSON );
+						if( propertyData.m_Value == null )
+							continue;
+
+						string texturePath = propertyData.m_Value.GetTexturePath();
 						if( string.IsNullOrEmpty( texturePath ) || !assetsToSearchPathsSet.Contains( texturePath ) )
 							continue;
 
 						Texture texture = AssetDatabase.LoadAssetAtPath<Texture>( texturePath );
 						if( objectsToSearchSet.Contains( texture ) )
-							referenceNode.AddLinkTo( GetReferenceNode( texture ), "Used in node: " + nodeData.m_Name );
+							referenceNode.AddLinkTo( GetReferenceNode( texture ), "Default Texture: " + propertyData.GetName() );
+					}
+				}
+
+				if( shaderGraph.m_SerializableNodes != null )
+				{
+					for( int i = shaderGraph.m_SerializableNodes.Count - 1; i >= 0; i-- )
+					{
+						string nodeJSON = shaderGraph.m_SerializableNodes[i].JSONnodeData;
+						if( string.IsNullOrEmpty( nodeJSON ) )
+							continue;
+
+						ShaderGraphReferences.NodeData nodeData = JsonUtility.FromJson<ShaderGraphReferences.NodeData>( nodeJSON );
+						if( !string.IsNullOrEmpty( nodeData.m_FunctionSource ) )
+						{
+							string customFunctionPath = AssetDatabase.GUIDToAssetPath( nodeData.m_FunctionSource );
+							if( !string.IsNullOrEmpty( customFunctionPath ) && assetsToSearchPathsSet.Contains( customFunctionPath ) )
+							{
+								Object customFunction = AssetDatabase.LoadMainAssetAtPath( customFunctionPath );
+								if( objectsToSearchSet.Contains( customFunction ) )
+									referenceNode.AddLinkTo( GetReferenceNode( customFunction ), "Used in node: " + nodeData.m_Name );
+							}
+						}
+
+						if( searchShaderGraphsForSubGraphs )
+						{
+							string subGraphPath = nodeData.GetSubGraphPath();
+							if( !string.IsNullOrEmpty( subGraphPath ) && assetsToSearchPathsSet.Contains( subGraphPath ) )
+							{
+								Object subGraph = AssetDatabase.LoadMainAssetAtPath( subGraphPath );
+								if( objectsToSearchSet.Contains( subGraph ) )
+									referenceNode.AddLinkTo( GetReferenceNode( subGraph ), "Used as Sub-graph" );
+							}
+						}
+
+						if( nodeData.m_SerializableSlots == null )
+							continue;
+
+						for( int j = nodeData.m_SerializableSlots.Count - 1; j >= 0; j-- )
+						{
+							string nodeSlotJSON = nodeData.m_SerializableSlots[j].JSONnodeData;
+							if( string.IsNullOrEmpty( nodeSlotJSON ) )
+								continue;
+
+							string texturePath = JsonUtility.FromJson<ShaderGraphReferences.NodeSlotData>( nodeSlotJSON ).GetTexturePath();
+							if( string.IsNullOrEmpty( texturePath ) || !assetsToSearchPathsSet.Contains( texturePath ) )
+								continue;
+
+							Texture texture = AssetDatabase.LoadAssetAtPath<Texture>( texturePath );
+							if( objectsToSearchSet.Contains( texture ) )
+								referenceNode.AddLinkTo( GetReferenceNode( texture ), "Used in node: " + nodeData.m_Name );
+						}
 					}
 				}
 			}
@@ -889,49 +932,31 @@ namespace AssetUsageDetectorNamespace
 		private void SearchShaderSourceCodeForCGIncludes( ReferenceNode referenceNode )
 		{
 			string shaderPath = AssetDatabase.GetAssetPath( (Object) referenceNode.nodeObject );
-			string shaderSource = File.ReadAllText( shaderPath );
 
-			int includeStartIndex, includeEndIndex = 0;
-			while( true )
+			// Iterate over all these occurrences:   #include: "INCLUDE_REFERENCE"
+			IterateOverValuesInString( File.ReadAllText( shaderPath ), "#include ", '"', ( include ) =>
 			{
-				includeStartIndex = shaderSource.IndexOf( "#include ", includeEndIndex );
-				if( includeStartIndex < 0 )
-					return;
-
-				includeStartIndex = shaderSource.IndexOf( '"', includeStartIndex + 9 );
-				if( includeStartIndex < 0 )
-					return;
-
-				includeStartIndex++;
-				includeEndIndex = shaderSource.IndexOf( '"', includeStartIndex );
-				if( includeEndIndex < 0 )
-					return;
-
-				if( includeEndIndex > includeStartIndex )
+				bool isIncludePotentialReference = shaderIncludesToSearchSet.Contains( include );
+				if( !isIncludePotentialReference )
 				{
-					string include = shaderSource.Substring( includeStartIndex, includeEndIndex - includeStartIndex );
-					bool isIncludePotentialReference = shaderIncludesToSearchSet.Contains( include );
-					if( !isIncludePotentialReference )
-					{
-						// Get absolute path of the #include
-						include = Path.GetFullPath( Path.Combine( Path.GetDirectoryName( shaderPath ), include ) );
+					// Get absolute path of the #include
+					include = Path.GetFullPath( Path.Combine( Path.GetDirectoryName( shaderPath ), include ) );
 
-						int trimStartLength = Directory.GetCurrentDirectory().Length + 1; // Convert absolute path to a Project-relative path
-						if( include.Length > trimStartLength )
-						{
-							include = include.Substring( trimStartLength ).Replace( '\\', '/' );
-							isIncludePotentialReference = shaderIncludesToSearchSet.Contains( include );
-						}
-					}
-
-					if( isIncludePotentialReference )
+					int trimStartLength = Directory.GetCurrentDirectory().Length + 1; // Convert absolute path to a Project-relative path
+					if( include.Length > trimStartLength )
 					{
-						Object cgShader = AssetDatabase.LoadMainAssetAtPath( include );
-						if( objectsToSearchSet.Contains( cgShader ) )
-							referenceNode.AddLinkTo( GetReferenceNode( cgShader ), "Used with #include" );
+						include = include.Substring( trimStartLength ).Replace( '\\', '/' );
+						isIncludePotentialReference = shaderIncludesToSearchSet.Contains( include );
 					}
 				}
-			}
+
+				if( isIncludePotentialReference )
+				{
+					Object cgShader = AssetDatabase.LoadMainAssetAtPath( include );
+					if( objectsToSearchSet.Contains( cgShader ) )
+						referenceNode.AddLinkTo( GetReferenceNode( cgShader ), "Used with #include" );
+				}
+			} );
 		}
 
 		// Search through variables of an object with SerializedObject
@@ -1159,6 +1184,32 @@ namespace AssetUsageDetectorNamespace
 			typeToVariables.Add( type, result );
 
 			return result;
+		}
+
+		// Iterates over all occurrences of specific key-value pairs in string
+		// Example1: #include "VALUE"  valuePrefix=#include, valueWrapperChar="
+		// Example2: "guid": "VALUE"  valuePrefix="guid", valueWrapperChar="
+		private void IterateOverValuesInString( string str, string valuePrefix, char valueWrapperChar, Action<string> valueAction )
+		{
+			int valueStartIndex, valueEndIndex = 0;
+			while( true )
+			{
+				valueStartIndex = str.IndexOf( valuePrefix, valueEndIndex );
+				if( valueStartIndex < 0 )
+					return;
+
+				valueStartIndex = str.IndexOf( valueWrapperChar, valueStartIndex + valuePrefix.Length );
+				if( valueStartIndex < 0 )
+					return;
+
+				valueStartIndex++;
+				valueEndIndex = str.IndexOf( valueWrapperChar, valueStartIndex );
+				if( valueEndIndex < 0 )
+					return;
+
+				if( valueEndIndex > valueStartIndex )
+					valueAction( str.Substring( valueStartIndex, valueEndIndex - valueStartIndex ) );
+			}
 		}
 	}
 }
