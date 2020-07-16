@@ -250,7 +250,7 @@ namespace AssetUsageDetectorNamespace
 
 					if( openPrefabStage != null && openPrefabStage.stageHandle.IsValid() && assetPath == openPrefabStage.prefabAssetPath )
 					{
-						GameObject prefabStageGO = FollowSymmetricHierarchy( (GameObject) obj, openPrefabStage.prefabContentsRoot );
+						GameObject prefabStageGO = FollowSymmetricHierarchy( (GameObject) obj, ( (GameObject) obj ).transform.root.gameObject, openPrefabStage.prefabContentsRoot );
 						if( prefabStageGO != null )
 						{
 							objTR = prefabStageGO.transform;
@@ -281,10 +281,12 @@ namespace AssetUsageDetectorNamespace
 			return selection;
 		}
 
-		public static GameObject FollowSymmetricHierarchy( this GameObject go, GameObject symmetricRoot )
+		// We are passing "go"s root Transform to thisRoot parameter. If we use go.transform.root instead, when we are in prefab mode on
+		// newer Unity versions, it points to the preview scene at the root of the prefab stage instead of pointing to the actual root of "go"
+		public static GameObject FollowSymmetricHierarchy( this GameObject go, GameObject thisRoot, GameObject symmetricRoot )
 		{
 			Transform target = go.transform;
-			Transform root1 = target.root;
+			Transform root1 = thisRoot.transform;
 			Transform root2 = symmetricRoot.transform;
 			while( root1 != target )
 			{

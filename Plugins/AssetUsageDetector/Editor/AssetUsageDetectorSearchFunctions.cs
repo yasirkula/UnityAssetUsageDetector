@@ -165,6 +165,9 @@ namespace AssetUsageDetectorNamespace
 		private readonly Dictionary<Type, VariableGetterHolder[]> typeToVariables = new Dictionary<Type, VariableGetterHolder[]>( 4096 );
 		private readonly List<VariableGetterHolder> validVariables = new List<VariableGetterHolder>( 32 );
 
+		// Dictionary to store whether or not instances of a Type can be searched with SearchVariablesWithSerializedObject
+		private readonly Dictionary<Type, bool> typesSearchabilityWithSerializedObject = new Dictionary<Type, bool>( 4096 );
+
 		// Path(s) of .cginc, .cg, .hlsl and .glslinc assets in assetsToSearchSet
 		private readonly HashSet<string> shaderIncludesToSearchSet = new HashSet<string>();
 
@@ -964,6 +967,22 @@ namespace AssetUsageDetectorNamespace
 		{
 			if( !isInPlayMode || referenceNode.nodeObject.IsAsset() )
 			{
+				// Some Types can be searched with SearchVariablesWithReflection only
+				Type nodeObjectType = referenceNode.nodeObject.GetType();
+				bool typeSearchability;
+				if( !typesSearchabilityWithSerializedObject.TryGetValue( nodeObjectType, out typeSearchability ) )
+				{
+					// typesSearchabilityWithSerializedObject is updated when GetFilteredVariablesForType is called
+					GetFilteredVariablesForType( nodeObjectType );
+					typeSearchability = typesSearchabilityWithSerializedObject[nodeObjectType];
+				}
+
+				if( !typeSearchability )
+				{
+					SearchVariablesWithReflection( referenceNode );
+					return;
+				}
+
 				SerializedObject so = new SerializedObject( (Object) referenceNode.nodeObject );
 				SerializedProperty iterator = so.GetIterator();
 				if( iterator.NextVisible( true ) )
@@ -1065,6 +1084,10 @@ namespace AssetUsageDetectorNamespace
 			if( typeToVariables.TryGetValue( type, out result ) )
 				return result;
 
+			// SearchVariablesWithSerializedObject function can't iterate over fields that have HideInInspector
+			// or SerializeReference attributes. Types that have such variables must be searched with reflection
+			bool searchabilityWithSerializedObject = true;
+
 			// This is the first time this type of object is seen, filter and cache its variables
 			// Variable filtering process:
 			// 1- skip Obsolete variables
@@ -1103,7 +1126,17 @@ namespace AssetUsageDetectorNamespace
 
 						VariableGetVal getter = field.CreateGetter( type );
 						if( getter != null )
+						{
 							validVariables.Add( new VariableGetterHolder( field, getter, searchSerializableVariablesOnly ? field.IsSerializable() : true ) );
+
+							if( searchabilityWithSerializedObject && Attribute.IsDefined( field, typeof( HideInInspector ) ) )
+								searchabilityWithSerializedObject = false;
+
+#if UNITY_2019_3_OR_NEWER
+							if( searchabilityWithSerializedObject && Attribute.IsDefined( field, typeof( SerializeReference ) ) )
+								searchabilityWithSerializedObject = false;
+#endif
+						}
 					}
 
 					currType = currType.BaseType;
@@ -1182,6 +1215,7 @@ namespace AssetUsageDetectorNamespace
 
 			// Cache the filtered fields
 			typeToVariables.Add( type, result );
+			typesSearchabilityWithSerializedObject.Add( type, searchabilityWithSerializedObject );
 
 			return result;
 		}

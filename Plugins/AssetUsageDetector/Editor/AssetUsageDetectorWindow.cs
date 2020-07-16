@@ -690,7 +690,7 @@ namespace AssetUsageDetectorNamespace
 				Object obj = objectsToSearch[i].obj;
 				if( obj != null && !obj.Equals( null ) && obj is GameObject && prefabStage.IsPartOfPrefabContents( (GameObject) obj ) )
 				{
-					GameObject prefabStageObjectSource = ( (GameObject) obj ).FollowSymmetricHierarchy( prefabAsset );
+					GameObject prefabStageObjectSource = ( (GameObject) obj ).FollowSymmetricHierarchy( prefabStage.prefabContentsRoot, prefabAsset );
 					if( prefabStageObjectSource != null )
 						objectsToSearch[i].obj = prefabStageObjectSource;
 
@@ -700,7 +700,7 @@ namespace AssetUsageDetectorNamespace
 						obj = subAssets[j].subAsset;
 						if( obj != null && !obj.Equals( null ) && obj is GameObject && prefabStage.IsPartOfPrefabContents( (GameObject) obj ) )
 						{
-							prefabStageObjectSource = ( (GameObject) obj ).FollowSymmetricHierarchy( prefabAsset );
+							prefabStageObjectSource = ( (GameObject) obj ).FollowSymmetricHierarchy( prefabStage.prefabContentsRoot, prefabAsset );
 							if( prefabStageObjectSource != null )
 								subAssets[j].subAsset = prefabStageObjectSource;
 						}

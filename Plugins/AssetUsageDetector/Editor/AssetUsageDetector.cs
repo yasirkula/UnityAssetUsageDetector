@@ -613,7 +613,7 @@ namespace AssetUsageDetectorNamespace
 			// When searching for references of a prefab stage object, try adding its corresponding prefab asset to the searched assets, as well
 			if( openPrefabStage != null && openPrefabStagePrefabAsset != null && obj is GameObject && openPrefabStage.IsPartOfPrefabContents( (GameObject) obj ) )
 			{
-				GameObject prefabStageObjectSource = ( (GameObject) obj ).FollowSymmetricHierarchy( openPrefabStagePrefabAsset );
+				GameObject prefabStageObjectSource = ( (GameObject) obj ).FollowSymmetricHierarchy( openPrefabStage.prefabContentsRoot, openPrefabStagePrefabAsset );
 				if( prefabStageObjectSource != null )
 					AddSearchedObjectToFilteredSets( prefabStageObjectSource, expandGameObjects );
 			}
