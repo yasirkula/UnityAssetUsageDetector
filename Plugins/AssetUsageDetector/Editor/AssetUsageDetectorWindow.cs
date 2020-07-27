@@ -5,6 +5,10 @@ using UnityEditor;
 using System.Collections.Generic;
 using System.Reflection;
 using Object = UnityEngine.Object;
+#if UNITY_2018_3_OR_NEWER
+using PrefabStage = UnityEditor.Experimental.SceneManagement.PrefabStage;
+using PrefabStageUtility = UnityEditor.Experimental.SceneManagement.PrefabStageUtility;
+#endif
 
 namespace AssetUsageDetectorNamespace
 {
@@ -236,15 +240,15 @@ namespace AssetUsageDetectorNamespace
 			mainWindow = this;
 
 #if UNITY_2018_3_OR_NEWER
-			UnityEditor.Experimental.SceneManagement.PrefabStage.prefabStageClosing -= ReplacePrefabStageObjectsWithAssets;
-			UnityEditor.Experimental.SceneManagement.PrefabStage.prefabStageClosing += ReplacePrefabStageObjectsWithAssets;
+			PrefabStage.prefabStageClosing -= ReplacePrefabStageObjectsWithAssets;
+			PrefabStage.prefabStageClosing += ReplacePrefabStageObjectsWithAssets;
 #endif
 		}
 
 		private void OnDisable()
 		{
 #if UNITY_2018_3_OR_NEWER
-			UnityEditor.Experimental.SceneManagement.PrefabStage.prefabStageClosing -= ReplacePrefabStageObjectsWithAssets;
+			PrefabStage.prefabStageClosing -= ReplacePrefabStageObjectsWithAssets;
 #endif
 
 			if( mainWindow == this )
@@ -647,7 +651,7 @@ namespace AssetUsageDetectorNamespace
 				SavePrefs();
 
 #if UNITY_2018_3_OR_NEWER
-				ReplacePrefabStageObjectsWithAssets( UnityEditor.Experimental.SceneManagement.PrefabStageUtility.GetCurrentPrefabStage() );
+				ReplacePrefabStageObjectsWithAssets( PrefabStageUtility.GetCurrentPrefabStage() );
 #endif
 
 				// Start searching
@@ -676,13 +680,17 @@ namespace AssetUsageDetectorNamespace
 
 #if UNITY_2018_3_OR_NEWER
 		// Try replacing searched objects who are part of currently open prefab stage with their corresponding prefab assets
-		public void ReplacePrefabStageObjectsWithAssets( UnityEditor.Experimental.SceneManagement.PrefabStage prefabStage )
+		public void ReplacePrefabStageObjectsWithAssets( PrefabStage prefabStage )
 		{
 			if( prefabStage == null || !prefabStage.stageHandle.IsValid() )
 				return;
 
+#if UNITY_2020_1_OR_NEWER
+			GameObject prefabAsset = AssetDatabase.LoadAssetAtPath<GameObject>( prefabStage.assetPath );
+#else
 			GameObject prefabAsset = AssetDatabase.LoadAssetAtPath<GameObject>( prefabStage.prefabAssetPath );
-			if( prefabAsset == null )
+#endif
+			if( prefabAsset == null || prefabAsset.Equals( null ) )
 				return;
 
 			for( int i = 0; i < objectsToSearch.Count; i++ )

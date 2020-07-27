@@ -165,9 +165,6 @@ namespace AssetUsageDetectorNamespace
 		private readonly Dictionary<Type, VariableGetterHolder[]> typeToVariables = new Dictionary<Type, VariableGetterHolder[]>( 4096 );
 		private readonly List<VariableGetterHolder> validVariables = new List<VariableGetterHolder>( 32 );
 
-		// Dictionary to store whether or not instances of a Type can be searched with SearchVariablesWithSerializedObject
-		private readonly Dictionary<Type, bool> typesSearchabilityWithSerializedObject = new Dictionary<Type, bool>( 4096 );
-
 		// Path(s) of .cginc, .cg, .hlsl and .glslinc assets in assetsToSearchSet
 		private readonly HashSet<string> shaderIncludesToSearchSet = new HashSet<string>();
 
@@ -193,6 +190,10 @@ namespace AssetUsageDetectorNamespace
 
 		private BindingFlags fieldModifiers, propertyModifiers;
 		private BindingFlags prevFieldModifiers, prevPropertyModifiers;
+
+		// Unity's internal function that returns a SerializedProperty's corresponding FieldInfo
+		private delegate FieldInfo FieldInfoGetter( SerializedProperty p, out Type t );
+		private FieldInfoGetter fieldInfoGetter;
 
 		private void InitializeSearchFunctionsData( Parameters searchParameters )
 		{
@@ -330,6 +331,13 @@ namespace AssetUsageDetectorNamespace
 				alwaysSearchedExtensionsSet.Add( "shadersubgraph" );
 			}
 #endif
+
+#if UNITY_2019_3_OR_NEWER
+			MethodInfo fieldInfoGetterMethod = typeof( Editor ).Assembly.GetType( "UnityEditor.ScriptAttributeUtility" ).GetMethod( "GetFieldInfoAndStaticTypeFromProperty", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static );
+#else
+			MethodInfo fieldInfoGetterMethod = typeof( Editor ).Assembly.GetType( "UnityEditor.ScriptAttributeUtility" ).GetMethod( "GetFieldInfoFromProperty", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static );
+#endif
+			fieldInfoGetter = (FieldInfoGetter) Delegate.CreateDelegate( typeof( FieldInfoGetter ), fieldInfoGetterMethod );
 		}
 
 		private ReferenceNode SearchGameObject( Object unityObject )
@@ -967,29 +975,33 @@ namespace AssetUsageDetectorNamespace
 		{
 			if( !isInPlayMode || referenceNode.nodeObject.IsAsset() )
 			{
-				// Some Types can be searched with SearchVariablesWithReflection only
-				Type nodeObjectType = referenceNode.nodeObject.GetType();
-				bool typeSearchability;
-				if( !typesSearchabilityWithSerializedObject.TryGetValue( nodeObjectType, out typeSearchability ) )
-				{
-					// typesSearchabilityWithSerializedObject is updated when GetFilteredVariablesForType is called
-					GetFilteredVariablesForType( nodeObjectType );
-					typeSearchability = typesSearchabilityWithSerializedObject[nodeObjectType];
-				}
-
-				if( !typeSearchability )
-				{
-					SearchVariablesWithReflection( referenceNode );
-					return;
-				}
-
 				SerializedObject so = new SerializedObject( (Object) referenceNode.nodeObject );
 				SerializedProperty iterator = so.GetIterator();
-				if( iterator.NextVisible( true ) )
+				SerializedProperty iteratorVisible = so.GetIterator();
+				if( iterator.Next( true ) )
 				{
+					bool iteratingVisible = iteratorVisible.NextVisible( true );
 					bool enterChildren;
 					do
 					{
+						// Iterate over NextVisible properties AND the properties that have corresponding FieldInfos (internal Unity
+						// properties don't have FieldInfos so we are skipping them, which is good because search results found in
+						// those properties aren't interesting and mostly confusing)
+						bool isVisible = iteratingVisible && SerializedProperty.EqualContents( iterator, iteratorVisible );
+						if( isVisible )
+							iteratingVisible = iteratorVisible.NextVisible( true );
+						else
+						{
+							Type propFieldType;
+							isVisible = iterator.type == "Array" || fieldInfoGetter( iterator, out propFieldType ) != null;
+						}
+
+						if( !isVisible )
+						{
+							enterChildren = false;
+							continue;
+						}
+
 						ReferenceNode searchResult;
 						switch( iterator.propertyType )
 						{
@@ -1001,6 +1013,12 @@ namespace AssetUsageDetectorNamespace
 								searchResult = SearchObject( iterator.exposedReferenceValue );
 								enterChildren = false;
 								break;
+#if UNITY_2019_3_OR_NEWER
+							case SerializedPropertyType.ManagedReference:
+								searchResult = SearchObject( GetRawSerializedPropertyValue( iterator ) );
+								enterChildren = false;
+								break;
+#endif
 							case SerializedPropertyType.Generic:
 								searchResult = null;
 								enterChildren = true;
@@ -1019,7 +1037,7 @@ namespace AssetUsageDetectorNamespace
 							if( !propertyPath.EndsWithFast( "m_RD.texture" ) )
 								referenceNode.AddLinkTo( searchResult, "Variable: " + propertyPath );
 						}
-					} while( iterator.NextVisible( enterChildren ) );
+					} while( iterator.Next( enterChildren ) );
 
 					return;
 				}
@@ -1084,10 +1102,6 @@ namespace AssetUsageDetectorNamespace
 			if( typeToVariables.TryGetValue( type, out result ) )
 				return result;
 
-			// SearchVariablesWithSerializedObject function can't iterate over fields that have HideInInspector
-			// or SerializeReference attributes. Types that have such variables must be searched with reflection
-			bool searchabilityWithSerializedObject = true;
-
 			// This is the first time this type of object is seen, filter and cache its variables
 			// Variable filtering process:
 			// 1- skip Obsolete variables
@@ -1126,17 +1140,7 @@ namespace AssetUsageDetectorNamespace
 
 						VariableGetVal getter = field.CreateGetter( type );
 						if( getter != null )
-						{
 							validVariables.Add( new VariableGetterHolder( field, getter, searchSerializableVariablesOnly ? field.IsSerializable() : true ) );
-
-							if( searchabilityWithSerializedObject && Attribute.IsDefined( field, typeof( HideInInspector ) ) )
-								searchabilityWithSerializedObject = false;
-
-#if UNITY_2019_3_OR_NEWER
-							if( searchabilityWithSerializedObject && Attribute.IsDefined( field, typeof( SerializeReference ) ) )
-								searchabilityWithSerializedObject = false;
-#endif
-						}
 					}
 
 					currType = currType.BaseType;
@@ -1215,9 +1219,85 @@ namespace AssetUsageDetectorNamespace
 
 			// Cache the filtered fields
 			typeToVariables.Add( type, result );
-			typesSearchabilityWithSerializedObject.Add( type, searchabilityWithSerializedObject );
 
 			return result;
+		}
+
+		// Credit: http://answers.unity.com/answers/425602/view.html
+		// Returns the raw System.Object value of a SerializedProperty
+		public object GetRawSerializedPropertyValue( SerializedProperty property )
+		{
+			object result = property.serializedObject.targetObject;
+			string[] path = property.propertyPath.Replace( ".Array.data[", "[" ).Split( '.' );
+			for( int i = 0; i < path.Length; i++ )
+			{
+				string pathElement = path[i];
+
+				int arrayStartIndex = pathElement.IndexOf( '[' );
+				if( arrayStartIndex < 0 )
+					result = GetFieldValue( result, pathElement );
+				else
+				{
+					string variableName = pathElement.Substring( 0, arrayStartIndex );
+
+					int arrayEndIndex = pathElement.IndexOf( ']', arrayStartIndex + 1 );
+					int arrayElementIndex = int.Parse( pathElement.Substring( arrayStartIndex + 1, arrayEndIndex - arrayStartIndex - 1 ) );
+					result = GetFieldValue( result, variableName, arrayElementIndex );
+				}
+			}
+
+			return result;
+		}
+
+		// Credit: http://answers.unity.com/answers/425602/view.html
+		private object GetFieldValue( object source, string fieldName )
+		{
+			if( source == null )
+				return null;
+
+			FieldInfo fieldInfo = null;
+			Type type = source.GetType();
+			while( fieldInfo == null && type != typeof( object ) )
+			{
+				fieldInfo = type.GetField( fieldName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly );
+				type = type.BaseType;
+			}
+
+			if( fieldInfo != null )
+				return fieldInfo.GetValue( source );
+
+			PropertyInfo propertyInfo = null;
+			type = source.GetType();
+			while( propertyInfo == null && type != typeof( object ) )
+			{
+				propertyInfo = type.GetProperty( fieldName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly | BindingFlags.IgnoreCase );
+				type = type.BaseType;
+			}
+
+			if( propertyInfo != null )
+				return propertyInfo.GetValue( source, null );
+
+			if( fieldName.Length > 2 && fieldName.StartsWith( "m_", StringComparison.OrdinalIgnoreCase ) )
+				return GetFieldValue( source, fieldName.Substring( 2 ) );
+
+			return null;
+		}
+
+		// Credit: http://answers.unity.com/answers/425602/view.html
+		private object GetFieldValue( object source, string fieldName, int arrayIndex )
+		{
+			IEnumerable enumerable = GetFieldValue( source, fieldName ) as IEnumerable;
+			if( enumerable == null )
+				return null;
+
+			if( enumerable is IList )
+				return ( (IList) enumerable )[arrayIndex];
+
+			IEnumerator enumerator = enumerable.GetEnumerator();
+			for( int i = 0; i <= arrayIndex; i++ )
+				enumerator.MoveNext();
+
+			return enumerator.Current;
 		}
 
 		// Iterates over all occurrences of specific key-value pairs in string

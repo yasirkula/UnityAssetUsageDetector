@@ -10,6 +10,10 @@ using System;
 using System.IO;
 using System.Text;
 using Object = UnityEngine.Object;
+#if UNITY_2018_3_OR_NEWER
+using PrefabStage = UnityEditor.Experimental.SceneManagement.PrefabStage;
+using PrefabStageUtility = UnityEditor.Experimental.SceneManagement.PrefabStageUtility;
+#endif
 
 namespace AssetUsageDetectorNamespace
 {
@@ -79,8 +83,11 @@ namespace AssetUsageDetectorNamespace
 		private bool isInPlayMode;
 
 #if UNITY_2018_3_OR_NEWER
-		private UnityEditor.Experimental.SceneManagement.PrefabStage openPrefabStage;
+		private PrefabStage openPrefabStage;
 		private GameObject openPrefabStagePrefabAsset;
+#if UNITY_2020_1_OR_NEWER
+		private GameObject openPrefabStageContextObject;
+#endif
 #endif
 
 		private int searchedObjectsCount; // Number of searched objects
@@ -116,7 +123,7 @@ namespace AssetUsageDetectorNamespace
 #if UNITY_2018_3_OR_NEWER
 			openPrefabStagePrefabAsset = null;
 			string openPrefabStageAssetPath = null;
-			openPrefabStage = UnityEditor.Experimental.SceneManagement.PrefabStageUtility.GetCurrentPrefabStage();
+			openPrefabStage = PrefabStageUtility.GetCurrentPrefabStage();
 			if( openPrefabStage != null )
 			{
 				if( !openPrefabStage.stageHandle.IsValid() )
@@ -130,8 +137,17 @@ namespace AssetUsageDetectorNamespace
 						return new SearchResult( false, null, null, this, searchParameters );
 					}
 
-					openPrefabStagePrefabAsset = AssetDatabase.LoadAssetAtPath<GameObject>( openPrefabStage.prefabAssetPath );
-					openPrefabStageAssetPath = openPrefabStage.prefabAssetPath;
+#if UNITY_2020_1_OR_NEWER
+					string prefabAssetPath = openPrefabStage.assetPath;
+#else
+					string prefabAssetPath = openPrefabStage.prefabAssetPath;
+#endif
+					openPrefabStagePrefabAsset = AssetDatabase.LoadAssetAtPath<GameObject>( prefabAssetPath );
+					openPrefabStageAssetPath = prefabAssetPath;
+
+#if UNITY_2020_1_OR_NEWER
+					openPrefabStageContextObject = openPrefabStage.openedFromInstanceRoot;
+#endif
 				}
 			}
 #endif
@@ -583,7 +599,28 @@ namespace AssetUsageDetectorNamespace
 #if UNITY_2018_3_OR_NEWER
 				// If a prefab stage was open when the search was triggered, try reopening the prefab stage after the search is completed
 				if( !string.IsNullOrEmpty( openPrefabStageAssetPath ) )
-					AssetDatabase.OpenAsset( AssetDatabase.LoadAssetAtPath<GameObject>( openPrefabStageAssetPath ) );
+				{
+#if UNITY_2020_1_OR_NEWER
+					bool shouldOpenPrefabStageWithoutContext = true;
+					if( openPrefabStageContextObject != null && !openPrefabStageContextObject.Equals( null ) )
+					{
+						try
+						{
+							// Try to access this method: https://github.com/Unity-Technologies/UnityCsReference/blob/73925b1711847c067e607ec8371f8e9ffe7ab65d/Editor/Mono/SceneManagement/StageManager/PrefabStage/PrefabStageUtility.cs#L61-L65
+							MethodInfo prefabStageOpenerWithContext = typeof( PrefabStageUtility ).GetMethod( "OpenPrefab", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static, null, new Type[2] { typeof( string ), typeof( GameObject ) }, null );
+							if( prefabStageOpenerWithContext != null )
+							{
+								prefabStageOpenerWithContext.Invoke( null, new object[2] { openPrefabStageAssetPath, openPrefabStageContextObject } );
+								shouldOpenPrefabStageWithoutContext = false;
+							}
+						}
+						catch { }
+					}
+
+					if( shouldOpenPrefabStageWithoutContext )
+#endif
+						AssetDatabase.OpenAsset( AssetDatabase.LoadAssetAtPath<GameObject>( openPrefabStageAssetPath ) );
+				}
 #endif
 			}
 		}

@@ -10,6 +10,10 @@ using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using Object = UnityEngine.Object;
+#if UNITY_2018_3_OR_NEWER
+using PrefabStage = UnityEditor.Experimental.SceneManagement.PrefabStage;
+using PrefabStageUtility = UnityEditor.Experimental.SceneManagement.PrefabStageUtility;
+#endif
 
 namespace AssetUsageDetectorNamespace
 {
@@ -235,20 +239,28 @@ namespace AssetUsageDetectorNamespace
 				if( prefabAssetType == PrefabAssetType.Regular || prefabAssetType == PrefabAssetType.Variant )
 				{
 					string assetPath = AssetDatabase.GetAssetPath( objTR.gameObject );
-					var openPrefabStage = UnityEditor.Experimental.SceneManagement.PrefabStageUtility.GetCurrentPrefabStage();
+					PrefabStage openPrefabStage = PrefabStageUtility.GetCurrentPrefabStage();
 
 					// Try to open the prefab stage of pinged prefabs if they are double clicked
 					if( previousPingedPrefabInstanceId == objTR.GetInstanceID() && EditorApplication.timeSinceStartup - previousPingedPrefabPingTime <= 0.3f &&
+#if UNITY_2020_1_OR_NEWER
+						( openPrefabStage == null || !openPrefabStage.stageHandle.IsValid() || assetPath != openPrefabStage.assetPath ) )
+#else
 						( openPrefabStage == null || !openPrefabStage.stageHandle.IsValid() || assetPath != openPrefabStage.prefabAssetPath ) )
+#endif
 					{
 						AssetDatabase.OpenAsset( objTR.gameObject );
-						openPrefabStage = UnityEditor.Experimental.SceneManagement.PrefabStageUtility.GetCurrentPrefabStage();
+						openPrefabStage = PrefabStageUtility.GetCurrentPrefabStage();
 					}
 
 					previousPingedPrefabInstanceId = objTR.GetInstanceID();
 					previousPingedPrefabPingTime = EditorApplication.timeSinceStartup;
 
+#if UNITY_2020_1_OR_NEWER
+					if( openPrefabStage != null && openPrefabStage.stageHandle.IsValid() && assetPath == openPrefabStage.assetPath )
+#else
 					if( openPrefabStage != null && openPrefabStage.stageHandle.IsValid() && assetPath == openPrefabStage.prefabAssetPath )
+#endif
 					{
 						GameObject prefabStageGO = FollowSymmetricHierarchy( (GameObject) obj, ( (GameObject) obj ).transform.root.gameObject, openPrefabStage.prefabContentsRoot );
 						if( prefabStageGO != null )
@@ -318,9 +330,17 @@ namespace AssetUsageDetectorNamespace
 		// Check if the field is serializable
 		public static bool IsSerializable( this FieldInfo fieldInfo )
 		{
-			// see Serialization Rules: https://docs.unity3d.com/Manual/script-Serialization.html
-			if( fieldInfo.IsInitOnly || ( ( !fieldInfo.IsPublic || fieldInfo.IsNotSerialized ) &&
-			   !Attribute.IsDefined( fieldInfo, typeof( SerializeField ) ) ) )
+			// See Serialization Rules: https://docs.unity3d.com/Manual/script-Serialization.html
+			if( fieldInfo.IsInitOnly )
+				return false;
+
+#if UNITY_2019_3_OR_NEWER
+			// SerializeReference makes even System.Object fields serializable
+			if( Attribute.IsDefined( fieldInfo, typeof( SerializeReference ) ) )
+				return true;
+#endif
+
+			if( ( !fieldInfo.IsPublic || fieldInfo.IsNotSerialized ) && !Attribute.IsDefined( fieldInfo, typeof( SerializeField ) ) )
 				return false;
 
 			return IsTypeSerializable( fieldInfo.FieldType );
@@ -351,6 +371,16 @@ namespace AssetUsageDetectorNamespace
 			}
 			else if( type.IsGenericType )
 			{
+				// Generic types are allowed on 2020.1 and later
+#if UNITY_2020_1_OR_NEWER
+				if( type.GetGenericTypeDefinition() == typeof( List<> ) )
+				{
+					type = type.GetGenericArguments()[0];
+
+					if( typeof( Object ).IsAssignableFrom( type ) )
+						return true;
+				}
+#else
 				if( type.GetGenericTypeDefinition() != typeof( List<> ) )
 					return false;
 
@@ -358,10 +388,13 @@ namespace AssetUsageDetectorNamespace
 
 				if( typeof( Object ).IsAssignableFrom( type ) )
 					return true;
+#endif
 			}
 
+#if !UNITY_2020_1_OR_NEWER
 			if( type.IsGenericType )
 				return false;
+#endif
 
 			return Attribute.IsDefined( type, typeof( SerializableAttribute ), false );
 		}
