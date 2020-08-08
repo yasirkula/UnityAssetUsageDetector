@@ -29,13 +29,13 @@ namespace AssetUsageDetectorNamespace
 		private static MonoScript[] monoScriptsInProject;
 		private static HashSet<Object> currentSubAssets;
 
-		public ObjectToSearch( Object obj )
+		public ObjectToSearch( Object obj, bool? shouldSearchChildren = null )
 		{
 			this.obj = obj;
-			RefreshSubAssets();
+			RefreshSubAssets( shouldSearchChildren );
 		}
 
-		public void RefreshSubAssets()
+		public void RefreshSubAssets( bool? shouldSearchChildren = null )
 		{
 			if( subAssets == null )
 				subAssets = new List<SubAsset>();
@@ -47,11 +47,11 @@ namespace AssetUsageDetectorNamespace
 			else
 				currentSubAssets.Clear();
 
-			AddSubAssets( obj, false );
+			AddSubAssets( obj, false, shouldSearchChildren );
 			currentSubAssets.Clear();
 		}
 
-		private void AddSubAssets( Object target, bool includeTarget )
+		private void AddSubAssets( Object target, bool includeTarget, bool? shouldSearchChildren )
 		{
 			if( target == null || target.Equals( null ) )
 				return;
@@ -71,7 +71,7 @@ namespace AssetUsageDetectorNamespace
 					if( ReferenceEquals( children[i], goTransform ) )
 						continue;
 
-					subAssets.Add( new SubAsset( children[i].gameObject, false ) );
+					subAssets.Add( new SubAsset( children[i].gameObject, shouldSearchChildren ?? false ) );
 				}
 			}
 			else
@@ -83,7 +83,7 @@ namespace AssetUsageDetectorNamespace
 				{
 					if( !currentSubAssets.Contains( target ) )
 					{
-						subAssets.Add( new SubAsset( target, true ) );
+						subAssets.Add( new SubAsset( target, shouldSearchChildren ?? true ) );
 						currentSubAssets.Add( target );
 					}
 				}
@@ -93,7 +93,7 @@ namespace AssetUsageDetectorNamespace
 					if( target.IsFolder() )
 					{
 						foreach( string filePath in Utilities.EnumerateFolderContents( target ) )
-							AddSubAssets( AssetDatabase.LoadAssetAtPath<Object>( filePath ), true );
+							AddSubAssets( AssetDatabase.LoadAssetAtPath<Object>( filePath ), true, shouldSearchChildren );
 
 						return;
 					}
@@ -112,7 +112,7 @@ namespace AssetUsageDetectorNamespace
 
 					if( asset != target )
 					{
-						subAssets.Add( new SubAsset( asset, true ) );
+						subAssets.Add( new SubAsset( asset, shouldSearchChildren ?? true ) );
 						currentSubAssets.Add( asset );
 					}
 
@@ -142,7 +142,7 @@ namespace AssetUsageDetectorNamespace
 
 							if( !currentSubAssets.Contains( monoScriptsInProject[j] ) )
 							{
-								subAssets.Add( new SubAsset( monoScriptsInProject[j], true ) );
+								subAssets.Add( new SubAsset( monoScriptsInProject[j], shouldSearchChildren ?? true ) );
 								currentSubAssets.Add( monoScriptsInProject[j] );
 							}
 						}

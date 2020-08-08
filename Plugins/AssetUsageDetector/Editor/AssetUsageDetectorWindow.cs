@@ -124,14 +124,13 @@ namespace AssetUsageDetectorNamespace
 		}
 
 		// Quickly initiate search for the selected assets
-		[MenuItem( "GameObject/Search for References", priority = 49 )]
+		[MenuItem( "GameObject/Search for References/This Object Only", priority = 49 )]
 		[MenuItem( "Assets/Search for References", priority = 1000 )]
 		private static void SearchSelectedAssetReferences( MenuCommand command )
 		{
 			// This happens when this button is clicked via hierarchy's right click context menu
 			// and is called once for each object in the selection. We don't want that, we want
-			// the function to be called only once so that there aren't multiple empty parents 
-			// generated in one call
+			// the function to be called only once
 			if( command.context )
 			{
 				EditorApplication.update -= CallSearchSelectedAssetReferencesOnce;
@@ -141,8 +140,21 @@ namespace AssetUsageDetectorNamespace
 				ShowAndSearch( Selection.objects );
 		}
 
+		[MenuItem( "GameObject/Search for References/Include Children", priority = 49 )]
+		private static void SearchSelectedAssetReferencesWithChildren( MenuCommand command )
+		{
+			if( command.context )
+			{
+				EditorApplication.update -= CallSearchSelectedAssetReferencesWithChildrenOnce;
+				EditorApplication.update += CallSearchSelectedAssetReferencesWithChildrenOnce;
+			}
+			else
+				ShowAndSearch( Selection.objects, true );
+		}
+
 		// Show the menu item only if there is a selection in the Editor
 		[MenuItem( "GameObject/Search for References", validate = true )]
+		[MenuItem( "GameObject/Search for References (Include Children)", validate = true )]
 		[MenuItem( "Assets/Search for References", validate = true )]
 		private static bool SearchSelectedAssetReferencesValidate( MenuCommand command )
 		{
@@ -150,13 +162,13 @@ namespace AssetUsageDetectorNamespace
 		}
 
 		// Quickly show the AssetUsageDetector window and initiate a search
-		public static void ShowAndSearch( IEnumerable<Object> searchObjects )
+		public static void ShowAndSearch( IEnumerable<Object> searchObjects, bool? shouldSearchChildren = null )
 		{
-			ShowAndSearchInternal( searchObjects, null );
+			ShowAndSearchInternal( searchObjects, null, shouldSearchChildren );
 		}
 
 		// Quickly show the AssetUsageDetector window and initiate a search
-		public static void ShowAndSearch( AssetUsageDetector.Parameters searchParameters )
+		public static void ShowAndSearch( AssetUsageDetector.Parameters searchParameters, bool? shouldSearchChildren = null )
 		{
 			if( searchParameters == null )
 			{
@@ -164,7 +176,7 @@ namespace AssetUsageDetectorNamespace
 				return;
 			}
 
-			ShowAndSearchInternal( searchParameters.objectsToSearch, searchParameters );
+			ShowAndSearchInternal( searchParameters.objectsToSearch, searchParameters, shouldSearchChildren );
 		}
 
 		private static void CallSearchSelectedAssetReferencesOnce()
@@ -173,7 +185,13 @@ namespace AssetUsageDetectorNamespace
 			SearchSelectedAssetReferences( new MenuCommand( null ) );
 		}
 
-		private static void ShowAndSearchInternal( IEnumerable<Object> searchObjects, AssetUsageDetector.Parameters searchParameters )
+		private static void CallSearchSelectedAssetReferencesWithChildrenOnce()
+		{
+			EditorApplication.update -= CallSearchSelectedAssetReferencesWithChildrenOnce;
+			SearchSelectedAssetReferencesWithChildren( new MenuCommand( null ) );
+		}
+
+		private static void ShowAndSearchInternal( IEnumerable<Object> searchObjects, AssetUsageDetector.Parameters searchParameters, bool? shouldSearchChildren )
 		{
 			if( mainWindow != null && !mainWindow.ReturnToSetupPhase( true ) )
 			{
@@ -187,7 +205,7 @@ namespace AssetUsageDetectorNamespace
 			if( searchObjects != null )
 			{
 				foreach( Object obj in searchObjects )
-					mainWindow.objectsToSearch.Add( new ObjectToSearch( obj ) );
+					mainWindow.objectsToSearch.Add( new ObjectToSearch( obj, shouldSearchChildren ) );
 			}
 
 			if( searchParameters != null )

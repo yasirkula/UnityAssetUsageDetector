@@ -1035,7 +1035,7 @@ namespace AssetUsageDetectorNamespace
 
 							// m_RD.texture is a redundant reference that shows up when searching sprites
 							if( !propertyPath.EndsWithFast( "m_RD.texture" ) )
-								referenceNode.AddLinkTo( searchResult, "Variable: " + propertyPath );
+								referenceNode.AddLinkTo( searchResult, "Variable: " + propertyPath.Replace( ".Array.data[", "[" ) ); // "arrayVariable.Array.data[0]" becomes "arrayVariable[0]"
 						}
 					} while( iterator.Next( enterChildren ) );
 
