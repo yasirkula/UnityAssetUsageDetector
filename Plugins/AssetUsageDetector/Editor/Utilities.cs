@@ -415,8 +415,8 @@ namespace AssetUsageDetectorNamespace
 			if( typeof( Type ).IsAssignableFrom( type ) || type.Namespace == reflectionNamespace )
 				return true;
 
-			// Searching pointer variables for reference throws ArgumentException
-			if( type.IsPointer )
+			// Searching pointers or ref variables for reference throws ArgumentException
+			if( type.IsPointer || type.IsByRef )
 				return true;
 
 			return false;
