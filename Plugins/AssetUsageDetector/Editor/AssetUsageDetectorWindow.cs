@@ -153,8 +153,8 @@ namespace AssetUsageDetectorNamespace
 		}
 
 		// Show the menu item only if there is a selection in the Editor
-		[MenuItem( "GameObject/Search for References", validate = true )]
-		[MenuItem( "GameObject/Search for References (Include Children)", validate = true )]
+		[MenuItem( "GameObject/Search for References/This Object Only", validate = true )]
+		[MenuItem( "GameObject/Search for References/Include Children", validate = true )]
 		[MenuItem( "Assets/Search for References", validate = true )]
 		private static bool SearchSelectedAssetReferencesValidate( MenuCommand command )
 		{

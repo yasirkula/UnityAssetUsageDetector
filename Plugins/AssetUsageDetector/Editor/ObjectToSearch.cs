@@ -65,7 +65,7 @@ namespace AssetUsageDetectorNamespace
 				// If this is a scene object, add its child objects to the sub-assets list
 				// but don't include them in the search by default
 				Transform goTransform = go.transform;
-				Transform[] children = go.GetComponentsInChildren<Transform>();
+				Transform[] children = go.GetComponentsInChildren<Transform>( true );
 				for( int i = 0; i < children.Length; i++ )
 				{
 					if( ReferenceEquals( children[i], goTransform ) )
