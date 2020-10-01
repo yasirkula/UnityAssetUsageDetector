@@ -548,7 +548,7 @@ namespace AssetUsageDetectorNamespace
 			catch( Exception e )
 			{
 				StringBuilder sb = new StringBuilder( objectsToSearchSet.Count * 50 + callStack.Count * 50 + 500 );
-				sb.AppendLine( "<b>AssetUsageDetector Error:</b>" ).AppendLine();
+				sb.AppendLine( "<b>AssetUsageDetector Error:</b>" ).AppendLine().Append( e ).AppendLine();
 				if( callStack.Count > 0 )
 				{
 					sb.AppendLine( "Stack contents: " );
@@ -574,9 +574,6 @@ namespace AssetUsageDetectorNamespace
 					if( obj )
 						sb.Append( obj.name ).Append( " (" ).Append( obj.GetType() ).AppendLine( ")" );
 				}
-
-				sb.AppendLine();
-				sb.Append( e ).AppendLine();
 
 				Debug.LogError( sb.ToString() );
 
@@ -619,7 +616,7 @@ namespace AssetUsageDetectorNamespace
 
 					if( shouldOpenPrefabStageWithoutContext )
 #endif
-						AssetDatabase.OpenAsset( AssetDatabase.LoadAssetAtPath<GameObject>( openPrefabStageAssetPath ) );
+					AssetDatabase.OpenAsset( AssetDatabase.LoadAssetAtPath<GameObject>( openPrefabStageAssetPath ) );
 				}
 #endif
 			}

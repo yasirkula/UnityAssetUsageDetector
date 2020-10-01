@@ -382,6 +382,14 @@ namespace AssetUsageDetectorNamespace
 				if( objectsToSearchSet.Contains( script ) )
 					referenceNode.AddLinkTo( GetReferenceNode( script ) );
 			}
+			else if( component is ParticleSystemRenderer )
+			{
+				// Search ParticleSystemRenderer's custom meshes for references (they aren't searched by SerializedObject, unfortunately)
+				Mesh[] meshes = new Mesh[( (ParticleSystemRenderer) component ).meshCount];
+				int meshCount = ( (ParticleSystemRenderer) component ).GetMeshes( meshes );
+				for( int i = 0; i < meshCount; i++ )
+					referenceNode.AddLinkTo( SearchObject( meshes[i] ), "Custom particle mesh" );
+			}
 			else if( searchRenderers && component is Renderer )
 			{
 				// If an asset is a shader, texture or material, and this component is a Renderer,
@@ -392,7 +400,7 @@ namespace AssetUsageDetectorNamespace
 			}
 			else if( component is Animation )
 			{
-				// If this component is an Animation, search its animation clips for references
+				// Search animation clips for references
 				foreach( AnimationState anim in (Animation) component )
 					referenceNode.AddLinkTo( SearchObject( anim.clip ) );
 
@@ -401,7 +409,7 @@ namespace AssetUsageDetectorNamespace
 			}
 			else if( component is Animator )
 			{
-				// If this component is an Animator, search its animation clips for references (via AnimatorController)
+				// Search animation clips for references (via AnimatorController)
 				referenceNode.AddLinkTo( SearchObject( ( (Animator) component ).runtimeAnimatorController ) );
 
 				// Search the objects that are animated by this Animator component for references
@@ -410,7 +418,7 @@ namespace AssetUsageDetectorNamespace
 #if UNITY_2017_2_OR_NEWER
 			else if( component is Tilemap )
 			{
-				// If this component is a Tilemap, search its tiles for references
+				// Search the tiles for references
 				TileBase[] tiles = new TileBase[( (Tilemap) component ).GetUsedTilesCount()];
 				( (Tilemap) component ).GetUsedTilesNonAlloc( tiles );
 
@@ -424,7 +432,7 @@ namespace AssetUsageDetectorNamespace
 #if UNITY_2017_1_OR_NEWER
 			else if( component is PlayableDirector )
 			{
-				// If this component is a PlayableDirectory, search its PlayableAsset's scene bindings for references
+				// Search the PlayableAsset's scene bindings for references
 				PlayableAsset playableAsset = ( (PlayableDirector) component ).playableAsset;
 				if( playableAsset != null && !playableAsset.Equals( null ) )
 				{
@@ -536,7 +544,7 @@ namespace AssetUsageDetectorNamespace
 				{
 					Object defaultValue = scriptImporter.GetDefaultReference( variables[i].name );
 					if( objectsToSearchSet.Contains( defaultValue ) )
-						referenceNode.AddLinkTo( GetReferenceNode( defaultValue ), "Default Variable Value: " + variables[i].name );
+						referenceNode.AddLinkTo( GetReferenceNode( defaultValue ), "Default variable value: " + variables[i].name );
 				}
 			}
 
@@ -719,9 +727,12 @@ namespace AssetUsageDetectorNamespace
 #else
 					string assemblyPath = CompilationPipeline.GetAssemblyDefinitionFilePathFromAssemblyName( assemblyDefinitionFile.references[i] );
 #endif
-					Object searchedAssemblyDefinitionFile;
-					if( assemblyDefinitionFilesToSearch.TryGetValue( assemblyPath, out searchedAssemblyDefinitionFile ) )
-						referenceNode.AddLinkTo( GetReferenceNode( searchedAssemblyDefinitionFile ), "Referenced Assembly" );
+					if( !string.IsNullOrEmpty( assemblyPath ) )
+					{
+						Object searchedAssemblyDefinitionFile;
+						if( assemblyDefinitionFilesToSearch.TryGetValue( assemblyPath, out searchedAssemblyDefinitionFile ) )
+							referenceNode.AddLinkTo( GetReferenceNode( searchedAssemblyDefinitionFile ), "Referenced Assembly" );
+					}
 				}
 			}
 
