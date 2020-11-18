@@ -569,6 +569,13 @@ namespace AssetUsageDetectorNamespace
 			}
 			else
 			{
+				if( controller is AnimatorOverrideController )
+				{
+					RuntimeAnimatorController parentController = ( (AnimatorOverrideController) controller ).runtimeAnimatorController;
+					if( objectsToSearchSet.Contains( parentController ) )
+						referenceNode.AddLinkTo( GetReferenceNode( parentController ) );
+				}
+
 				AnimationClip[] animClips = controller.animationClips;
 				for( int i = 0; i < animClips.Length; i++ )
 					referenceNode.AddLinkTo( SearchObject( animClips[i] ) );
