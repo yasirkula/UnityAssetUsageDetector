@@ -328,13 +328,16 @@ namespace AssetUsageDetectorNamespace
 
 		// Close the scenes that were not part of the initial scene setup
 		// Returns true if initial scene setup is restored successfully
-		public bool RestoreInitialSceneSetup()
+		public bool RestoreInitialSceneSetup( bool optional )
 		{
 			if( initialSceneSetup == null || initialSceneSetup.Length == 0 )
 				return true;
 
 			if( EditorApplication.isPlaying || !EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo() )
 				return false;
+
+			if( optional && IsSceneSetupDifferentThanCurrentSetup() && !EditorUtility.DisplayDialog( "Scenes", "Restore initial scene setup?", "Yes", "Leave it as is" ) )
+				return true;
 
 			for( int i = 0; i < initialSceneSetup.Length; i++ )
 			{

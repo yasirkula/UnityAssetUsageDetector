@@ -193,7 +193,7 @@ namespace AssetUsageDetectorNamespace
 
 		private static void ShowAndSearchInternal( IEnumerable<Object> searchObjects, AssetUsageDetector.Parameters searchParameters, bool? shouldSearchChildren )
 		{
-			if( mainWindow != null && !mainWindow.ReturnToSetupPhase( true ) )
+			if( mainWindow != null && !mainWindow.ReturnToSetupPhase( true, true ) )
 			{
 				Debug.LogError( "Need to reset the previous search first!" );
 				return;
@@ -280,11 +280,8 @@ namespace AssetUsageDetectorNamespace
 
 			SavePrefs();
 
-			if( searchResult != null && currentPhase == Phase.Complete && !EditorApplication.isPlaying && searchResult.IsSceneSetupDifferentThanCurrentSetup() )
-			{
-				if( EditorUtility.DisplayDialog( "Scenes", "Restore initial scene setup?", "Yes", "Leave it as is" ) )
-					searchResult.RestoreInitialSceneSetup();
-			}
+			if( searchResult != null && currentPhase == Phase.Complete )
+				searchResult.RestoreInitialSceneSetup( true );
 		}
 
 		private void OnFocus()
@@ -399,7 +396,7 @@ namespace AssetUsageDetectorNamespace
 				restoreInitialSceneSetup = EditorGUILayout.ToggleLeft( restoreInitialSceneSetupLabel, restoreInitialSceneSetup );
 
 				if( GUILayout.Button( "RETURN", Utilities.GL_HEIGHT_30 ) )
-					ReturnToSetupPhase( restoreInitialSceneSetup );
+					ReturnToSetupPhase( restoreInitialSceneSetup, false );
 			}
 			else if( currentPhase == Phase.Setup )
 			{
@@ -561,7 +558,7 @@ namespace AssetUsageDetectorNamespace
 				restoreInitialSceneSetup = EditorGUILayout.ToggleLeft( restoreInitialSceneSetupLabel, restoreInitialSceneSetup );
 
 				if( GUILayout.Button( "Reset Search", Utilities.GL_HEIGHT_30 ) )
-					ReturnToSetupPhase( restoreInitialSceneSetup );
+					ReturnToSetupPhase( restoreInitialSceneSetup, false );
 
 				if( searchResult == null )
 				{
@@ -736,9 +733,9 @@ namespace AssetUsageDetectorNamespace
 		}
 #endif
 
-		private bool ReturnToSetupPhase( bool restoreInitialSceneSetup )
+		private bool ReturnToSetupPhase( bool restoreInitialSceneSetup, bool sceneSetupRestorationIsOptional )
 		{
-			if( searchResult != null && restoreInitialSceneSetup && !EditorApplication.isPlaying && !searchResult.RestoreInitialSceneSetup() )
+			if( searchResult != null && restoreInitialSceneSetup && !EditorApplication.isPlaying && !searchResult.RestoreInitialSceneSetup( sceneSetupRestorationIsOptional ) )
 				return false;
 
 			searchResult = null;
