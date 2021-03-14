@@ -81,6 +81,14 @@ namespace AssetUsageDetectorNamespace
 						alignment = TextAnchor.MiddleCenter,
 						font = EditorStyles.label.font
 					};
+
+					Color textColor = GUI.skin.button.normal.textColor;
+					m_boxGUIStyle.normal.textColor = textColor;
+					m_boxGUIStyle.hover.textColor = textColor;
+					m_boxGUIStyle.focused.textColor = textColor;
+					m_boxGUIStyle.active.textColor = textColor;
+
+					m_boxGUIStyle.fontSize = ( m_boxGUIStyle.fontSize + GUI.skin.button.fontSize ) / 2;
 				}
 
 				return m_boxGUIStyle;
@@ -446,7 +454,20 @@ namespace AssetUsageDetectorNamespace
 		{
 			// Can't use PropertyWrapper (which uses CreateDelegate) for property getters of structs
 			if( propertyInfo.DeclaringType.IsValueType )
-				return propertyInfo.CanRead ? ( ( obj ) => propertyInfo.GetValue( obj, null ) ) : (VariableGetVal) null;
+			{
+				return !propertyInfo.CanRead ? (VariableGetVal) null : ( obj ) =>
+				{
+					try
+					{
+						return propertyInfo.GetValue( obj, null );
+					}
+					catch
+					{
+						// Property getters may return various kinds of exceptions if their backing fields are not initialized (yet)
+						return null;
+					}
+				};
+			}
 
 			Type GenType = typeof( PropertyWrapper<,> ).MakeGenericType( propertyInfo.DeclaringType, propertyInfo.PropertyType );
 			return ( (IPropertyAccessor) Activator.CreateInstance( GenType, propertyInfo.GetGetMethod( true ) ) ).GetValue;

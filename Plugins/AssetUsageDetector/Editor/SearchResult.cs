@@ -682,8 +682,8 @@ namespace AssetUsageDetectorNamespace
 				parameters.shouldRefreshEditorWindow = true; // A repaint is needed to work nicely with GUILayout
 			}
 
-			Color c = GUI.color;
-			GUI.color = Color.cyan;
+			Color c = GUI.backgroundColor;
+			GUI.backgroundColor = Color.cyan;
 
 			Rect rect = parameters.guiRect;
 			float width = rect.width;
@@ -742,7 +742,8 @@ namespace AssetUsageDetectorNamespace
 
 			if( IsExpanded )
 			{
-				GUI.color = Color.yellow;
+				// On light skin, yellow background looks better than light grey background
+				GUI.backgroundColor = EditorGUIUtility.isProSkin ? c : Color.yellow;
 
 				if( PendingSearch )
 				{
@@ -767,7 +768,7 @@ namespace AssetUsageDetectorNamespace
 			}
 
 			parameters.guiRect = rect;
-			GUI.color = c;
+			GUI.backgroundColor = c;
 		}
 
 		private void GenerateGUINodes( SearchResultDrawParameters parameters )

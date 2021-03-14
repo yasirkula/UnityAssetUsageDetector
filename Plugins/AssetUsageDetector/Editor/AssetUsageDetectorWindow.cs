@@ -405,12 +405,10 @@ namespace AssetUsageDetectorNamespace
 
 				GUILayout.Space( 10 );
 
-				Color c = GUI.color;
-				GUI.color = Color.cyan;
-
+				Color c = GUI.backgroundColor;
+				GUI.backgroundColor = Color.cyan;
 				GUILayout.Box( "SEARCH IN", Utilities.BoxGUIStyle, Utilities.GL_EXPAND_WIDTH );
-
-				GUI.color = c;
+				GUI.backgroundColor = c;
 
 				searchInAssetsFolder = EditorGUILayout.ToggleLeft( "Project window (Assets folder)", searchInAssetsFolder );
 
@@ -523,11 +521,9 @@ namespace AssetUsageDetectorNamespace
 
 				//GUILayout.Space( 10 );
 
-				GUI.color = Color.cyan;
-
+				GUI.backgroundColor = Color.cyan;
 				GUILayout.Box( "SETTINGS", Utilities.BoxGUIStyle, Utilities.GL_EXPAND_WIDTH );
-
-				GUI.color = c;
+				GUI.backgroundColor = c;
 
 				lazySceneSearch = EditorGUILayout.ToggleLeft( "Lazy scene search: scenes are searched in detail only when they are manually refreshed (faster search)", lazySceneSearch );
 				noAssetDatabaseChanges = EditorGUILayout.ToggleLeft( "I haven't modified any assets/scenes since the last search (faster search)", noAssetDatabaseChanges );
@@ -568,10 +564,10 @@ namespace AssetUsageDetectorNamespace
 				else if( !searchResult.SearchCompletedSuccessfully )
 					EditorGUILayout.HelpBox( "ERROR: search was interrupted, check the logs for more info", MessageType.Error );
 
-				Color c = GUI.color;
-				GUI.color = Color.green;
+				Color c = GUI.backgroundColor;
+				GUI.backgroundColor = Color.green;
 				GUILayout.Box( "Don't forget to save scene(s) if you made any changes!", Utilities.BoxGUIStyle, Utilities.GL_EXPAND_WIDTH );
-				GUI.color = c;
+				GUI.backgroundColor = c;
 
 				if( searchResult.NumberOfGroups == 0 )
 				{

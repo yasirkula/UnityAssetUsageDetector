@@ -69,8 +69,7 @@ namespace AssetUsageDetectorNamespace
 			}
 			catch
 			{
-				// Property getters may return various kinds of exceptions
-				// if their backing fields are not initialized (yet)
+				// Property getters may return various kinds of exceptions if their backing fields are not initialized (yet)
 				return null;
 			}
 		}
