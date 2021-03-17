@@ -547,45 +547,10 @@ namespace AssetUsageDetectorNamespace
 			}
 			catch( Exception e )
 			{
-				StringBuilder sb = new StringBuilder( objectsToSearchSet.Count * 50 + callStack.Count * 50 + 500 );
+				StringBuilder sb = new StringBuilder( objectsToSearchSet.Count * 50 + callStack.Count * 50 + 1000 );
 				sb.AppendLine( "<b>AssetUsageDetector Error:</b>" ).AppendLine().Append( e ).AppendLine();
 
-				Object latestUnityObjectInCallStack = null;
-				if( callStack.Count > 0 )
-				{
-					sb.AppendLine( "Stack contents: " );
-
-					for( int i = callStack.Count - 1; i >= 0; i-- )
-					{
-						latestUnityObjectInCallStack = callStack[i] as Object;
-						if( latestUnityObjectInCallStack )
-						{
-							if( !AssetDatabase.Contains( latestUnityObjectInCallStack ) )
-							{
-								string scenePath = AssetDatabase.GetAssetOrScenePath( latestUnityObjectInCallStack );
-								if( !string.IsNullOrEmpty( scenePath ) && SceneManager.GetSceneByPath( scenePath ).IsValid() )
-									sb.Append( "Scene: " ).AppendLine( scenePath );
-							}
-
-							break;
-						}
-					}
-
-					for( int i = callStack.Count - 1; i >= 0; i-- )
-					{
-						sb.Append( i ).Append( ": " );
-
-						Object unityObject = callStack[i] as Object;
-						if( unityObject )
-							sb.Append( unityObject.name ).Append( " (" ).Append( unityObject.GetType() ).AppendLine( ")" );
-						else if( callStack[i] != null )
-							sb.Append( callStack[i].GetType() ).AppendLine( " object" );
-						else
-							sb.AppendLine( "<<destroyed>>" );
-					}
-
-					sb.AppendLine();
-				}
+				Object latestUnityObjectInCallStack = AppendCallStackToStringBuilder( sb );
 
 				sb.AppendLine( "Searching references of: " );
 				foreach( Object obj in objectsToSearchSet )
@@ -635,7 +600,9 @@ namespace AssetUsageDetectorNamespace
 
 					if( shouldOpenPrefabStageWithoutContext )
 #endif
-					AssetDatabase.OpenAsset( AssetDatabase.LoadAssetAtPath<GameObject>( openPrefabStageAssetPath ) );
+					{
+						AssetDatabase.OpenAsset( AssetDatabase.LoadAssetAtPath<GameObject>( openPrefabStageAssetPath ) );
+					}
 				}
 #endif
 			}
@@ -1105,6 +1072,49 @@ namespace AssetUsageDetectorNamespace
 				if( temp != null )
 					Object.DestroyImmediate( temp );
 			}
+		}
+
+		// Appends contents of callStack to StringBuilder and returns the most recent Unity object in callStack
+		private Object AppendCallStackToStringBuilder( StringBuilder sb )
+		{
+			Object latestUnityObjectInCallStack = null;
+			if( callStack.Count > 0 )
+			{
+				sb.AppendLine().AppendLine( "Stack contents: " );
+
+				for( int i = callStack.Count - 1; i >= 0; i-- )
+				{
+					latestUnityObjectInCallStack = callStack[i] as Object;
+					if( latestUnityObjectInCallStack )
+					{
+						if( !AssetDatabase.Contains( latestUnityObjectInCallStack ) )
+						{
+							string scenePath = AssetDatabase.GetAssetOrScenePath( latestUnityObjectInCallStack );
+							if( !string.IsNullOrEmpty( scenePath ) && SceneManager.GetSceneByPath( scenePath ).IsValid() )
+								sb.Append( "Scene: " ).AppendLine( scenePath );
+						}
+
+						break;
+					}
+				}
+
+				for( int i = callStack.Count - 1; i >= 0; i-- )
+				{
+					sb.Append( i ).Append( ": " );
+
+					Object unityObject = callStack[i] as Object;
+					if( unityObject )
+						sb.Append( unityObject.name ).Append( " (" ).Append( unityObject.GetType() ).AppendLine( ")" );
+					else if( callStack[i] != null )
+						sb.Append( callStack[i].GetType() ).AppendLine( " object" );
+					else
+						sb.AppendLine( "<<destroyed>>" );
+				}
+
+				sb.AppendLine();
+			}
+
+			return latestUnityObjectInCallStack;
 		}
 	}
 }

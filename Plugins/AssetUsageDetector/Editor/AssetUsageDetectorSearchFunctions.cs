@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections;
 using System.IO;
 using System.Reflection;
+using System.Text;
 using UnityEditor;
 using UnityEditor.Animations;
 using UnityEngine;
@@ -1101,7 +1102,7 @@ namespace AssetUsageDetectorNamespace
 				try
 				{
 					object variableValue = variables[i].Get( referenceNode.nodeObject );
-					if( variableValue == null )
+					if( variableValue == null || variableValue.Equals( null ) )
 						continue;
 
 					// Values stored inside ICollection objects are searched using IEnumerable,
@@ -1132,6 +1133,15 @@ namespace AssetUsageDetectorNamespace
 				catch( MissingReferenceException ) { }
 				catch( MissingComponentException ) { }
 				catch( NotImplementedException ) { }
+				catch( Exception e )
+				{
+					// Unknown exceptions usually occur when variableValue is an IEnumerable and its enumerator throws an unhandled exception in MoveNext or Current
+					StringBuilder sb = new StringBuilder( callStack.Count * 50 + 1000 );
+					sb.Append( "Skipped searching " ).Append( referenceNode.nodeObject.GetType().FullName ).Append( "." ).Append( variables[i].name ).AppendLine( " because it threw exception:" ).Append( e ).AppendLine();
+
+					Object latestUnityObjectInCallStack = AppendCallStackToStringBuilder( sb );
+					Debug.LogWarning( sb.ToString(), latestUnityObjectInCallStack );
+				}
 			}
 		}
 
