@@ -1021,26 +1021,38 @@ namespace AssetUsageDetectorNamespace
 				SerializedProperty iteratorVisible = so.GetIterator();
 				if( iterator.Next( true ) )
 				{
+					string assetPath = AssetDatabase.GetAssetPath( (Object) referenceNode.nodeObject );
+					bool isProjectSettings = !string.IsNullOrEmpty( assetPath ) && assetPath.StartsWithFast( "ProjectSettings/" );
+
 					bool iteratingVisible = iteratorVisible.NextVisible( true );
 					bool enterChildren;
 					do
 					{
-						// Iterate over NextVisible properties AND the properties that have corresponding FieldInfos (internal Unity
-						// properties don't have FieldInfos so we are skipping them, which is good because search results found in
-						// those properties aren't interesting and mostly confusing)
-						bool isVisible = iteratingVisible && SerializedProperty.EqualContents( iterator, iteratorVisible );
-						if( isVisible )
-							iteratingVisible = iteratorVisible.NextVisible( true );
+						if( isProjectSettings )
+						{
+							// Search Project Settings in full because for some reason, important settings like SRP asset
+							// slot in Quality Settings aren't searched when iterating over only visible properties
+							enterChildren = true;
+						}
 						else
 						{
-							Type propFieldType;
-							isVisible = iterator.type == "Array" || fieldInfoGetter( iterator, out propFieldType ) != null;
-						}
+							// Iterate over NextVisible properties AND the properties that have corresponding FieldInfos (internal Unity
+							// properties don't have FieldInfos so we are skipping them, which is good because search results found in
+							// those properties aren't interesting and mostly confusing)
+							bool isVisible = iteratingVisible && SerializedProperty.EqualContents( iterator, iteratorVisible );
+							if( isVisible )
+								iteratingVisible = iteratorVisible.NextVisible( true );
+							else
+							{
+								Type propFieldType;
+								isVisible = iterator.type == "Array" || fieldInfoGetter( iterator, out propFieldType ) != null;
+							}
 
-						if( !isVisible )
-						{
-							enterChildren = false;
-							continue;
+							if( !isVisible )
+							{
+								enterChildren = false;
+								continue;
+							}
 						}
 
 						ReferenceNode searchResult;
