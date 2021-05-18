@@ -400,7 +400,11 @@ namespace AssetUsageDetectorNamespace
 				try
 				{
 					ParticleSystem.CollisionModule collisionModule = particleSystem.collision;
+#if UNITY_2020_2_OR_NEWER
+					for( int i = 0, j = collisionModule.planeCount; i < j; i++ )
+#else
 					for( int i = 0, j = collisionModule.maxPlaneCount; i < j; i++ )
+#endif
 						referenceNode.AddLinkTo( SearchObject( collisionModule.GetPlane( i ) ), "Collision Module: Plane" );
 				}
 				catch { }
@@ -408,7 +412,11 @@ namespace AssetUsageDetectorNamespace
 				try
 				{
 					ParticleSystem.TriggerModule triggerModule = particleSystem.trigger;
+#if UNITY_2020_2_OR_NEWER
+					for( int i = 0, j = triggerModule.colliderCount; i < j; i++ )
+#else
 					for( int i = 0, j = triggerModule.maxColliderCount; i < j; i++ )
+#endif
 						referenceNode.AddLinkTo( SearchObject( triggerModule.GetCollider( i ) ), "Trigger Module: Collider" );
 				}
 				catch { }
