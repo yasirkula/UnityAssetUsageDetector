@@ -51,10 +51,35 @@ namespace AssetUsageDetectorNamespace
 				if( fileSizes == null || fileSizes.Length != dependencies.Length )
 					fileSizes = new long[dependencies.Length];
 
-				for( int i = 0; i < dependencies.Length; i++ )
+				int length = dependencies.Length;
+				for( int i = 0; i < length; i++ )
 				{
-					FileInfo assetFile = new FileInfo( dependencies[i] );
-					fileSizes[i] = assetFile.Exists ? assetFile.Length : 0L;
+					if( !string.IsNullOrEmpty( dependencies[i] ) )
+					{
+						FileInfo assetFile = new FileInfo( dependencies[i] );
+						fileSizes[i] = assetFile.Exists ? assetFile.Length : 0L;
+					}
+					else
+					{
+						// This dependency is empty which causes issues when passed to FileInfo constructor
+						// Find a non-empty dependency and move it to this index
+						for( int j = length - 1; j > i; j--, length-- )
+						{
+							if( !string.IsNullOrEmpty( dependencies[j] ) )
+							{
+								dependencies[i--] = dependencies[j];
+								break;
+							}
+						}
+
+						length--;
+					}
+				}
+
+				if( length != fileSizes.Length )
+				{
+					Array.Resize( ref dependencies, length );
+					Array.Resize( ref fileSizes, length );
 				}
 			}
 		}
