@@ -88,7 +88,11 @@ namespace AssetUsageDetectorNamespace
 					m_boxGUIStyle.focused.textColor = textColor;
 					m_boxGUIStyle.active.textColor = textColor;
 
+#if !UNITY_2019_1_OR_NEWER || UNITY_2019_3_OR_NEWER
+					// On 2019.1 and 2019.2 versions, GUI.skin.button.fontSize returns 0 on some devices
+					// https://forum.unity.com/threads/asset-usage-detector-find-references-to-an-asset-object-open-source.408134/page-3#post-7285954
 					m_boxGUIStyle.fontSize = ( m_boxGUIStyle.fontSize + GUI.skin.button.fontSize ) / 2;
+#endif
 				}
 
 				return m_boxGUIStyle;
