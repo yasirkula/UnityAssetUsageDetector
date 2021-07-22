@@ -718,21 +718,16 @@ namespace AssetUsageDetectorNamespace
 					referenceNode.AddLinkTo( SearchObject( masterAtlas ), "Master Atlas" );
 			}
 
-#if UNITY_2018_2_OR_NEWER
-			Object[] packables = spriteAtlas.GetPackables();
-			if( packables != null )
+			int length = spriteAtlas.spriteCount;
+			Sprite[] sprites = new Sprite[length];
+			spriteAtlas.GetSprites( sprites );
+
+			for (int i = 0; i < length; i++)
 			{
-				for( int i = 0; i < packables.Length; i++ )
-					referenceNode.AddLinkTo( SearchObject( packables[i] ), "Packed Texture" );
+				Texture texture = sprites[i].texture;
+				if ( objectsToSearchSet.Contains( texture ) )
+					referenceNode.AddLinkTo( GetReferenceNode( texture ), "Packed Texture" );
 			}
-#else
-			SerializedProperty packables = spriteAtlasSO.FindProperty( "m_EditorData.packables" );
-			if( packables != null )
-			{
-				for( int i = 0, length = packables.arraySize; i < length; i++ )
-					referenceNode.AddLinkTo( SearchObject( packables.GetArrayElementAtIndex( i ).objectReferenceValue ), "Packed Texture" );
-			}
-#endif
 
 			return referenceNode;
 		}
