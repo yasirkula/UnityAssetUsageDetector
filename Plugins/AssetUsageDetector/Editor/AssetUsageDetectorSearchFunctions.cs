@@ -430,6 +430,17 @@ namespace AssetUsageDetectorNamespace
 				}
 				catch { }
 #endif
+
+
+#if UNITY_5_5_OR_NEWER
+				try
+				{
+					ParticleSystem.SubEmittersModule subEmittersModule = particleSystem.subEmitters;
+					for( int i = 0, j = subEmittersModule.subEmittersCount; i < j; i++ )
+						referenceNode.AddLinkTo( SearchObject( subEmittersModule.GetSubEmitterSystem( i ) ), "Sub Emitters Module: ParticleSystem" );
+				}
+				catch { }
+#endif
 			}
 			else if( searchRenderers && component is Renderer )
 			{
