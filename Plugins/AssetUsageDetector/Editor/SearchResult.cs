@@ -924,7 +924,11 @@ namespace AssetUsageDetectorNamespace
 						if( !string.IsNullOrEmpty( description ) )
 						{
 							if( !string.IsNullOrEmpty( links[i].description ) )
-								links[i] = new Link( links[i].targetNode, string.Concat( links[i].description, Environment.NewLine, description ) );
+							{
+								// Avoid duplicate descriptions
+								if( !links[i].description.Contains( description ) )
+									links[i] = new Link( links[i].targetNode, string.Concat( links[i].description, Environment.NewLine, description ) );
+							}
 							else
 								links[i] = new Link( links[i].targetNode, description );
 						}
