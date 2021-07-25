@@ -86,10 +86,16 @@ namespace AssetUsageDetectorNamespace
 				Object prevObject = GetObjectFromElement( element );
 				Object newObject = EditorGUILayout.ObjectField( "", prevObject, typeof( Object ), acceptSceneObjects );
 
-				if( GUI.changed && prevObject != newObject )
+				if( GUI.changed )
 				{
 					hasChanged = true;
 					SetObjectOfElement( list, i, newObject );
+				}
+
+				if( guiEnabled && newObject && ev.type == EventType.ContextClick && GUILayoutUtility.GetLastRect().Contains( ev.mousePosition ) )
+				{
+					OnElementRightClicked( list, i, newObject );
+					ev.Use();
 				}
 
 				if( guiEnabled )
@@ -121,6 +127,7 @@ namespace AssetUsageDetectorNamespace
 		protected abstract T CreateElement( Object source );
 		protected abstract Object GetObjectFromElement( T element );
 		protected abstract void SetObjectOfElement( List<T> list, int index, Object value );
+		protected abstract void OnElementRightClicked( List<T> list, int index, Object value );
 		protected abstract bool IsElementNull( T element );
 		protected abstract void PostElementDrawer( T element );
 	}
@@ -144,6 +151,10 @@ namespace AssetUsageDetectorNamespace
 		protected override void SetObjectOfElement( List<Object> list, int index, Object value )
 		{
 			list[index] = value;
+		}
+
+		protected override void OnElementRightClicked( List<Object> list, int index, Object value )
+		{
 		}
 
 		protected override bool IsElementNull( Object element )
@@ -176,6 +187,13 @@ namespace AssetUsageDetectorNamespace
 		{
 			list[index].obj = value;
 			list[index].RefreshSubAssets();
+		}
+
+		protected override void OnElementRightClicked( List<ObjectToSearch> list, int index, Object value )
+		{
+			GenericMenu contextMenu = new GenericMenu();
+			contextMenu.AddItem( new GUIContent( "Refresh" ), false, () => SetObjectOfElement( list, index, value ) );
+			contextMenu.ShowAsContext();
 		}
 
 		protected override bool IsElementNull( ObjectToSearch element )
