@@ -420,6 +420,16 @@ namespace AssetUsageDetectorNamespace
 						referenceNode.AddLinkTo( SearchObject( triggerModule.GetCollider( i ) ), "Trigger Module: Collider" );
 				}
 				catch { }
+
+#if UNITY_2017_1_OR_NEWER
+				try
+				{
+					ParticleSystem.TextureSheetAnimationModule textureSheetAnimationModule = particleSystem.textureSheetAnimation;
+					for( int i = 0, j = textureSheetAnimationModule.spriteCount; i < j; i++ )
+						referenceNode.AddLinkTo( SearchObject( textureSheetAnimationModule.GetSprite( i ) ), "Texture Sheet Animation Module: Sprite" );
+				}
+				catch { }
+#endif
 			}
 			else if( searchRenderers && component is Renderer )
 			{
