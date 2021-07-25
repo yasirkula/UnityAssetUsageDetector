@@ -744,18 +744,60 @@ namespace AssetUsageDetectorNamespace
 			if( packables != null )
 			{
 				for( int i = 0; i < packables.Length; i++ )
-					referenceNode.AddLinkTo( SearchObject( packables[i] ), "Packed Texture" );
+					SearchSpriteAtlas( referenceNode, packables[i] );
 			}
 #else
 			SerializedProperty packables = spriteAtlasSO.FindProperty( "m_EditorData.packables" );
 			if( packables != null )
 			{
 				for( int i = 0, length = packables.arraySize; i < length; i++ )
-					referenceNode.AddLinkTo( SearchObject( packables.GetArrayElementAtIndex( i ).objectReferenceValue ), "Packed Texture" );
+					SearchSpriteAtlas( referenceNode, packables.GetArrayElementAtIndex( i ).objectReferenceValue );
 			}
 #endif
 
 			return referenceNode;
+		}
+
+		private void SearchSpriteAtlas( ReferenceNode referenceNode, Object packedAsset )
+		{
+			if( packedAsset == null || packedAsset.Equals( null ) )
+				return;
+
+			referenceNode.AddLinkTo( SearchObject( packedAsset ), "Packed Texture" );
+
+			if( packedAsset is Texture )
+			{
+				// Search the Texture's sprites if the Texture asset isn't included in the "Find references of:" list (i.e. user has
+				// added only a Sprite sub-asset of the Texture to the list, not the Texture asset itself). Otherwise, references to
+				// both the Texture and its sprites will be found which can be considered as duplicate references
+				if( AssetDatabase.IsMainAsset( packedAsset ) && !assetsToSearchSet.Contains( packedAsset ) )
+				{
+					Object[] textureSubAssets = AssetDatabase.LoadAllAssetRepresentationsAtPath( AssetDatabase.GetAssetPath( packedAsset ) );
+					for( int i = 0; i < textureSubAssets.Length; i++ )
+					{
+						if( textureSubAssets[i] is Sprite )
+							referenceNode.AddLinkTo( SearchObject( textureSubAssets[i] ), "Packed Texture" );
+					}
+				}
+			}
+			else if( packedAsset.IsFolder() )
+			{
+				// Search all Sprites in the folder
+				string[] texturesInFolder = AssetDatabase.FindAssets( "t:Texture2D", new string[] { AssetDatabase.GetAssetPath( packedAsset ) } );
+				if( texturesInFolder != null )
+				{
+					for( int i = 0; i < texturesInFolder.Length; i++ )
+					{
+						string texturePath = AssetDatabase.GUIDToAssetPath( texturesInFolder[i] );
+						TextureImporter textureImporter = AssetImporter.GetAtPath( texturePath ) as TextureImporter;
+						if( textureImporter != null && textureImporter.textureType == TextureImporterType.Sprite )
+						{
+							// Search the Texture and its sprites
+							SearchSpriteAtlas( referenceNode, AssetDatabase.LoadMainAssetAtPath( texturePath ) );
+						}
+					}
+				}
+			}
 		}
 #endif
 
