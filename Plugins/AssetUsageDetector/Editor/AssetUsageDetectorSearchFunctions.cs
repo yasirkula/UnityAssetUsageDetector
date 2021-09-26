@@ -980,6 +980,9 @@ namespace AssetUsageDetectorNamespace
 			for( int i = 0; i < clips.Length; i++ )
 			{
 				AnimationClip clip = clips[i];
+				if( !clip )
+					continue;
+
 				bool isClipUnique = true;
 				for( int j = i - 1; j >= 0; j-- )
 				{
