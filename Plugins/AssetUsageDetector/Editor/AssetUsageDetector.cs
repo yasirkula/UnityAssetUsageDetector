@@ -43,9 +43,9 @@ namespace AssetUsageDetectorNamespace
 			public BindingFlags propertyModifiers = BindingFlags.Public | BindingFlags.NonPublic;
 			public bool searchNonSerializableVariables = true;
 
-			public bool lazySceneSearch = false;
+			public bool lazySceneSearch = true;
 			public bool noAssetDatabaseChanges = false;
-			public bool showDetailedProgressBar = false;
+			public bool showDetailedProgressBar = true;
 		}
 		#endregion
 
@@ -100,26 +100,16 @@ namespace AssetUsageDetectorNamespace
 		{
 			if( searchParameters == null )
 			{
-				Debug.LogError( "searchParameters must not be null!" );
+				Debug.LogError( "'searchParameters' mustn't be null!" );
 				return new SearchResult( false, null, null, this, searchParameters );
 			}
 
 			if( searchParameters.objectsToSearch == null )
 			{
-				Debug.LogError( "objectsToSearch list is empty!" );
+				Debug.LogError( "'objectsToSearch' list (\"Find references of:\") is empty!" );
 				return new SearchResult( false, null, null, this, searchParameters );
 			}
 
-			if( !EditorApplication.isPlaying && !Utilities.AreScenesSaved() )
-			{
-				// Don't start the search if at least one scene is currently dirty (not saved)
-				Debug.LogError( "Save open scenes first!" );
-				return new SearchResult( false, null, null, this, searchParameters );
-			}
-
-			List<SearchResultGroup> searchResult = null;
-
-			isInPlayMode = EditorApplication.isPlaying;
 #if UNITY_2018_3_OR_NEWER
 			openPrefabStagePrefabAsset = null;
 			string openPrefabStageAssetPath = null;
@@ -133,7 +123,7 @@ namespace AssetUsageDetectorNamespace
 					if( openPrefabStage.scene.isDirty )
 					{
 						// Don't start the search if a prefab stage is currently open and dirty (not saved)
-						Debug.LogError( "Save open prefabs first!" );
+						Debug.LogError( "Save open prefab first!" );
 						return new SearchResult( false, null, null, this, searchParameters );
 					}
 
@@ -151,6 +141,15 @@ namespace AssetUsageDetectorNamespace
 				}
 			}
 #endif
+
+			List<SearchResultGroup> searchResult = null;
+			isInPlayMode = EditorApplication.isPlaying;
+
+			if( !isInPlayMode && !Utilities.AreScenesSaved() && !EditorUtility.DisplayDialog( "Asset Usage Detector", "Some scene(s) aren't saved. This may result in incorrect search results in those scene(s). Proceed?", "Yes", "Cancel" ) )
+			{
+				Debug.LogError( "Save open scene(s) first!" );
+				return new SearchResult( false, null, null, this, searchParameters );
+			}
 
 			// Get the scenes that are open right now
 			SceneSetup[] initialSceneSetup = !isInPlayMode ? EditorSceneManager.GetSceneManagerSetup() : null;

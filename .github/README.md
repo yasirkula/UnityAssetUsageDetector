@@ -41,6 +41,6 @@ There are 5 ways to install this plugin:
 
 ## KNOWN LIMITATIONS
 
-- *static* variables are not searched
-- GUIText materials are not searched
-- Textures in Lens Flare's can not be searched
+- *static* variables aren't searched
+- GUIText materials aren't searched
+- Textures in Lens Flares can't be searched

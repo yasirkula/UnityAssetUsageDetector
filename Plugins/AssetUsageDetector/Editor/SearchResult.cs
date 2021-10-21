@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Text;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -328,16 +329,30 @@ namespace AssetUsageDetectorNamespace
 
 		// Close the scenes that were not part of the initial scene setup
 		// Returns true if initial scene setup is restored successfully
-		public bool RestoreInitialSceneSetup( bool optional )
+		public bool RestoreInitialSceneSetup()
 		{
 			if( initialSceneSetup == null || initialSceneSetup.Length == 0 )
 				return true;
 
-			if( EditorApplication.isPlaying || !EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo() )
+			if( EditorApplication.isPlaying )
 				return false;
 
-			if( optional && IsSceneSetupDifferentThanCurrentSetup() && !EditorUtility.DisplayDialog( "Scenes", "Restore initial scene setup?", "Yes", "Leave it as is" ) )
+			if( !IsSceneSetupDifferentThanCurrentSetup() )
 				return true;
+
+			StringBuilder sb = new StringBuilder( 300 );
+			sb.AppendLine( "Restore initial scene setup?" );
+			for( int i = 0; i < initialSceneSetup.Length; i++ )
+				sb.AppendLine().Append( "- " ).Append( initialSceneSetup[i].path );
+
+			switch( EditorUtility.DisplayDialogComplex( "Asset Usage Detector", sb.ToString(), "Yes", "Cancel", "Leave it as is" ) )
+			{
+				case 1: return false;
+				case 2: return true;
+			}
+
+			if( !EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo() )
+				return false;
 
 			for( int i = 0; i < initialSceneSetup.Length; i++ )
 			{

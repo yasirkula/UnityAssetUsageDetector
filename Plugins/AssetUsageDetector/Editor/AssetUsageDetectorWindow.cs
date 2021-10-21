@@ -55,14 +55,10 @@ namespace AssetUsageDetectorNamespace
 
 		private int searchDepthLimit = 4; // Depth limit for recursively searching variables of objects
 
-		private bool restoreInitialSceneSetup = true; // Close the additively loaded scenes that were not part of the initial scene setup
-
-		private string errorMessage = string.Empty;
-
-		private bool lazySceneSearch = false;
+		private bool lazySceneSearch = true;
 		private bool searchNonSerializableVariables = true;
 		private bool noAssetDatabaseChanges = false;
-		private bool showDetailedProgressBar = false;
+		private bool showDetailedProgressBar = true;
 
 		private BindingFlags fieldModifiers, propertyModifiers;
 
@@ -75,7 +71,6 @@ namespace AssetUsageDetectorNamespace
 		private readonly ObjectListDrawer excludedAssetsDrawer = new ObjectListDrawer( "Don't search following asset(s):", false );
 		private readonly ObjectListDrawer excludedScenesDrawer = new ObjectListDrawer( "Don't search in following scene(s):", false );
 
-		private readonly GUIContent restoreInitialSceneSetupLabel = new GUIContent( "Restore initial scene setup (Recommended)", "For example, if scene A was open when the search was started and scenes A and B are open after the search is completed, clicking the \"Reset Search\" button will automatically close scene B" );
 		private readonly GUIContent showTooltipsLabel = new GUIContent( "Show tooltips", "Display nodes' contents in a tooltip when cursor hovers over them" );
 
 		private Vector2 scrollPosition = Vector2.zero;
@@ -193,7 +188,7 @@ namespace AssetUsageDetectorNamespace
 
 		private static void ShowAndSearchInternal( IEnumerable<Object> searchObjects, AssetUsageDetector.Parameters searchParameters, bool? shouldSearchChildren )
 		{
-			if( mainWindow != null && !mainWindow.ReturnToSetupPhase( true, true ) )
+			if( mainWindow && !mainWindow.ReturnToSetupPhase() )
 			{
 				Debug.LogError( "Need to reset the previous search first!" );
 				return;
@@ -281,7 +276,7 @@ namespace AssetUsageDetectorNamespace
 			SavePrefs();
 
 			if( searchResult != null && currentPhase == Phase.Complete )
-				searchResult.RestoreInitialSceneSetup( true );
+				searchResult.RestoreInitialSceneSetup();
 		}
 
 		private void OnFocus()
@@ -328,9 +323,9 @@ namespace AssetUsageDetectorNamespace
 			}
 
 			searchNonSerializableVariables = EditorPrefs.GetBool( PREFS_SEARCH_NON_SERIALIZABLES, true );
-			lazySceneSearch = EditorPrefs.GetBool( PREFS_LAZY_SCENE_SEARCH, false );
+			lazySceneSearch = EditorPrefs.GetBool( PREFS_LAZY_SCENE_SEARCH, true );
 			searchResultDrawParameters.showTooltips = EditorPrefs.GetBool( PREFS_SHOW_TOOLTIPS, false );
-			showDetailedProgressBar = EditorPrefs.GetBool( PREFS_SHOW_PROGRESS, false );
+			showDetailedProgressBar = EditorPrefs.GetBool( PREFS_SHOW_PROGRESS, true );
 		}
 
 		private SceneSearchMode GetSceneSearchMode( bool hideOptionsInPlayMode )
@@ -380,28 +375,17 @@ namespace AssetUsageDetectorNamespace
 
 			GUILayout.BeginVertical();
 
-			GUILayout.Space( 10 );
-
-			// Show the error message, if it is not empty
-			if( errorMessage.Length > 0 )
-				EditorGUILayout.HelpBox( errorMessage, MessageType.Error );
-
-			GUILayout.Space( 10 );
-
 			if( currentPhase == Phase.Processing )
 			{
 				// If we are stuck at this phase, then we have encountered an exception
 				GUILayout.Label( ". . . Search in progress or something went wrong (check console) . . ." );
 
-				restoreInitialSceneSetup = EditorGUILayout.ToggleLeft( restoreInitialSceneSetupLabel, restoreInitialSceneSetup );
-
 				if( GUILayout.Button( "RETURN", Utilities.GL_HEIGHT_30 ) )
-					ReturnToSetupPhase( restoreInitialSceneSetup, false );
+					ReturnToSetupPhase();
 			}
 			else if( currentPhase == Phase.Setup )
 			{
-				if( objectsToSearchDrawer.Draw( objectsToSearch ) )
-					errorMessage = string.Empty;
+				objectsToSearchDrawer.Draw( objectsToSearch );
 
 				GUILayout.Space( 10 );
 
@@ -527,7 +511,7 @@ namespace AssetUsageDetectorNamespace
 
 				lazySceneSearch = EditorGUILayout.ToggleLeft( "Lazy scene search: scenes are searched in detail only when they are manually refreshed (faster search)", lazySceneSearch );
 				noAssetDatabaseChanges = EditorGUILayout.ToggleLeft( "I haven't modified any assets/scenes since the last search (faster search)", noAssetDatabaseChanges );
-				showDetailedProgressBar = EditorGUILayout.ToggleLeft( "Show detailed progress bar (slower search)", showDetailedProgressBar );
+				showDetailedProgressBar = EditorGUILayout.ToggleLeft( "Update search progress bar more often (slower search)", showDetailedProgressBar );
 
 				GUILayout.Space( 10 );
 
@@ -551,10 +535,8 @@ namespace AssetUsageDetectorNamespace
 				GUILayout.Space( 10 );
 				GUI.enabled = true;
 
-				restoreInitialSceneSetup = EditorGUILayout.ToggleLeft( restoreInitialSceneSetupLabel, restoreInitialSceneSetup );
-
 				if( GUILayout.Button( "Reset Search", Utilities.GL_HEIGHT_30 ) )
-					ReturnToSetupPhase( restoreInitialSceneSetup, false );
+					ReturnToSetupPhase();
 
 				if( searchResult == null )
 				{
@@ -647,46 +629,35 @@ namespace AssetUsageDetectorNamespace
 
 		private void InitiateSearch()
 		{
-			if( objectsToSearch.IsEmpty() )
-				errorMessage = "ADD AN ASSET TO THE LIST FIRST!";
-			else if( !EditorApplication.isPlaying && !Utilities.AreScenesSaved() )
-			{
-				// Don't start the search if at least one scene is currently dirty (not saved)
-				errorMessage = "SAVE OPEN SCENES FIRST!";
-			}
-			else
-			{
-				errorMessage = string.Empty;
-				currentPhase = Phase.Processing;
+			currentPhase = Phase.Processing;
 
-				SavePrefs();
+			SavePrefs();
 
 #if UNITY_2018_3_OR_NEWER
-				ReplacePrefabStageObjectsWithAssets( PrefabStageUtility.GetCurrentPrefabStage() );
+			ReplacePrefabStageObjectsWithAssets( PrefabStageUtility.GetCurrentPrefabStage() );
 #endif
 
-				// Start searching
-				searchResult = core.Run( new AssetUsageDetector.Parameters()
-				{
-					objectsToSearch = new ObjectToSearchEnumerator( objectsToSearch ).ToArray(),
-					searchInScenes = GetSceneSearchMode( true ),
-					searchInAssetsFolder = searchInAssetsFolder,
-					searchInAssetsSubset = !searchInAssetsSubset.IsEmpty() ? searchInAssetsSubset.ToArray() : null,
-					excludedAssetsFromSearch = !excludedAssets.IsEmpty() ? excludedAssets.ToArray() : null,
-					dontSearchInSourceAssets = dontSearchInSourceAssets,
-					excludedScenesFromSearch = !excludedScenes.IsEmpty() ? excludedScenes.ToArray() : null,
-					searchInProjectSettings = searchInProjectSettings,
-					//fieldModifiers = fieldModifiers,
-					//propertyModifiers = propertyModifiers,
-					//searchDepthLimit = searchDepthLimit,
-					//searchNonSerializableVariables = searchNonSerializableVariables,
-					lazySceneSearch = lazySceneSearch,
-					noAssetDatabaseChanges = noAssetDatabaseChanges,
-					showDetailedProgressBar = showDetailedProgressBar
-				} );
+			// Start searching
+			searchResult = core.Run( new AssetUsageDetector.Parameters()
+			{
+				objectsToSearch = !objectsToSearch.IsEmpty() ? new ObjectToSearchEnumerator( objectsToSearch ).ToArray() : null,
+				searchInScenes = GetSceneSearchMode( true ),
+				searchInAssetsFolder = searchInAssetsFolder,
+				searchInAssetsSubset = !searchInAssetsSubset.IsEmpty() ? searchInAssetsSubset.ToArray() : null,
+				excludedAssetsFromSearch = !excludedAssets.IsEmpty() ? excludedAssets.ToArray() : null,
+				dontSearchInSourceAssets = dontSearchInSourceAssets,
+				excludedScenesFromSearch = !excludedScenes.IsEmpty() ? excludedScenes.ToArray() : null,
+				searchInProjectSettings = searchInProjectSettings,
+				//fieldModifiers = fieldModifiers,
+				//propertyModifiers = propertyModifiers,
+				//searchDepthLimit = searchDepthLimit,
+				//searchNonSerializableVariables = searchNonSerializableVariables,
+				lazySceneSearch = lazySceneSearch,
+				noAssetDatabaseChanges = noAssetDatabaseChanges,
+				showDetailedProgressBar = showDetailedProgressBar
+			} );
 
-				currentPhase = Phase.Complete;
-			}
+			currentPhase = Phase.Complete;
 		}
 
 #if UNITY_2018_3_OR_NEWER
@@ -729,14 +700,12 @@ namespace AssetUsageDetectorNamespace
 		}
 #endif
 
-		private bool ReturnToSetupPhase( bool restoreInitialSceneSetup, bool sceneSetupRestorationIsOptional )
+		private bool ReturnToSetupPhase()
 		{
-			if( searchResult != null && restoreInitialSceneSetup && !EditorApplication.isPlaying && !searchResult.RestoreInitialSceneSetup( sceneSetupRestorationIsOptional ) )
+			if( searchResult != null && !EditorApplication.isPlaying && !searchResult.RestoreInitialSceneSetup() )
 				return false;
 
 			searchResult = null;
-
-			errorMessage = string.Empty;
 			currentPhase = Phase.Setup;
 
 			return true;
