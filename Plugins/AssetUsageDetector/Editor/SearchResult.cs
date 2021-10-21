@@ -744,11 +744,8 @@ namespace AssetUsageDetectorNamespace
 				rect.width = 100f;
 				if( GUI.Button( rect, "Refresh" ) )
 				{
-					if( Utilities.AreScenesSaved() || ( EditorUtility.DisplayDialog( "Refresh", "Some scene(s) have unsaved changes, they must be saved before the refresh.", "Save Scenes", "Cancel" ) && EditorSceneManager.SaveOpenScenes() ) )
-					{
-						parameters.searchResult.RefreshSearchResultGroup( this, parameters.noAssetDatabaseChanges );
-						GUIUtility.ExitGUI();
-					}
+					parameters.searchResult.RefreshSearchResultGroup( this, parameters.noAssetDatabaseChanges );
+					GUIUtility.ExitGUI();
 				}
 			}
 
