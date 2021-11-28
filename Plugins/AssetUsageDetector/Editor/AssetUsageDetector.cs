@@ -49,7 +49,7 @@ namespace AssetUsageDetectorNamespace
 		}
 		#endregion
 
-		// A set that contains the searched asset(s) and their sub-assets (if any)
+		// A set that contains the searched scene object(s), asset(s) and their sub-assets (if any)
 		private readonly HashSet<Object> objectsToSearchSet = new HashSet<Object>();
 		// Scenes of scene object(s) in objectsToSearchSet
 		private readonly HashSet<string> sceneObjectsToSearchScenesSet = new HashSet<string>();
@@ -610,7 +610,7 @@ namespace AssetUsageDetectorNamespace
 		private void InitializeSearchResultNodes( List<SearchResultGroup> searchResult )
 		{
 			for( int i = 0; i < searchResult.Count; i++ )
-				searchResult[i].InitializeNodes( GetReferenceNode );
+				searchResult[i].InitializeNodes( GetReferenceNode, objectsToSearchSet );
 
 			// If there are any empty groups after node initialization, remove those groups
 			for( int i = searchResult.Count - 1; i >= 0; i-- )

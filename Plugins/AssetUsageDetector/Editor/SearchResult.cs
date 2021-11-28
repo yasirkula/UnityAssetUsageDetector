@@ -515,7 +515,7 @@ namespace AssetUsageDetectorNamespace
 		}
 
 		// Initializes commonly used variables of the nodes
-		public void InitializeNodes( Func<object, ReferenceNode> nodeGetter )
+		public void InitializeNodes( Func<object, ReferenceNode> nodeGetter, HashSet<Object> objectsToSearchSet )
 		{
 			// Remove root nodes that don't have any outgoing links or have null node objects (somehow)
 			for( int i = references.Count - 1; i >= 0; i-- )
@@ -543,6 +543,26 @@ namespace AssetUsageDetectorNamespace
 				return;
 
 			List<ReferenceNode> callStack = new List<ReferenceNode>( 8 );
+
+			// If this SearchResultGroup belongs to a scene, simplify the root nodes so that they go directly to either the searched objects or to an asset in a single link
+			if( Type == GroupType.Scene || Type == GroupType.DontDestroyOnLoad )
+			{
+				Scene scene = references[0].nodeObject is GameObject ? ( (GameObject) references[0].nodeObject ).scene : ( (Component) references[0].nodeObject ).gameObject.scene;
+				HashSet<ReferenceNode> leafNodes = new HashSet<ReferenceNode>();
+				for( int i = references.Count - 1; i >= 0; i-- )
+				{
+					references[i].GetLeafSceneNodesRecursive( scene, leafNodes, references[i], objectsToSearchSet, callStack );
+
+					if( leafNodes.Count > 0 )
+					{
+						references.RemoveAt( i );
+						foreach( ReferenceNode leafNode in leafNodes )
+							references.Add( leafNode );
+
+						leafNodes.Clear();
+					}
+				}
+			}
 
 			// For simplicity's sake, get rid of root nodes that are already part of another node's hierarchy
 			for( int i = references.Count - 1; i >= 0; i-- )
@@ -1010,10 +1030,57 @@ namespace AssetUsageDetectorNamespace
 				description = "<<destroyed>>";
 			}
 
-			nodeObject = null; // don't hold Object reference, allow Unity to GC used memory
+			nodeObject = null; // Don't hold Object reference, allow Unity to GC used memory
 
 			for( int i = 0; i < links.Count; i++ )
 				links[i].targetNode.InitializeRecursively();
+		}
+
+		// Finds all leaf nodes that originate from this node and have GameObject/Component node objects in the specified scene
+		public void GetLeafSceneNodesRecursive( Scene scene, HashSet<ReferenceNode> leafNodes, ReferenceNode latestSceneObjectNode, HashSet<Object> objectsToSearchSet, List<ReferenceNode> callStack )
+		{
+			if( links.Count == 0 || callStack.ContainsFast( this ) || ( nodeObject is Object && objectsToSearchSet.Contains( (Object) nodeObject ) ) ) // This is a searched object's node
+			{
+				leafNodes.Add( latestSceneObjectNode );
+				return;
+			}
+
+			Object unityObject = nodeObject as Object;
+			if( unityObject != null )
+			{
+				if( AssetDatabase.Contains( unityObject ) )
+				{
+					leafNodes.Add( latestSceneObjectNode );
+					return;
+				}
+				else if( unityObject is Component )
+				{
+					if( ( (Component) unityObject ).gameObject.scene == scene )
+						latestSceneObjectNode = this;
+					else
+					{
+						leafNodes.Add( latestSceneObjectNode );
+						return;
+					}
+				}
+				else if( unityObject is GameObject )
+				{
+					if( ( (GameObject) unityObject ).scene == scene )
+						latestSceneObjectNode = this;
+					else
+					{
+						leafNodes.Add( latestSceneObjectNode );
+						return;
+					}
+				}
+			}
+
+			callStack.Add( this );
+
+			for( int i = 0; i < links.Count; i++ )
+				links[i].targetNode.GetLeafSceneNodesRecursive( scene, leafNodes, latestSceneObjectNode, objectsToSearchSet, callStack );
+
+			callStack.RemoveAt( callStack.Count - 1 );
 		}
 
 		// Returns whether or not specified node is part of this node's siblings
