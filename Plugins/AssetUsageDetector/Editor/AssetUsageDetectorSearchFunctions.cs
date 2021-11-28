@@ -1062,16 +1062,16 @@ namespace AssetUsageDetectorNamespace
 						switch( iterator.propertyType )
 						{
 							case SerializedPropertyType.ObjectReference:
-								searchResult = SearchObject( iterator.objectReferenceValue );
+								searchResult = SearchObject( PreferablyGameObject( iterator.objectReferenceValue ) );
 								enterChildren = false;
 								break;
 							case SerializedPropertyType.ExposedReference:
-								searchResult = SearchObject( iterator.exposedReferenceValue );
+								searchResult = SearchObject( PreferablyGameObject( iterator.exposedReferenceValue ) );
 								enterChildren = false;
 								break;
 #if UNITY_2019_3_OR_NEWER
 							case SerializedPropertyType.ManagedReference:
-								searchResult = SearchObject( GetRawSerializedPropertyValue( iterator ) );
+								searchResult = SearchObject( PreferablyGameObject( GetRawSerializedPropertyValue( iterator ) ) );
 								enterChildren = false;
 								break;
 #endif
@@ -1124,7 +1124,7 @@ namespace AssetUsageDetectorNamespace
 					// no need to have duplicate search entries
 					if( !( variableValue is ICollection ) )
 					{
-						ReferenceNode searchResult = SearchObject( variableValue );
+						ReferenceNode searchResult = SearchObject( PreferablyGameObject( variableValue ) );
 						if( searchResult != null && searchResult != referenceNode )
 							referenceNode.AddLinkTo( searchResult, ( variables[i].isProperty ? "Property: " : "Variable: " ) + variables[i].name );
 					}
@@ -1136,7 +1136,7 @@ namespace AssetUsageDetectorNamespace
 						int index = 0;
 						foreach( object element in (IEnumerable) variableValue )
 						{
-							ReferenceNode searchResult = SearchObject( element );
+							ReferenceNode searchResult = SearchObject( PreferablyGameObject( element ) );
 							if( searchResult != null && searchResult != referenceNode )
 								referenceNode.AddLinkTo( searchResult, string.Concat( variables[i].isProperty ? "Property: " : "Variable: ", variables[i].name, "[", index + "]" ) );
 
@@ -1400,6 +1400,13 @@ namespace AssetUsageDetectorNamespace
 				if( valueEndIndex > valueStartIndex )
 					valueAction( str.Substring( valueStartIndex, valueEndIndex - valueStartIndex ) );
 			}
+		}
+
+		// If obj is Component, switches to its GameObject
+		private object PreferablyGameObject( object obj )
+		{
+			Component component = obj as Component;
+			return ( component != null && !component.Equals( null ) ) ? component.gameObject : obj;
 		}
 	}
 }
