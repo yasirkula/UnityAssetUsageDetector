@@ -383,65 +383,6 @@ namespace AssetUsageDetectorNamespace
 				if( objectsToSearchSet.Contains( script ) )
 					referenceNode.AddLinkTo( GetReferenceNode( script ) );
 			}
-			else if( component is ParticleSystemRenderer )
-			{
-				// Search ParticleSystemRenderer's custom meshes for references (they aren't searched by SerializedObject, unfortunately)
-				Mesh[] meshes = new Mesh[( (ParticleSystemRenderer) component ).meshCount];
-				int meshCount = ( (ParticleSystemRenderer) component ).GetMeshes( meshes );
-				for( int i = 0; i < meshCount; i++ )
-					referenceNode.AddLinkTo( SearchObject( meshes[i] ), "Renderer Module: Mesh" );
-			}
-			else if( component is ParticleSystem )
-			{
-				// Some ParticleSystem properties aren't searched by SerializedObject, search them manually instead
-				ParticleSystem particleSystem = (ParticleSystem) component;
-				referenceNode.AddLinkTo( SearchObject( particleSystem.lights.light ), "Light Module: Light" );
-
-				try
-				{
-					ParticleSystem.CollisionModule collisionModule = particleSystem.collision;
-#if UNITY_2020_2_OR_NEWER
-					for( int i = 0, j = collisionModule.planeCount; i < j; i++ )
-#else
-					for( int i = 0, j = collisionModule.maxPlaneCount; i < j; i++ )
-#endif
-						referenceNode.AddLinkTo( SearchObject( collisionModule.GetPlane( i ) ), "Collision Module: Plane" );
-				}
-				catch { }
-
-				try
-				{
-					ParticleSystem.TriggerModule triggerModule = particleSystem.trigger;
-#if UNITY_2020_2_OR_NEWER
-					for( int i = 0, j = triggerModule.colliderCount; i < j; i++ )
-#else
-					for( int i = 0, j = triggerModule.maxColliderCount; i < j; i++ )
-#endif
-						referenceNode.AddLinkTo( SearchObject( triggerModule.GetCollider( i ) ), "Trigger Module: Collider" );
-				}
-				catch { }
-
-#if UNITY_2017_1_OR_NEWER
-				try
-				{
-					ParticleSystem.TextureSheetAnimationModule textureSheetAnimationModule = particleSystem.textureSheetAnimation;
-					for( int i = 0, j = textureSheetAnimationModule.spriteCount; i < j; i++ )
-						referenceNode.AddLinkTo( SearchObject( textureSheetAnimationModule.GetSprite( i ) ), "Texture Sheet Animation Module: Sprite" );
-				}
-				catch { }
-#endif
-
-
-#if UNITY_5_5_OR_NEWER
-				try
-				{
-					ParticleSystem.SubEmittersModule subEmittersModule = particleSystem.subEmitters;
-					for( int i = 0, j = subEmittersModule.subEmittersCount; i < j; i++ )
-						referenceNode.AddLinkTo( SearchObject( subEmittersModule.GetSubEmitterSystem( i ) ), "Sub Emitters Module: ParticleSystem" );
-				}
-				catch { }
-#endif
-			}
 			else if( searchRenderers && component is Renderer )
 			{
 				// If an asset is a shader, texture or material, and this component is a Renderer,
@@ -1095,38 +1036,26 @@ namespace AssetUsageDetectorNamespace
 				SerializedProperty iteratorVisible = so.GetIterator();
 				if( iterator.Next( true ) )
 				{
-					string assetPath = AssetDatabase.GetAssetPath( (Object) referenceNode.nodeObject );
-					bool isProjectSettings = !string.IsNullOrEmpty( assetPath ) && assetPath.StartsWithFast( "ProjectSettings/" );
-
 					bool iteratingVisible = iteratorVisible.NextVisible( true );
 					bool enterChildren;
 					do
 					{
-						if( isProjectSettings )
-						{
-							// Search Project Settings in full because for some reason, important settings like SRP asset
-							// slot in Quality Settings aren't searched when iterating over only visible properties
-							enterChildren = true;
-						}
+						// Iterate over NextVisible properties AND the properties that have corresponding FieldInfos (internal Unity
+						// properties don't have FieldInfos so we are skipping them, which is good because search results found in
+						// those properties aren't interesting and mostly confusing)
+						bool isVisible = iteratingVisible && SerializedProperty.EqualContents( iterator, iteratorVisible );
+						if( isVisible )
+							iteratingVisible = iteratorVisible.NextVisible( iteratorVisible.propertyType == SerializedPropertyType.Generic );
 						else
 						{
-							// Iterate over NextVisible properties AND the properties that have corresponding FieldInfos (internal Unity
-							// properties don't have FieldInfos so we are skipping them, which is good because search results found in
-							// those properties aren't interesting and mostly confusing)
-							bool isVisible = iteratingVisible && SerializedProperty.EqualContents( iterator, iteratorVisible );
-							if( isVisible )
-								iteratingVisible = iteratorVisible.NextVisible( true );
-							else
-							{
-								Type propFieldType;
-								isVisible = iterator.type == "Array" || fieldInfoGetter( iterator, out propFieldType ) != null;
-							}
+							Type propFieldType;
+							isVisible = iterator.type == "Array" || fieldInfoGetter( iterator, out propFieldType ) != null;
+						}
 
-							if( !isVisible )
-							{
-								enterChildren = false;
-								continue;
-							}
+						if( !isVisible )
+						{
+							enterChildren = false;
+							continue;
 						}
 
 						ReferenceNode searchResult;
