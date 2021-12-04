@@ -43,6 +43,7 @@ There are 5 ways to install this plugin:
 
 ## KNOWN LIMITATIONS
 
+- *Addressables* aren't supported
 - *static* variables aren't searched
-- GUIText materials aren't searched
-- Textures in Lens Flares can't be searched
+- *GUIText* materials aren't searched
+- Textures in *Lens Flares* can't be searched
