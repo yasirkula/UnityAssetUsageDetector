@@ -546,8 +546,8 @@ namespace AssetUsageDetectorNamespace
 			}
 			catch( Exception e )
 			{
-				StringBuilder sb = new StringBuilder( objectsToSearchSet.Count * 50 + callStack.Count * 50 + 1000 );
-				sb.AppendLine( "<b>AssetUsageDetector Error:</b>" ).AppendLine().Append( e ).AppendLine();
+				StringBuilder sb = new StringBuilder( objectsToSearchSet.Count * 50 + callStack.Count * 50 + 500 );
+				sb.AppendLine( "<b>AssetUsageDetector Error:</b> The following Exception is thrown during the search. Details:" ).AppendLine();
 
 				Object latestUnityObjectInCallStack = AppendCallStackToStringBuilder( sb );
 
@@ -559,6 +559,7 @@ namespace AssetUsageDetectorNamespace
 				}
 
 				Debug.LogError( sb.ToString(), latestUnityObjectInCallStack );
+				Debug.LogException( e, latestUnityObjectInCallStack );
 
 				try
 				{
