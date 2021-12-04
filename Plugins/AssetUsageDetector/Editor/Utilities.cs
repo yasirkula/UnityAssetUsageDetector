@@ -242,7 +242,8 @@ namespace AssetUsageDetectorNamespace
 					PrefabStage openPrefabStage = PrefabStageUtility.GetCurrentPrefabStage();
 
 					// Try to open the prefab stage of pinged prefabs if they are double clicked
-					if( previousPingedPrefabInstanceId == objTR.GetInstanceID() && EditorApplication.timeSinceStartup - previousPingedPrefabPingTime <= 0.3f &&
+					bool previousPingedPrefabIsDoubleClicked = previousPingedPrefabInstanceId == objTR.GetInstanceID();
+					if( previousPingedPrefabIsDoubleClicked && EditorApplication.timeSinceStartup - previousPingedPrefabPingTime <= 0.3f &&
 #if UNITY_2020_1_OR_NEWER
 						( openPrefabStage == null || !openPrefabStage.stageHandle.IsValid() || assetPath != openPrefabStage.assetPath ) )
 #else
@@ -272,12 +273,17 @@ namespace AssetUsageDetectorNamespace
 #if UNITY_2019_1_OR_NEWER
 					else if( obj != objTR.gameObject )
 					{
-						Debug.Log( "Open " + assetPath + " in prefab mode to select and edit " + obj.name );
+						if( !previousPingedPrefabIsDoubleClicked ) // Don't spam this log unnecessarily
+							Debug.Log( "Open " + assetPath + " in prefab mode to select and edit " + obj.name );
+
 						selection = objTR.gameObject;
 					}
 #else
 					else
-						Debug.Log( "Open " + assetPath + " in prefab mode to select and edit " + obj.name );
+					{
+						if( !previousPingedPrefabIsDoubleClicked ) // Don't spam this log unnecessarily
+							Debug.Log( "Open " + assetPath + " in prefab mode to select and edit " + obj.name );
+					}
 #endif
 				}
 #else
