@@ -181,6 +181,9 @@ namespace AssetUsageDetectorNamespace
 			if( obj == null )
 				return;
 
+			if( obj is Component )
+				obj = ( (Component) obj ).gameObject;
+
 			Event e = Event.current;
 
 			// If CTRL or Shift keys are pressed, do a multi-select;
@@ -189,25 +192,10 @@ namespace AssetUsageDetectorNamespace
 				Selection.activeObject = obj.PingInEditor();
 			else
 			{
-				Component objAsComp = obj as Component;
-				GameObject objAsGO = obj as GameObject;
-				int selectionIndex = -1;
-
 				Object[] selection = Selection.objects;
-				for( int i = 0; i < selection.Length; i++ )
-				{
-					Object selected = selection[i];
-
-					// Don't allow including both a gameobject and one of its components in the selection
-					if( selected == obj || ( objAsComp != null && selected == objAsComp.gameObject ) ||
-						( objAsGO != null && selected is Component && ( (Component) selected ).gameObject == objAsGO ) )
-					{
-						selectionIndex = i;
-						break;
-					}
-				}
-
 				Object[] newSelection;
+
+				int selectionIndex = Array.IndexOf( selection, obj );
 				if( selectionIndex == -1 )
 				{
 					// Include object in selection
