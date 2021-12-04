@@ -79,6 +79,12 @@ namespace AssetUsageDetectorNamespace
 		public bool InitialSceneSetupConfigured { get { return initialSceneSetup != null && initialSceneSetup.Length > 0; } }
 		public AssetUsageDetector.Parameters SearchParameters { get { return m_searchParameters; } }
 
+		public static bool SelectClickedObjects
+		{
+			get { return EditorPrefs.GetBool( "AUD_SelectClickedObj", true ); }
+			set { EditorPrefs.SetBool( "AUD_SelectClickedObj", value ); }
+		}
+
 		public SearchResult( bool success, List<SearchResultGroup> result, SceneSetup[] initialSceneSetup, AssetUsageDetector searchHandler, AssetUsageDetector.Parameters searchParameters )
 		{
 			if( result == null )
@@ -739,7 +745,10 @@ namespace AssetUsageDetectorNamespace
 				if( Event.current.button != 1 )
 				{
 					// If the container (scene, usually) is left clicked, highlight it on Project view
-					AssetDatabase.LoadAssetAtPath<SceneAsset>( Title ).SelectInEditor();
+					if( SearchResult.SelectClickedObjects )
+						AssetDatabase.LoadAssetAtPath<SceneAsset>( Title ).SelectInEditor();
+					else
+						AssetDatabase.LoadAssetAtPath<SceneAsset>( Title ).PingInEditor();
 				}
 				else if( !EditorApplication.isPlaying && EditorSceneManager.loadedSceneCount > 1 )
 				{
@@ -1350,7 +1359,10 @@ namespace AssetUsageDetectorNamespace
 			if( GUI.Button( rect, label, Utilities.BoxGUIStyle ) && instanceId.HasValue )
 			{
 				// If a reference is clicked, highlight it (either on Hierarchy view or Project view)
-				EditorUtility.InstanceIDToObject( instanceId.Value ).SelectInEditor();
+				if( SearchResult.SelectClickedObjects )
+					EditorUtility.InstanceIDToObject( instanceId.Value ).SelectInEditor();
+				else
+					EditorUtility.InstanceIDToObject( instanceId.Value ).PingInEditor();
 			}
 
 			for( int i = 0; i < links.Length; i++ )

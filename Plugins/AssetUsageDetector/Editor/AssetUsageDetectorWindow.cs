@@ -14,7 +14,7 @@ namespace AssetUsageDetectorNamespace
 {
 	public enum Phase { Setup, Processing, Complete };
 
-	public class AssetUsageDetectorWindow : EditorWindow
+	public class AssetUsageDetectorWindow : EditorWindow, IHasCustomMenu
 	{
 		private const float PLAY_MODE_REFRESH_INTERVAL = 1f; // Interval to refresh the editor window in play mode
 
@@ -80,7 +80,12 @@ namespace AssetUsageDetectorNamespace
 
 		private static AssetUsageDetectorWindow mainWindow = null;
 
-		// Add "Asset Usage Detector" menu item to the Window menu
+		void IHasCustomMenu.AddItemsToMenu( GenericMenu menu )
+		{
+			if( currentPhase == Phase.Complete )
+				menu.AddItem( new GUIContent( "Select Clicked Objects" ), SearchResult.SelectClickedObjects, () => SearchResult.SelectClickedObjects = !SearchResult.SelectClickedObjects );
+		}
+
 		[MenuItem( "Window/Asset Usage Detector/Active Window" )]
 		private static void OpenActiveWindow()
 		{
