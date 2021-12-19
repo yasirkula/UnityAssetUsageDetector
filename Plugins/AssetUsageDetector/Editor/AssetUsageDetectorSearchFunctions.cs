@@ -350,12 +350,16 @@ namespace AssetUsageDetectorNamespace
 			if( searchPrefabConnections )
 			{
 #if UNITY_2018_3_OR_NEWER
-				Object prefab = PrefabUtility.GetCorrespondingObjectFromSource( go );
-#else
-				Object prefab = PrefabUtility.GetPrefabParent( go );
+				Object prefab = go;
+				while( prefab = PrefabUtility.GetCorrespondingObjectFromSource( prefab ) )
 #endif
-				if( objectsToSearchSet.Contains( prefab ) && assetsToSearchRootPrefabs.ContainsFast( prefab as GameObject ) )
-					referenceNode.AddLinkTo( GetReferenceNode( prefab ), "Prefab object" );
+				{
+#if !UNITY_2018_3_OR_NEWER
+					Object prefab = PrefabUtility.GetPrefabParent( go );
+#endif
+					if( objectsToSearchSet.Contains( prefab ) && assetsToSearchRootPrefabs.ContainsFast( prefab as GameObject ) )
+						referenceNode.AddLinkTo( GetReferenceNode( prefab ), "Prefab object" );
+				}
 			}
 
 			// Search through all the components of the object
