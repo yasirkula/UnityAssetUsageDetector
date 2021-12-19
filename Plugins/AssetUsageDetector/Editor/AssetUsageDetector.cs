@@ -861,6 +861,23 @@ namespace AssetUsageDetectorNamespace
 					SearchVariablesWithSerializedObject( result );
 				}
 
+				// A prefab asset should have a link to its children because when a scene object uses a prefab and a child of that prefab uses
+				// a searched object, the scene object needs to appear in the search results. Since prefab assets aren't automatically linked to
+				// their children, we need to create that link manually
+				if( assetPath != null && unityObject is GameObject && AssetDatabase.IsMainAsset( unityObject ) )
+				{
+					if( result == null )
+						result = PopReferenceNode( unityObject );
+
+					GameObject prefabGameObject = (GameObject) unityObject;
+					Transform[] prefabChildren = prefabGameObject.GetComponentsInChildren<Transform>( true );
+					for( int i = 0; i < prefabChildren.Length; i++ )
+					{
+						if( prefabChildren[i].gameObject != prefabGameObject )
+							result.AddLinkTo( SearchObject( prefabChildren[i].gameObject ) );
+					}
+				}
+
 				callStack.RemoveAt( callStack.Count - 1 );
 			}
 			else
