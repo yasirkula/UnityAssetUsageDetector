@@ -26,7 +26,6 @@ namespace AssetUsageDetectorNamespace
 		public List<SubAsset> subAssets;
 		public bool showSubAssetsFoldout;
 
-		private static MonoScript[] monoScriptsInProject;
 		private static HashSet<Object> currentSubAssets;
 
 		public ObjectToSearch( Object obj, bool? shouldSearchChildren = null )
@@ -81,11 +80,8 @@ namespace AssetUsageDetectorNamespace
 
 				if( includeTarget )
 				{
-					if( !currentSubAssets.Contains( target ) )
-					{
+					if( currentSubAssets.Add( target ) )
 						subAssets.Add( new SubAsset( target, shouldSearchChildren ?? true ) );
-						currentSubAssets.Add( target );
-					}
 				}
 				else
 				{
@@ -104,49 +100,19 @@ namespace AssetUsageDetectorNamespace
 				for( int i = 0; i < assets.Length; i++ )
 				{
 					Object asset = assets[i];
-					if( asset == null || asset.Equals( null ) || asset is Component )
+					if( asset == null || asset.Equals( null ) || asset is Component || asset == target )
 						continue;
 
-					if( currentSubAssets.Contains( asset ) )
+#if UNITY_2018_3_OR_NEWER
+					// Nested prefabs in prefab assets add an additional native object of type 'UnityEngine.PrefabInstance' to the prefab. Managed type of that native type
+					// is UnityEngine.Object (i.e. GetType() returns UnityEngine.Object, not UnityEngine.PrefabInstance). There are no possible references to these native
+					// objects so skip them (we're checking for UnityEngine.Prefab because it includes other native types like UnityEngine.PrefabCreation, as well)
+					if( target is GameObject && asset.GetType() == typeof( Object ) && asset.ToString().Contains( "(UnityEngine.Prefab" ) )
 						continue;
+#endif
 
-					if( asset != target )
-					{
+					if( currentSubAssets.Add( asset ) )
 						subAssets.Add( new SubAsset( asset, shouldSearchChildren ?? true ) );
-						currentSubAssets.Add( asset );
-					}
-
-					// MonoScripts are a special case such that other MonoScript objects
-					// that extend this MonoScript are also considered a sub-asset
-					if( asset is MonoScript )
-					{
-						Type monoScriptType = ( (MonoScript) asset ).GetClass();
-						if( monoScriptType == null || ( !monoScriptType.IsInterface && !typeof( Component ).IsAssignableFrom( monoScriptType ) ) )
-							continue;
-
-						// Find all MonoScript objects in the project
-						if( monoScriptsInProject == null )
-						{
-							string[] monoScriptGuids = AssetDatabase.FindAssets( "t:MonoScript" );
-							monoScriptsInProject = new MonoScript[monoScriptGuids.Length];
-							for( int k = 0; k < monoScriptGuids.Length; k++ )
-								monoScriptsInProject[k] = AssetDatabase.LoadAssetAtPath<MonoScript>( AssetDatabase.GUIDToAssetPath( monoScriptGuids[k] ) );
-						}
-
-						// Add any MonoScript objects that extend this MonoScript as a sub-asset
-						for( int j = 0; j < monoScriptsInProject.Length; j++ )
-						{
-							Type otherMonoScriptType = monoScriptsInProject[j].GetClass();
-							if( otherMonoScriptType == null || monoScriptType == otherMonoScriptType || !monoScriptType.IsAssignableFrom( otherMonoScriptType ) )
-								continue;
-
-							if( !currentSubAssets.Contains( monoScriptsInProject[j] ) )
-							{
-								subAssets.Add( new SubAsset( monoScriptsInProject[j], shouldSearchChildren ?? true ) );
-								currentSubAssets.Add( monoScriptsInProject[j] );
-							}
-						}
-					}
 				}
 			}
 		}

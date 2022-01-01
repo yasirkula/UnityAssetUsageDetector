@@ -166,6 +166,10 @@ namespace AssetUsageDetectorNamespace
 		private readonly Dictionary<Type, VariableGetterHolder[]> typeToVariables = new Dictionary<Type, VariableGetterHolder[]>( 4096 );
 		private readonly List<VariableGetterHolder> validVariables = new List<VariableGetterHolder>( 32 );
 
+		// All MonoScripts in objectsToSearchSet
+		private readonly List<MonoScript> monoScriptsToSearch = new List<MonoScript>();
+		private readonly List<Type> monoScriptsToSearchTypes = new List<Type>();
+
 		// Path(s) of .cginc, .cg, .hlsl and .glslinc assets in assetsToSearchSet
 		private readonly HashSet<string> shaderIncludesToSearchSet = new HashSet<string>();
 
@@ -179,8 +183,6 @@ namespace AssetUsageDetectorNamespace
 
 		private bool searchPrefabConnections;
 		private bool searchMonoBehavioursForScript;
-		private bool searchRenderers;
-		private bool searchMaterialsForShader;
 		private bool searchTextureReferences;
 #if UNITY_2018_1_OR_NEWER
 		private bool searchShaderGraphsForSubGraphs;
@@ -255,8 +257,6 @@ namespace AssetUsageDetectorNamespace
 
 			searchPrefabConnections = false;
 			searchMonoBehavioursForScript = false;
-			searchRenderers = false;
-			searchMaterialsForShader = false;
 			searchTextureReferences = false;
 #if UNITY_2018_1_OR_NEWER
 			searchShaderGraphsForSubGraphs = false;
@@ -264,19 +264,18 @@ namespace AssetUsageDetectorNamespace
 
 			foreach( Object obj in objectsToSearchSet )
 			{
-				if( obj is Texture )
-				{
-					searchRenderers = true;
+				if( obj is Texture || obj is Sprite )
 					searchTextureReferences = true;
-				}
-				else if( obj is Material )
-					searchRenderers = true;
 				else if( obj is MonoScript )
-					searchMonoBehavioursForScript = true;
-				else if( obj is Shader )
 				{
-					searchRenderers = true;
-					searchMaterialsForShader = true;
+					searchMonoBehavioursForScript = true;
+
+					Type monoScriptType = ( (MonoScript) obj ).GetClass();
+					if( monoScriptType != null && !monoScriptType.IsSealed )
+					{
+						monoScriptsToSearch.Add( (MonoScript) obj );
+						monoScriptsToSearchTypes.Add( monoScriptType );
+					}
 				}
 				else if( obj is GameObject )
 					searchPrefabConnections = true;
@@ -284,6 +283,13 @@ namespace AssetUsageDetectorNamespace
 				else if( obj is UnityEditorInternal.AssemblyDefinitionAsset )
 					assemblyDefinitionFilesToSearch[AssetDatabase.GetAssetPath( obj )] = obj;
 #endif
+			}
+
+			// We need to search for class/interface inheritance references manually because AssetDatabase.GetDependencies doesn't take that into account
+			if( monoScriptsToSearch.Count > 0 )
+			{
+				alwaysSearchedExtensionsSet.Add( "cs" );
+				alwaysSearchedExtensionsSet.Add( "dll" );
 			}
 
 			foreach( string path in assetsToSearchPathsSet )
@@ -365,7 +371,7 @@ namespace AssetUsageDetectorNamespace
 			// Search through all the components of the object
 			Component[] components = go.GetComponents<Component>();
 			for( int i = 0; i < components.Length; i++ )
-				referenceNode.AddLinkTo( SearchObject( components[i] ) );
+				referenceNode.AddLinkTo( SearchObject( components[i] ), isWeakLink: true );
 
 			return referenceNode;
 		}
@@ -383,19 +389,13 @@ namespace AssetUsageDetectorNamespace
 			if( searchMonoBehavioursForScript && component is MonoBehaviour )
 			{
 				// If a searched asset is script, check if this component is an instance of it
+				// Although SearchVariablesWithSerializedObject can detect these references with SerializedObject, it isn't possible when reflection is used in Play mode
 				MonoScript script = MonoScript.FromMonoBehaviour( (MonoBehaviour) component );
 				if( objectsToSearchSet.Contains( script ) )
 					referenceNode.AddLinkTo( GetReferenceNode( script ) );
 			}
-			else if( searchRenderers && component is Renderer )
-			{
-				// If an asset is a shader, texture or material, and this component is a Renderer,
-				// search it for references
-				Material[] materials = ( (Renderer) component ).sharedMaterials;
-				for( int i = 0; i < materials.Length; i++ )
-					referenceNode.AddLinkTo( SearchObject( materials[i] ) );
-			}
-			else if( component is Animation )
+
+			if( component is Animation )
 			{
 				// Search animation clips for references
 				foreach( AnimationState anim in (Animation) component )
@@ -445,28 +445,55 @@ namespace AssetUsageDetectorNamespace
 
 		private ReferenceNode SearchMaterial( Object unityObject )
 		{
+			const string TEXTURE_PROPERTY_PREFIX = "m_SavedProperties.m_TexEnvs[";
+
 			Material material = (Material) unityObject;
 			ReferenceNode referenceNode = PopReferenceNode( material );
 
-			if( searchMaterialsForShader && objectsToSearchSet.Contains( material.shader ) )
-				referenceNode.AddLinkTo( GetReferenceNode( material.shader ), "Shader" );
+			// We used to search only the shader and the Texture properties in this function but it has changed for 2 major reasons:
+			// 1) Materials can store more than these references now. For example, HDRP materials can have references to other HDRP materials
+			// 2) It wasn't possible to search Texture properties that were no longer used by the shader
+			// Thus, we are searching every property of the material using SerializedObject
+			SearchVariablesWithSerializedObject( referenceNode );
 
-			if( searchTextureReferences )
+			// Post-process the found results and convert links that start with TEXTURE_PROPERTY_PREFIX to their readable names
+			SerializedObject materialSO = null;
+			for( int i = referenceNode.NumberOfOutgoingLinks - 1; i >= 0; i-- )
 			{
-				// Search through all the textures attached to this material
-				// Credit: http://answers.unity3d.com/answers/1116025/view.html
-				Shader shader = material.shader;
-				int shaderPropertyCount = ShaderUtil.GetPropertyCount( shader );
-				for( int i = 0; i < shaderPropertyCount; i++ )
+				List<string> linkDescriptions = referenceNode[i].descriptions;
+				for( int j = linkDescriptions.Count - 1; j >= 0; j-- )
 				{
-					if( ShaderUtil.GetPropertyType( shader, i ) == ShaderUtil.ShaderPropertyType.TexEnv )
+					int texturePropertyPrefixIndex = linkDescriptions[j].IndexOf( TEXTURE_PROPERTY_PREFIX );
+					if( texturePropertyPrefixIndex >= 0 )
 					{
-						string propertyName = ShaderUtil.GetPropertyName( shader, i );
-						Texture assignedTexture = material.GetTexture( propertyName );
-						if( objectsToSearchSet.Contains( assignedTexture ) )
-							referenceNode.AddLinkTo( GetReferenceNode( assignedTexture ), "Shader property: " + propertyName );
+						texturePropertyPrefixIndex += TEXTURE_PROPERTY_PREFIX.Length;
+						int texturePropertyEndIndex = linkDescriptions[j].IndexOf( ']', texturePropertyPrefixIndex );
+						if( texturePropertyEndIndex > texturePropertyPrefixIndex )
+						{
+							int texturePropertyIndex;
+							if( int.TryParse( linkDescriptions[j].Substring( texturePropertyPrefixIndex, texturePropertyEndIndex - texturePropertyPrefixIndex ), out texturePropertyIndex ) )
+							{
+								if( materialSO == null )
+									materialSO = new SerializedObject( material );
+
+								string propertyName = materialSO.FindProperty( "m_SavedProperties.m_TexEnvs.Array.data[" + texturePropertyIndex + "].first" ).stringValue;
+								if( material.HasProperty( propertyName ) )
+									linkDescriptions[j] = "[Property: " + propertyName + "]";
+								else if( searchUnusedMaterialProperties )
+								{
+									// Move unused references to the end of the list so that used references come first
+									linkDescriptions.Add( "[Property (UNUSED): " + propertyName + "]" );
+									linkDescriptions.RemoveAt( j );
+								}
+								else
+									linkDescriptions.RemoveAt( j );
+							}
+						}
 					}
 				}
+
+				if( linkDescriptions.Count == 0 ) // All shader properties were unused and we weren't searching for unused material properties
+					referenceNode.RemoveLink( i );
 			}
 
 			return referenceNode;
@@ -520,7 +547,7 @@ namespace AssetUsageDetectorNamespace
 			return referenceNode;
 		}
 
-		// Searches default UnityEngine.Object values assigned to script variables
+		// Searches class/interface inheritances and default UnityEngine.Object values assigned to script variables
 		private ReferenceNode SearchMonoScript( Object unityObject )
 		{
 			MonoScript script = (MonoScript) unityObject;
@@ -528,20 +555,27 @@ namespace AssetUsageDetectorNamespace
 			if( scriptType == null || ( !scriptType.IsSubclassOf( typeof( MonoBehaviour ) ) && !scriptType.IsSubclassOf( typeof( ScriptableObject ) ) ) )
 				return null;
 
-			MonoImporter scriptImporter = AssetImporter.GetAtPath( AssetDatabase.GetAssetPath( unityObject ) ) as MonoImporter;
-			if( scriptImporter == null )
-				return null;
-
 			ReferenceNode referenceNode = PopReferenceNode( script );
 
-			VariableGetterHolder[] variables = GetFilteredVariablesForType( scriptType );
-			for( int i = 0; i < variables.Length; i++ )
+			// Check for class/interface inheritance references
+			for( int i = monoScriptsToSearch.Count - 1; i >= 0; i-- )
 			{
-				if( variables[i].isSerializable && !variables[i].isProperty )
+				if( monoScriptsToSearchTypes[i] != scriptType && monoScriptsToSearchTypes[i].IsAssignableFrom( scriptType ) )
+					referenceNode.AddLinkTo( GetReferenceNode( monoScriptsToSearch[i] ), monoScriptsToSearchTypes[i].IsInterface ? "Implements interface" : "Extends class" );
+			}
+
+			MonoImporter scriptImporter = AssetImporter.GetAtPath( AssetDatabase.GetAssetPath( unityObject ) ) as MonoImporter;
+			if( scriptImporter != null )
+			{
+				VariableGetterHolder[] variables = GetFilteredVariablesForType( scriptType );
+				for( int i = 0; i < variables.Length; i++ )
 				{
-					Object defaultValue = scriptImporter.GetDefaultReference( variables[i].name );
-					if( objectsToSearchSet.Contains( defaultValue ) )
-						referenceNode.AddLinkTo( GetReferenceNode( defaultValue ), "Default variable value: " + variables[i].name );
+					if( variables[i].isSerializable && !variables[i].isProperty )
+					{
+						Object defaultValue = scriptImporter.GetDefaultReference( variables[i].name );
+						if( objectsToSearchSet.Contains( defaultValue ) )
+							referenceNode.AddLinkTo( GetReferenceNode( defaultValue ), "Default variable value: " + variables[i].name );
+					}
 				}
 			}
 
@@ -712,7 +746,7 @@ namespace AssetUsageDetectorNamespace
 
 			if( packedAsset is Texture )
 			{
-				// Search the Texture's sprites if the Texture asset isn't included in the "Find references of:" list (i.e. user has
+				// Search the Texture's sprites if the Texture asset isn't included in the "SEARCHED OBJECTS" list (i.e. user has
 				// added only a Sprite sub-asset of the Texture to the list, not the Texture asset itself). Otherwise, references to
 				// both the Texture and its sprites will be found which can be considered as duplicate references
 				if( AssetDatabase.IsMainAsset( packedAsset ) && !assetsToSearchSet.Contains( packedAsset ) )
@@ -1155,7 +1189,10 @@ namespace AssetUsageDetectorNamespace
 				catch( Exception e )
 				{
 					// Unknown exceptions usually occur when variableValue is an IEnumerable and its enumerator throws an unhandled exception in MoveNext or Current
-					StringBuilder sb = new StringBuilder( callStack.Count * 50 + 1000 );
+					StringBuilder sb = Utilities.stringBuilder;
+					sb.Length = 0;
+					sb.EnsureCapacity( callStack.Count * 50 + 1000 );
+
 					sb.Append( "Skipped searching " ).Append( referenceNode.nodeObject.GetType().FullName ).Append( "." ).Append( variables[i].name ).AppendLine( " because it threw exception:" ).Append( e ).AppendLine();
 
 					Object latestUnityObjectInCallStack = AppendCallStackToStringBuilder( sb );
@@ -1269,10 +1306,6 @@ namespace AssetUsageDetectorNamespace
 #pragma warning restore 0618
 #endif
 							typeof( Collider2D ).IsAssignableFrom( currType ) ) )
-							continue;
-						// "sharedMaterials" are searched via SearchComponent, no need to search it with reflection, as well
-						else if( typeof( Renderer ).IsAssignableFrom( currType ) &&
-							( propertyName == "sharedMaterial" || propertyName == "sharedMaterials" ) )
 							continue;
 						// Ignore "parameters" property of Animator since it doesn't contain any useful data and logs a warning to the console when Animator is inactive
 						else if( typeof( Animator ).IsAssignableFrom( currType ) && propertyName == "parameters" )

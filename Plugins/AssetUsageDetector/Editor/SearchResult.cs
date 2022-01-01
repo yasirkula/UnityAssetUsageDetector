@@ -1,7 +1,9 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Text;
 using UnityEditor;
+using UnityEditor.IMGUI.Controls;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -9,57 +11,116 @@ using Object = UnityEngine.Object;
 
 namespace AssetUsageDetectorNamespace
 {
-	[Serializable]
-	public class SearchResultDrawParameters
-	{
-		public SearchResult searchResult;
-		public PathDrawingMode pathDrawingMode;
-		public bool showTooltips;
-		public bool noAssetDatabaseChanges;
-		public Rect guiRect;
-		public bool shouldRefreshEditorWindow;
-		public string tooltip;
-
-		public SearchResultDrawParameters( PathDrawingMode pathDrawingMode, bool showTooltips, bool noAssetDatabaseChanges )
-		{
-			this.pathDrawingMode = pathDrawingMode;
-			this.showTooltips = showTooltips;
-			this.noAssetDatabaseChanges = noAssetDatabaseChanges;
-		}
-	}
-
 	// Custom class to hold search results
 	[Serializable]
-	public class SearchResult : ISerializationCallbackReceiver
+	public class SearchResult : IEnumerable<SearchResultGroup>, ISerializationCallbackReceiver
 	{
-		// Credit: https://docs.unity3d.com/Manual/script-Serialization-Custom.html
 		[Serializable]
-		public class SerializableResultGroup
+		internal class SerializableResultGroup
 		{
 			public string title;
 			public SearchResultGroup.GroupType type;
 			public bool isExpanded;
 			public bool pendingSearch;
+			public SearchResultTreeViewState treeViewState;
 
 			public List<int> initialSerializedNodes;
 		}
 
 		[Serializable]
-		public class SerializableNode
+		internal class SerializableNode
 		{
+			[Serializable]
+			public class SerializableLinkDescriptions
+			{
+				public List<string> value;
+			}
+
+			public string label;
 			public int instanceId;
-			public bool isUnityObject;
-			public string description;
+			public bool isUnityObject, isMainReference;
+			public ReferenceNode.UsedState usedState;
 
 			public List<int> links;
-			public List<string> linkDescriptions;
+			public List<SerializableLinkDescriptions> linkDescriptions;
+			public List<bool> linkWeakStates;
 		}
 
-#pragma warning disable 1692
-#pragma warning disable IDE0044
-		private bool success; // This is not readonly so that it can be serialized
-#pragma warning restore IDE0044
-#pragma warning restore 1692
+		internal class SortedEntry : IComparable<SortedEntry>
+		{
+			public readonly string assetPath, subAssetName;
+			public readonly bool isMainAsset;
+			public readonly Transform transform;
+			public readonly object entry;
+
+			public SortedEntry( ReferenceNode node ) : this( node.nodeObject as Object )
+			{
+				entry = node;
+			}
+
+			public SortedEntry( ReferenceNode.Link link ) : this( link.targetNode.nodeObject as Object )
+			{
+				entry = link;
+			}
+
+			private SortedEntry( Object obj )
+			{
+				if( obj )
+				{
+					assetPath = AssetDatabase.GetAssetPath( obj );
+					if( string.IsNullOrEmpty( assetPath ) )
+					{
+						assetPath = null;
+
+						if( obj is Component )
+							transform = ( (Component) obj ).transform;
+						else if( obj is GameObject )
+							transform = ( (GameObject) obj ).transform;
+					}
+					else
+					{
+						isMainAsset = AssetDatabase.IsMainAsset( ( obj is Component ) ? ( (Component) obj ).gameObject : obj );
+						if( !isMainAsset )
+							subAssetName = obj.name;
+					}
+				}
+			}
+
+			// Sorting order:
+			// 1) Scene objects come first and are sorted by their absolute sibling indices in Hierarchy
+			// 2) Assets come later and are sorted by their asset paths (for assets sharing the same path, main assets come first and sub-assets are then sorted by their names)
+			// 3) Regular C# objects come last
+			int IComparable<SortedEntry>.CompareTo( SortedEntry other )
+			{
+				if( this == other )
+					return 0;
+				else if( assetPath == null )
+				{
+					if( !transform )
+						return 1;
+					else if( other.assetPath == null )
+						return other.transform ? Utilities.CompareHierarchySiblingIndices( transform, other.transform ) : -1;
+					else
+						return -1;
+				}
+				else if( other.assetPath == null )
+					return other.transform ? 1 : -1;
+				else
+				{
+					int assetPathComparison = EditorUtility.NaturalCompare( assetPath, other.assetPath );
+					if( assetPathComparison != 0 )
+						return assetPathComparison;
+					else if( isMainAsset )
+						return -1;
+					else if( other.isMainAsset )
+						return 1;
+					else
+						return subAssetName.CompareTo( other.subAssetName );
+				}
+			}
+		}
+
+		private bool success; // This isn't readonly so that it can be serialized
 
 		private List<SearchResultGroup> result;
 		private SceneSetup[] initialSceneSetup;
@@ -67,34 +128,39 @@ namespace AssetUsageDetectorNamespace
 		private AssetUsageDetector searchHandler;
 		private AssetUsageDetector.Parameters m_searchParameters;
 
-		private float guiHeight; // Prevents scroll view's position from getting reset at domain reload
+		// Each TreeView in the drawn search results must use unique ids for their TreeViewItems. Otherwise, strange things happen: https://forum.unity.com/threads/multiple-editor-treeviews-selection-issue.601471/
+		internal int nextTreeViewId = 1;
 
 		private List<SerializableNode> serializedNodes;
 		private List<SerializableResultGroup> serializedGroups;
+		private Object[] serializedUsedObjects;
 
 		public int NumberOfGroups { get { return result.Count; } }
 		public SearchResultGroup this[int index] { get { return result[index]; } }
 
+		public HashSet<Object> UsedObjects { get; private set; }
+
 		public bool SearchCompletedSuccessfully { get { return success; } }
 		public bool InitialSceneSetupConfigured { get { return initialSceneSetup != null && initialSceneSetup.Length > 0; } }
+		public bool HasPendingLazySceneSearchResults { get { return result.Find( ( group ) => group.PendingSearch ) != null; } }
 		public AssetUsageDetector.Parameters SearchParameters { get { return m_searchParameters; } }
 
-		public static bool SelectClickedObjects
-		{
-			get { return EditorPrefs.GetBool( "AUD_SelectClickedObj", true ); }
-			set { EditorPrefs.SetBool( "AUD_SelectClickedObj", value ); }
-		}
-
-		public SearchResult( bool success, List<SearchResultGroup> result, SceneSetup[] initialSceneSetup, AssetUsageDetector searchHandler, AssetUsageDetector.Parameters searchParameters )
+		public SearchResult( bool success, List<SearchResultGroup> result, HashSet<Object> usedObjects, SceneSetup[] initialSceneSetup, AssetUsageDetector searchHandler, AssetUsageDetector.Parameters searchParameters )
 		{
 			if( result == null )
 				result = new List<SearchResultGroup>( 0 );
 
 			this.success = success;
 			this.result = result;
+			this.UsedObjects = usedObjects ?? new HashSet<Object>();
 			this.initialSceneSetup = initialSceneSetup;
 			this.searchHandler = searchHandler;
 			this.m_searchParameters = searchParameters;
+		}
+
+		public void RemoveSearchResultGroup( SearchResultGroup searchResultGroup )
+		{
+			result.Remove( searchResultGroup );
 		}
 
 		public void RefreshSearchResultGroup( SearchResultGroup searchResultGroup, bool noAssetDatabaseChanges )
@@ -105,23 +171,14 @@ namespace AssetUsageDetectorNamespace
 				return;
 			}
 
-			int searchResultGroupIndex = -1;
-			for( int i = 0; i < result.Count; i++ )
-			{
-				if( result[i] == searchResultGroup )
-				{
-					searchResultGroupIndex = i;
-					break;
-				}
-			}
-
+			int searchResultGroupIndex = result.IndexOf( searchResultGroup );
 			if( searchResultGroupIndex < 0 )
 			{
 				Debug.LogError( "SearchResultGroup is not a part of SearchResult!" );
 				return;
 			}
 
-			if( searchResultGroup.Type == SearchResultGroup.GroupType.Scene && EditorApplication.isPlaying && !EditorSceneManager.GetSceneByPath( searchResultGroup.Title ).isLoaded )
+			if( searchResultGroup.Type == SearchResultGroup.GroupType.Scene && EditorApplication.isPlaying && !EditorSceneManager.GetSceneByPath( searchResultGroup.ScenePath ).isLoaded )
 			{
 				Debug.LogError( "Can't search unloaded scene while in Play Mode!" );
 				return;
@@ -135,6 +192,9 @@ namespace AssetUsageDetectorNamespace
 			bool searchInAssetsFolder = m_searchParameters.searchInAssetsFolder;
 			Object[] searchInAssetsSubset = m_searchParameters.searchInAssetsSubset;
 			bool searchInProjectSettings = m_searchParameters.searchInProjectSettings;
+			bool lazySceneSearch = m_searchParameters.lazySceneSearch;
+			bool calculateUnusedObjects = m_searchParameters.calculateUnusedObjects;
+			bool _noAssetDatabaseChanges = m_searchParameters.noAssetDatabaseChanges;
 
 			try
 			{
@@ -155,12 +215,12 @@ namespace AssetUsageDetectorNamespace
 				else if( searchResultGroup.Type == SearchResultGroup.GroupType.Scene )
 				{
 					m_searchParameters.searchInScenes = SceneSearchMode.None;
-					m_searchParameters.searchInScenesSubset = new Object[1] { AssetDatabase.LoadAssetAtPath<SceneAsset>( searchResultGroup.Title ) };
+					m_searchParameters.searchInScenesSubset = new Object[1] { AssetDatabase.LoadAssetAtPath<SceneAsset>( searchResultGroup.ScenePath ) };
 					m_searchParameters.searchInAssetsFolder = false;
 					m_searchParameters.searchInAssetsSubset = null;
 					m_searchParameters.searchInProjectSettings = false;
 				}
-				else
+				else if( searchResultGroup.Type == SearchResultGroup.GroupType.DontDestroyOnLoad )
 				{
 					m_searchParameters.searchInScenes = (SceneSearchMode) 1024; // A unique value to search only the DontDestroyOnLoad scene
 					m_searchParameters.searchInScenesSubset = null;
@@ -168,8 +228,14 @@ namespace AssetUsageDetectorNamespace
 					m_searchParameters.searchInAssetsSubset = null;
 					m_searchParameters.searchInProjectSettings = false;
 				}
+				else
+				{
+					Debug.LogError( "Can't refresh group: " + searchResultGroup.Type );
+					return;
+				}
 
 				m_searchParameters.lazySceneSearch = false;
+				m_searchParameters.calculateUnusedObjects = result.Find( ( group ) => group.Type == SearchResultGroup.GroupType.UnusedObjects ) != null;
 				m_searchParameters.noAssetDatabaseChanges = noAssetDatabaseChanges;
 
 				// Make sure the AssetDatabase is up-to-date
@@ -182,23 +248,101 @@ namespace AssetUsageDetectorNamespace
 					return;
 				}
 
-				List<SearchResultGroup> searchResultGroups = searchResult.result;
-				if( searchResultGroups != null )
+				if( searchResult.result != null )
 				{
-					int newSearchResultGroupIndex = -1;
-					for( int i = 0; i < searchResultGroups.Count; i++ )
-					{
-						if( searchResultGroup.Title == searchResultGroups[i].Title )
-						{
-							newSearchResultGroupIndex = i;
-							break;
-						}
-					}
-
-					if( newSearchResultGroupIndex >= 0 )
-						result[searchResultGroupIndex] = searchResultGroups[newSearchResultGroupIndex];
+					SearchResultGroup newSearchResultGroup = searchResult.result.Find( ( group ) => group.Title == searchResultGroup.Title );
+					if( newSearchResultGroup != null )
+						result[searchResultGroupIndex] = newSearchResultGroup;
 					else
 						searchResultGroup.Clear();
+
+					UsedObjects.UnionWith( searchResult.UsedObjects );
+
+					SearchResultGroup unusedObjectsSearchResultGroup = result.Find( ( group ) => group.Type == SearchResultGroup.GroupType.UnusedObjects );
+					if( unusedObjectsSearchResultGroup != null )
+					{
+						SearchResultGroup newUnusedObjectsSearchResultGroup = searchResult.result.Find( ( group ) => group.Type == SearchResultGroup.GroupType.UnusedObjects );
+						if( newUnusedObjectsSearchResultGroup == null )
+						{
+							// UnusedObjects search result group doesn't exist in 2 cases:
+							// - When there are no search results found (NumberOfGroups == 0)
+							// - When all searched objects are referenced (NumberOfGroups > 0)
+							if( searchResult.result.Count > 0 )
+								unusedObjectsSearchResultGroup.Clear();
+						}
+						else
+						{
+							// NOTE: We can process UnusedObjects graphs iteratively (instead of recursively) because for the time being, these graphs have a maximum depth of 1
+							bool unusedObjectsGraphChanged = false;
+							HashSet<Object> newUnusedObjectsSet = new HashSet<Object>();
+							for( int i = newUnusedObjectsSearchResultGroup.NumberOfReferences - 1; i >= 0; i-- )
+							{
+								ReferenceNode node = newUnusedObjectsSearchResultGroup[i];
+								newUnusedObjectsSet.Add( node.UnityObject );
+
+								for( int j = node.NumberOfOutgoingLinks - 1; j >= 0; j-- )
+									newUnusedObjectsSet.Add( node[j].targetNode.UnityObject );
+							}
+
+							for( int i = unusedObjectsSearchResultGroup.NumberOfReferences - 1; i >= 0; i-- )
+							{
+								ReferenceNode node = unusedObjectsSearchResultGroup[i];
+								bool parentNodeRemoved = false;
+								Object obj = node.UnityObject;
+								if( !obj || !newUnusedObjectsSet.Contains( obj ) )
+								{
+									unusedObjectsSearchResultGroup.RemoveReference( i );
+									unusedObjectsGraphChanged = parentNodeRemoved = true;
+								}
+
+								bool hasUnusedSubObjects = false, hasUsedSubObjects = false;
+								bool hadSubObjects = node.NumberOfOutgoingLinks > 0;
+								for( int j = 0; j < node.NumberOfOutgoingLinks; j++ )
+								{
+									if( node[j].targetNode.usedState == ReferenceNode.UsedState.Used ) // User has explicitly displayed this used child object/sub-asset in the TreeView
+										continue;
+
+									Object _obj = node[j].targetNode.UnityObject;
+									if( newUnusedObjectsSet.Contains( _obj ) )
+									{
+										hasUnusedSubObjects = true;
+
+										if( parentNodeRemoved )
+											unusedObjectsSearchResultGroup.AddReference( node[j].targetNode );
+									}
+									else if( !parentNodeRemoved )
+									{
+										node.RemoveLink( j-- );
+										unusedObjectsGraphChanged = hasUsedSubObjects = true;
+									}
+								}
+
+								if( !parentNodeRemoved )
+								{
+									// When all sub-assets of a main asset are used, consider the main asset as used, as well
+									if( !hasUnusedSubObjects && hadSubObjects && AssetDatabase.IsMainAsset( obj ) )
+									{
+										unusedObjectsSearchResultGroup.RemoveReference( i );
+										unusedObjectsGraphChanged = true;
+									}
+
+									if( hasUsedSubObjects && node.usedState == ReferenceNode.UsedState.Unused )
+										node.usedState = ReferenceNode.UsedState.MixedCollapsed;
+								}
+							}
+
+							if( unusedObjectsGraphChanged && unusedObjectsSearchResultGroup.treeView != null )
+							{
+								unusedObjectsSearchResultGroup.treeView.SetSelection( new int[0], TreeViewSelectionOptions.FireSelectionChanged );
+								unusedObjectsSearchResultGroup.treeViewState.preSearchExpandedIds = null;
+								unusedObjectsSearchResultGroup.treeView.Reload();
+								unusedObjectsSearchResultGroup.treeView.ExpandAll();
+							}
+						}
+
+						if( unusedObjectsSearchResultGroup.NumberOfReferences == 0 )
+							result.Remove( unusedObjectsSearchResultGroup );
+					}
 				}
 			}
 			finally
@@ -208,97 +352,37 @@ namespace AssetUsageDetectorNamespace
 				m_searchParameters.searchInAssetsFolder = searchInAssetsFolder;
 				m_searchParameters.searchInAssetsSubset = searchInAssetsSubset;
 				m_searchParameters.searchInProjectSettings = searchInProjectSettings;
+				m_searchParameters.lazySceneSearch = lazySceneSearch;
+				m_searchParameters.calculateUnusedObjects = calculateUnusedObjects;
+				m_searchParameters.noAssetDatabaseChanges = _noAssetDatabaseChanges;
 			}
 		}
 
-		public void DrawOnGUI( SearchResultDrawParameters parameters )
+		public float DrawOnGUI( EditorWindow window, float scrollPosition, bool noAssetDatabaseChanges )
 		{
-			parameters.searchResult = this;
-			parameters.tooltip = null;
-			parameters.guiRect = EditorGUILayout.GetControlRect( Utilities.GL_EXPAND_WIDTH, Utilities.GL_HEIGHT_0 );
-
-			float guiInitialY = parameters.guiRect.y;
-
 			for( int i = 0; i < result.Count; i++ )
 			{
-				result[i].DrawOnGUI( parameters );
+				scrollPosition = result[i].DrawOnGUI( this, window, scrollPosition, noAssetDatabaseChanges );
 
 				if( i < result.Count - 1 )
-				{
-					Rect rect = parameters.guiRect;
-					rect.y += 10f;
-					parameters.guiRect = rect;
-				}
+					GUILayout.Space( 10f );
 			}
 
-			if( Event.current.type == EventType.Repaint )
-				guiHeight = parameters.guiRect.y - guiInitialY;
-
-			// To work nicely with GUILayout and scroll view
-			EditorGUILayout.GetControlRect( Utilities.GL_EXPAND_WIDTH, GUILayout.Height( guiHeight ) );
-
-			if( !string.IsNullOrEmpty( parameters.tooltip ) )
-			{
-				// Show tooltip at mouse position
-				Vector2 mousePos = Event.current.mousePosition;
-				Vector2 size = Utilities.TooltipGUIStyle.CalcSize( new GUIContent( parameters.tooltip ) );
-				size.x += 10f;
-
-				Rect tooltipRect = new Rect( new Vector2( mousePos.x - size.x * 0.5f, mousePos.y - size.y ), size );
-				if( tooltipRect.xMin < 0f )
-					tooltipRect.x -= tooltipRect.xMin;
-				else if( tooltipRect.xMax > parameters.guiRect.width )
-					tooltipRect.x -= tooltipRect.xMax - parameters.guiRect.width;
-
-				GUI.Box( tooltipRect, parameters.tooltip, Utilities.TooltipGUIStyle );
-			}
-
-			if( parameters.shouldRefreshEditorWindow )
-			{
-				parameters.shouldRefreshEditorWindow = false;
-
-				EditorWindow focusedWindow = EditorWindow.focusedWindow;
-				if( focusedWindow != null )
-					focusedWindow.Repaint();
-
-				EditorWindow mouseOverWindow = EditorWindow.mouseOverWindow;
-				if( mouseOverWindow != null && mouseOverWindow != focusedWindow )
-					mouseOverWindow.Repaint();
-			}
+			return scrollPosition;
 		}
 
-		public Object[] SelectAllAsObjects()
+		public int IndexOf( SearchResultGroup searchResult )
 		{
-			HashSet<Object> uniqueObjects = new HashSet<Object>();
-			for( int i = 0; i < result.Count; i++ )
-				result[i].AddObjectsTo( uniqueObjects );
-
-			if( uniqueObjects.Count > 0 )
-			{
-				Object[] objects = new Object[uniqueObjects.Count];
-				uniqueObjects.CopyTo( objects );
-
-				return objects;
-			}
-
-			return null;
+			return result.IndexOf( searchResult );
 		}
 
-		public GameObject[] SelectAllAsGameObjects()
+		public void CancelDelayedTreeViewTooltip()
 		{
-			HashSet<GameObject> uniqueGameObjects = new HashSet<GameObject>();
 			for( int i = 0; i < result.Count; i++ )
-				result[i].AddGameObjectsTo( uniqueGameObjects );
-
-			if( uniqueGameObjects.Count > 0 )
 			{
-				GameObject[] objects = new GameObject[uniqueGameObjects.Count];
-				uniqueGameObjects.CopyTo( objects );
-
-				return objects;
+				if( result[i].treeView != null )
+					result[i].treeView.CancelDelayedTooltip();
 			}
-
-			return null;
 		}
 
 		// Returns if RestoreInitialSceneSetup will have any effect on the current scene setup
@@ -346,7 +430,9 @@ namespace AssetUsageDetectorNamespace
 			if( !IsSceneSetupDifferentThanCurrentSetup() )
 				return true;
 
-			StringBuilder sb = new StringBuilder( 300 );
+			StringBuilder sb = Utilities.stringBuilder;
+			sb.Length = 0;
+
 			sb.AppendLine( "Restore initial scene setup?" );
 			for( int i = 0; i < initialSceneSetup.Length; i++ )
 				sb.AppendLine().Append( "- " ).Append( initialSceneSetup[i].path );
@@ -398,6 +484,7 @@ namespace AssetUsageDetectorNamespace
 		}
 
 		// Assembly reloading; serialize nodes in a way that Unity can serialize
+		// Credit: https://docs.unity3d.com/Manual/script-Serialization-Custom.html
 		void ISerializationCallbackReceiver.OnBeforeSerialize()
 		{
 			if( result == null )
@@ -416,12 +503,17 @@ namespace AssetUsageDetectorNamespace
 			Dictionary<ReferenceNode, int> nodeToIndex = new Dictionary<ReferenceNode, int>( result.Count * 16 );
 			for( int i = 0; i < result.Count; i++ )
 				serializedGroups.Add( result[i].Serialize( nodeToIndex, serializedNodes ) );
+
+			if( serializedUsedObjects == null || serializedUsedObjects.Length != UsedObjects.Count )
+				serializedUsedObjects = new Object[UsedObjects.Count];
+
+			UsedObjects.CopyTo( serializedUsedObjects );
 		}
 
 		// Assembly reloaded; deserialize nodes to construct the original graph
 		void ISerializationCallbackReceiver.OnAfterDeserialize()
 		{
-			if( serializedGroups == null || serializedNodes == null )
+			if( serializedGroups == null || serializedNodes == null || serializedUsedObjects == null )
 				return;
 
 			if( result == null )
@@ -442,450 +534,498 @@ namespace AssetUsageDetectorNamespace
 				result[i].Deserialize( serializedGroups[i], allNodes );
 			}
 
+			if( UsedObjects == null )
+				UsedObjects = new HashSet<Object>( serializedUsedObjects );
+			else
+				UsedObjects.UnionWith( serializedUsedObjects );
+
 			serializedNodes.Clear();
 			serializedGroups.Clear();
+			serializedUsedObjects = null;
 		}
+
+		IEnumerator IEnumerable.GetEnumerator() { return ( (IEnumerable) result ).GetEnumerator(); }
+		IEnumerator<SearchResultGroup> IEnumerable<SearchResultGroup>.GetEnumerator() { return ( (IEnumerable<SearchResultGroup>) result ).GetEnumerator(); }
 	}
 
 	// Custom class to hold the results for a single scene or Assets folder
-	public class SearchResultGroup
+	public class SearchResultGroup : IEnumerable<ReferenceNode>
 	{
-		public enum GroupType { Assets = 0, Scene = 1, DontDestroyOnLoad = 2, ProjectSettings = 3 };
+		public enum GroupType { Assets = 0, Scene = 1, DontDestroyOnLoad = 2, ProjectSettings = 3, UnusedObjects = 4 };
 
-		// Custom struct to hold a single path to a reference
-		public struct ReferencePath
-		{
-			public readonly ReferenceNode startNode;
-			public readonly int[] pathLinksToFollow;
+		private readonly List<ReferenceNode> references = new List<ReferenceNode>();
 
-			public ReferencePath( ReferenceNode startNode, int[] pathIndices )
-			{
-				this.startNode = startNode;
-				pathLinksToFollow = pathIndices;
-			}
-		}
-
-		private const float HEADER_HEIGHT = 40f;
+		internal SearchResultTreeView treeView;
+		internal SearchResultTreeViewState treeViewState;
+		private Rect lastTreeViewRect;
+		private SearchField treeViewSearchField;
 
 		public string Title { get; private set; }
 		public GroupType Type { get; private set; }
+		public string ScenePath { get; private set; }
 		public bool IsExpanded { get; private set; }
 		public bool PendingSearch { get; private set; }
-
-		private readonly List<ReferenceNode> references;
-		private List<ReferencePath> referencePathsShortUnique;
-		private List<ReferencePath> referencePathsShortest;
-
-		private float calculatedGUIWidth;
-		private float calculatedGUIHeight;
-		private PathDrawingMode calculatedGUIMode;
-		private ReferenceNodeGUI[] guiNodes;
 
 		public int NumberOfReferences { get { return references.Count; } }
 		public ReferenceNode this[int index] { get { return references[index]; } }
 
 		public SearchResultGroup( string title, GroupType type, bool isExpanded = true, bool pendingSearch = false )
 		{
-			Title = title;
+			Title = title.StartsWith( "<b>" ) ? title : string.Concat( "<b>", title, "</b>" );
+			ScenePath = type != GroupType.Scene ? null : ( title.StartsWith( "<b>" ) ? title.Substring( 3, title.Length - 7 ) : title );
 			Type = type;
 			IsExpanded = isExpanded;
 			PendingSearch = pendingSearch;
-
-			references = new List<ReferenceNode>();
-			referencePathsShortUnique = null;
-			referencePathsShortest = null;
-
-			calculatedGUIWidth = 0f;
-			guiNodes = null;
 		}
 
-		// Add a reference to the list
 		public void AddReference( ReferenceNode node )
 		{
 			references.Add( node );
 		}
 
+		public void RemoveReference( int index )
+		{
+			references.RemoveAt( index );
+		}
+
 		// Removes all nodes
 		public void Clear()
 		{
+			PendingSearch = false;
+
 			references.Clear();
 
-			if( referencePathsShortUnique != null )
-				referencePathsShortUnique.Clear();
-			if( referencePathsShortest != null )
-				referencePathsShortest.Clear();
-
-			PendingSearch = false;
-			calculatedGUIWidth = 0f;
-			guiNodes = null;
+			treeView = null;
+			treeViewState = null;
+			treeViewSearchField = null;
 		}
 
 		// Initializes commonly used variables of the nodes
-		public void InitializeNodes( Func<object, ReferenceNode> nodeGetter, HashSet<Object> objectsToSearchSet )
+		public void InitializeNodes( HashSet<Object> objectsToSearchSet )
 		{
-			// Remove root nodes that don't have any outgoing links or have null node objects (somehow)
+			List<ReferenceNode> _references = new List<ReferenceNode>( references );
+			references.Clear();
+
+			// Reverse the links of the search results graph so that the root ReferenceNodes are the searched objects
+			Dictionary<ReferenceNode, ReferenceNode> reverseGraphNodes = new Dictionary<ReferenceNode, ReferenceNode>( references.Count * 16 );
+			for( int i = 0; i < _references.Count; i++ )
+				_references[i].CreateReverseGraphRecursively( this, references, reverseGraphNodes, objectsToSearchSet );
+
+			// Remove weak links if they aren't ultimately connected to a non-weak link
+			HashSet<ReferenceNode> visitedNodes = new HashSet<ReferenceNode>();
+			for( int i = references.Count - 1; i >= 0; i-- )
+				references[i].RemoveRedundantLinksRecursively( visitedNodes );
+
+			// When a GameObject is a root node, then any components of that GameObject that are also root nodes should omit their links to the
+			// GameObject's node because otherwise, search results are filled with redundant 'GameObject->Its Component' references
+			HashSet<ReferenceNode> rootGameObjectNodes = new HashSet<ReferenceNode>();
 			for( int i = references.Count - 1; i >= 0; i-- )
 			{
-				if( references[i].NumberOfOutgoingLinks == 0 )
-					references.RemoveAtFast( i );
-				else
+				if( references[i].nodeObject as GameObject )
+					rootGameObjectNodes.Add( references[i] );
+			}
+
+			for( int i = references.Count - 1; i >= 0; i-- )
+			{
+				ReferenceNode node = references[i];
+				Component component = node.nodeObject as Component;
+				if( component )
 				{
-					object nodeObject = references[i].nodeObject;
-					if( nodeObject == null || nodeObject.Equals( null ) )
-						references.RemoveAtFast( i );
+					for( int j = node.NumberOfOutgoingLinks - 1; j >= 0; j-- )
+					{
+						if( ReferenceEquals( node[j].targetNode.nodeObject, component.gameObject ) && rootGameObjectNodes.Contains( node[j].targetNode ) )
+						{
+							node.RemoveLink( j );
+							break;
+						}
+					}
 				}
 			}
 
+			// Remove root nodes that don't have any outgoing links
 			for( int i = references.Count - 1; i >= 0; i-- )
 			{
-				references[i].VerifyLinksRecursively();
-
-				// Some links might be removed during verification
 				if( references[i].NumberOfOutgoingLinks == 0 )
-					references.RemoveAtFast( i );
+					references.RemoveAt( i );
 			}
 
-			if( references.Count == 0 )
-				return;
-
-			List<ReferenceNode> callStack = new List<ReferenceNode>( 8 );
-
-			// If this SearchResultGroup belongs to a scene, simplify the root nodes so that they go directly to either the searched objects or to an asset in a single link
-			if( Type == GroupType.Scene || Type == GroupType.DontDestroyOnLoad )
+			// Sort root nodes
+			if( references.Count > 1 )
 			{
-				Scene scene = references[0].nodeObject is GameObject ? ( (GameObject) references[0].nodeObject ).scene : ( (Component) references[0].nodeObject ).gameObject.scene;
-				HashSet<ReferenceNode> leafNodes = new HashSet<ReferenceNode>();
+				SearchResult.SortedEntry[] sortedEntries = new SearchResult.SortedEntry[references.Count];
 				for( int i = references.Count - 1; i >= 0; i-- )
-				{
-					references[i].GetLeafSceneNodesRecursive( scene, leafNodes, references[i], objectsToSearchSet, callStack );
+					sortedEntries[i] = new SearchResult.SortedEntry( references[i] );
 
-					if( leafNodes.Count > 0 )
-					{
-						references.RemoveAt( i );
-						foreach( ReferenceNode leafNode in leafNodes )
-							references.Add( leafNode );
+				Array.Sort( sortedEntries );
 
-						leafNodes.Clear();
-					}
-				}
+				for( int i = 0; i < sortedEntries.Length; i++ )
+					references[i] = (ReferenceNode) sortedEntries[i].entry;
 			}
 
-			// For simplicity's sake, get rid of root nodes that are already part of another node's hierarchy
 			for( int i = references.Count - 1; i >= 0; i-- )
 			{
-				if( IsRootNodePartOfAnotherRootNode( i, callStack ) )
-					references.RemoveAtFast( i );
-			}
-
-			// For clarity, a reference path shouldn't start with a sub-asset but instead with its corresponding main asset
-			for( int i = references.Count - 1; i >= 0; i-- )
-			{
-				object nodeObject = references[i].nodeObject;
-				if( nodeObject.IsAsset() && !AssetDatabase.IsMainAsset( (Object) nodeObject ) )
-				{
-					string assetPath = AssetDatabase.GetAssetPath( (Object) nodeObject );
-					if( string.IsNullOrEmpty( assetPath ) )
-						continue;
-
-					Object mainAsset = AssetDatabase.LoadMainAssetAtPath( assetPath );
-					if( mainAsset == null || mainAsset.Equals( null ) )
-						continue;
-
-					// We're already calling AssetDatabase.IsMainAsset but just in case...
-					if( ReferenceEquals( nodeObject, mainAsset ) )
-						continue;
-
-					if( nodeObject is Component && ( (Component) nodeObject ).gameObject == mainAsset )
-						continue;
-
-					// Get a ReferenceNode for the main asset, add a link to the sub-asset's node and change the root node
-					ReferenceNode newRootNode = nodeGetter( mainAsset );
-					newRootNode.AddLinkTo( references[i], ( nodeObject is Component || nodeObject is GameObject ) ? "Child object" : "Sub-asset" );
-					references[i] = newRootNode;
-
-					// Make sure that the new root node isn't already a part of another node's hierarchy
-					if( IsRootNodePartOfAnotherRootNode( i, callStack ) )
-						references.RemoveAtFast( i );
-				}
-			}
-
-			for( int i = 0; i < references.Count; i++ )
+				references[i].SortLinks(); // Sort immediate links of the root nodes
 				references[i].InitializeRecursively();
-		}
-
-		// Check if node exists in this results set
-		public bool Contains( ReferenceNode node )
-		{
-			for( int i = 0; i < references.Count; i++ )
-			{
-				if( references[i] == node )
-					return true;
-			}
-
-			return false;
-		}
-
-		private bool IsRootNodePartOfAnotherRootNode( int index, List<ReferenceNode> callStack )
-		{
-			ReferenceNode node = references[index];
-			for( int i = references.Count - 1; i >= 0; i-- )
-			{
-				if( index == i )
-					continue;
-
-				if( references[i].nodeObject == node.nodeObject || references[i].NodeExistsInChildrenRecursive( node, callStack ) )
-					return true;
-			}
-
-			return false;
-		}
-
-		// Add all the Object's in this container to the set
-		public void AddObjectsTo( HashSet<Object> objectsSet )
-		{
-			if( PendingSearch )
-				return;
-
-			CalculateShortestPathsToReferences();
-
-			for( int i = 0; i < referencePathsShortUnique.Count; i++ )
-			{
-				Object obj = referencePathsShortUnique[i].startNode.UnityObject;
-				if( obj != null && !obj.Equals( null ) )
-					objectsSet.Add( obj );
-			}
-		}
-
-		// Add all the GameObject's in this container to the set
-		public void AddGameObjectsTo( HashSet<GameObject> gameObjectsSet )
-		{
-			if( PendingSearch )
-				return;
-
-			CalculateShortestPathsToReferences();
-
-			for( int i = 0; i < referencePathsShortUnique.Count; i++ )
-			{
-				Object obj = referencePathsShortUnique[i].startNode.UnityObject;
-				if( obj != null && !obj.Equals( null ) )
-				{
-					if( obj is GameObject )
-						gameObjectsSet.Add( (GameObject) obj );
-					else if( obj is Component )
-						gameObjectsSet.Add( ( (Component) obj ).gameObject );
-				}
-			}
-		}
-
-		// Calculate short unique paths to the references
-		private void CalculateShortestPathsToReferences()
-		{
-			if( referencePathsShortUnique != null )
-				return;
-
-			referencePathsShortUnique = new List<ReferencePath>( 32 );
-			for( int i = 0; i < references.Count; i++ )
-				references[i].CalculateShortUniquePaths( referencePathsShortUnique, Type == GroupType.Scene || Type == GroupType.DontDestroyOnLoad );
-
-			referencePathsShortest = new List<ReferencePath>( referencePathsShortUnique.Count );
-			for( int i = 0; i < referencePathsShortUnique.Count; i++ )
-			{
-				int[] linksToFollow = referencePathsShortUnique[i].pathLinksToFollow;
-
-				// Find the last two nodes in this path
-				ReferenceNode nodeBeforeLast = referencePathsShortUnique[i].startNode;
-				for( int j = 0; j < linksToFollow.Length - 1; j++ )
-					nodeBeforeLast = nodeBeforeLast[linksToFollow[j]].targetNode;
-
-				// Check if these two nodes are unique
-				bool isUnique = true;
-				for( int j = 0; j < referencePathsShortest.Count; j++ )
-				{
-					ReferencePath path = referencePathsShortest[j];
-					if( path.startNode == nodeBeforeLast && path.pathLinksToFollow[0] == linksToFollow[linksToFollow.Length - 1] )
-					{
-						isUnique = false;
-						break;
-					}
-				}
-
-				if( isUnique )
-					referencePathsShortest.Add( new ReferencePath( nodeBeforeLast, new int[1] { linksToFollow[linksToFollow.Length - 1] } ) );
 			}
 		}
 
 		// Draw the results found for this container
-		public void DrawOnGUI( SearchResultDrawParameters parameters )
+		public float DrawOnGUI( SearchResult searchResult, EditorWindow window, float scrollPosition, bool noAssetDatabaseChanges )
 		{
-			if( Event.current.type == EventType.Repaint && ( guiNodes == null || parameters.pathDrawingMode != calculatedGUIMode || parameters.guiRect.width != calculatedGUIWidth ) )
-			{
-				GenerateGUINodes( parameters );
-				parameters.shouldRefreshEditorWindow = true; // A repaint is needed to work nicely with GUILayout
-			}
-
+			Event ev = Event.current;
 			Color c = GUI.backgroundColor;
-			GUI.backgroundColor = Color.cyan;
 
-			Rect rect = parameters.guiRect;
-			float width = rect.width;
-			rect.width = 40f;
-			rect.height = HEADER_HEIGHT;
-			if( GUI.Button( rect, IsExpanded ? "v" : ">" ) )
+			float headerHeight = EditorGUIUtility.singleLineHeight * 2f;
+			float refreshButtonWidth = 100f;
+
+			GUI.backgroundColor = AssetUsageDetectorSettings.SearchResultGroupHeaderColor;
+
+			Rect headerRect = EditorGUILayout.GetControlRect( false, headerHeight );
+			float width = headerRect.width;
+			headerRect.width = headerHeight;
+			if( GUI.Button( headerRect, IsExpanded ? "v" : ">" ) )
 			{
 				IsExpanded = !IsExpanded;
+				if( ev.alt && treeView != null )
+				{
+					if( !IsExpanded )
+						treeView.CollapseAll();
+					else
+						treeView.ExpandAll();
+				}
 
-				parameters.shouldRefreshEditorWindow = true;
+				window.Repaint();
 				GUIUtility.ExitGUI();
 			}
 
-			rect.x += 40f;
-			rect.width = width - ( parameters.searchResult != null ? 140f : 40f );
-			if( GUI.Button( rect, Title, Utilities.BoxGUIStyle ) && Type == GroupType.Scene )
+			headerRect.x += headerHeight;
+			headerRect.width = width - ( searchResult != null ? ( refreshButtonWidth + headerHeight ) : headerHeight );
+
+			if( GUI.Button( headerRect, Title, Utilities.BoxGUIStyle ) )
 			{
-				if( Event.current.button != 1 )
+				if( ev.button != 1 )
 				{
-					// If the container (scene, usually) is left clicked, highlight it on Project view
-					if( SearchResult.SelectClickedObjects )
-						AssetDatabase.LoadAssetAtPath<SceneAsset>( Title ).SelectInEditor();
-					else
-						AssetDatabase.LoadAssetAtPath<SceneAsset>( Title ).PingInEditor();
-				}
-				else if( !EditorApplication.isPlaying && EditorSceneManager.loadedSceneCount > 1 )
-				{
-					// Show context menu when SearchResultGroup's header is right clicked
-					Scene scene = EditorSceneManager.GetSceneByPath( Title );
-					if( scene.isLoaded )
+					if( Type == GroupType.Scene )
 					{
-						GenericMenu contextMenu = new GenericMenu();
-						contextMenu.AddItem( new GUIContent( "Close Scene" ), false, () =>
+						// If the container (scene, usually) is left clicked, highlight it on Project view
+						SceneAsset sceneAsset = AssetDatabase.LoadAssetAtPath<SceneAsset>( ScenePath );
+						if( sceneAsset )
 						{
-							if( !scene.isDirty || EditorSceneManager.SaveModifiedScenesIfUserWantsTo( new Scene[1] { scene } ) )
-								EditorSceneManager.CloseScene( scene, true );
-						} );
-						contextMenu.ShowAsContext();
+							if( AssetUsageDetectorSettings.PingClickedObjects )
+								EditorGUIUtility.PingObject( sceneAsset );
+							if( AssetUsageDetectorSettings.SelectClickedObjects )
+								Selection.activeObject = sceneAsset;
+						}
 					}
-				}
-			}
-
-			if( parameters.searchResult != null )
-			{
-				rect.x += width - 140f;
-				rect.width = 100f;
-				if( GUI.Button( rect, "Refresh" ) )
-				{
-					parameters.searchResult.RefreshSearchResultGroup( this, parameters.noAssetDatabaseChanges );
-					GUIUtility.ExitGUI();
-				}
-			}
-
-			rect = parameters.guiRect;
-			rect.y += HEADER_HEIGHT + 5f;
-
-			if( IsExpanded )
-			{
-				// On light skin, yellow background looks better than light grey background
-				GUI.backgroundColor = EditorGUIUtility.isProSkin ? c : Color.yellow;
-
-				if( PendingSearch )
-				{
-					rect.height = 25f;
-					GUI.Box( rect, "Lazy Search: this scene potentially has some references, hit Refresh to find them", Utilities.BoxGUIStyle );
-				}
-				else if( references.Count == 0 )
-				{
-					rect.height = 25f;
-					GUI.Box( rect, "No references found...", Utilities.BoxGUIStyle );
-				}
-				else if( guiNodes != null )
-				{
-					rect.height = calculatedGUIHeight;
-					parameters.guiRect = rect;
-
-					for( int i = 0; i < guiNodes.Length; i++ )
-						guiNodes[i].DrawOnGUI( parameters );
-				}
-
-				rect.y += rect.height;
-			}
-
-			parameters.guiRect = rect;
-			GUI.backgroundColor = c;
-		}
-
-		private void GenerateGUINodes( SearchResultDrawParameters parameters )
-		{
-			float guiRectWidth = parameters.guiRect.width;
-
-			if( guiNodes == null || parameters.pathDrawingMode != calculatedGUIMode )
-			{
-				if( parameters.pathDrawingMode == PathDrawingMode.Full )
-				{
-					List<ReferenceNode> stack = new List<ReferenceNode>( 8 );
-					guiNodes = new ReferenceNodeGUI[references.Count];
-
-					for( int i = 0; i < guiNodes.Length; i++ )
-						guiNodes[i] = references[i].GenerateGUINodeRecursive( stack, null );
 				}
 				else
 				{
-					if( referencePathsShortUnique == null )
-						CalculateShortestPathsToReferences();
+					GenericMenu contextMenu = new GenericMenu();
 
-					List<ReferencePath> pathsToDraw;
-					if( parameters.pathDrawingMode == PathDrawingMode.ShortRelevantParts )
-						pathsToDraw = referencePathsShortUnique;
-					else
-						pathsToDraw = referencePathsShortest;
+					if( searchResult != null )
+						contextMenu.AddItem( new GUIContent( "Hide" ), false, () => searchResult.RemoveSearchResultGroup( this ) );
 
-					guiNodes = new ReferenceNodeGUI[pathsToDraw.Count];
-
-					for( int i = 0; i < guiNodes.Length; i++ )
+					if( references.Count > 0 )
 					{
-						ReferencePath path = pathsToDraw[i];
-						ReferenceNode currentNode = path.startNode;
+						if( contextMenu.GetItemCount() > 0 )
+							contextMenu.AddSeparator( "" );
 
-						ReferenceNodeGUI currentNodeGUI = currentNode.GenerateGUINode( null );
-						guiNodes[i] = currentNodeGUI;
-
-						for( int j = 0; j < path.pathLinksToFollow.Length; j++ )
+						if( Type != GroupType.UnusedObjects )
 						{
-							ReferenceNode.Link link = currentNode[path.pathLinksToFollow[j]];
-							currentNodeGUI.links = new ReferenceNodeGUI[1] { link.targetNode.GenerateGUINode( link.description ) };
+							contextMenu.AddItem( new GUIContent( "Expand Direct References Only" ), false, () =>
+							{
+								treeView.ExpandDirectReferences();
+								IsExpanded = true;
+							} );
 
-							currentNode = link.targetNode;
-							currentNodeGUI = currentNodeGUI.links[0];
+							contextMenu.AddItem( new GUIContent( "Expand Main References Only" ), false, () =>
+							{
+								treeView.ExpandMainReferences();
+								IsExpanded = true;
+							} );
 						}
 
-						currentNodeGUI.links = new ReferenceNodeGUI[0];
+						if( !string.IsNullOrEmpty( treeViewState.searchTerm ) && treeViewState.searchMode == SearchResultTreeView.SearchMode.ReferencesOnly )
+						{
+							contextMenu.AddItem( new GUIContent( "Expand Matching Search Results Only" ), false, () =>
+							{
+								treeView.ExpandMatchingSearchResults();
+								IsExpanded = true;
+							} );
+						}
+
+						contextMenu.AddItem( new GUIContent( "Expand All" ), false, () =>
+						{
+							treeView.ExpandAll();
+							IsExpanded = true;
+						} );
+
+						contextMenu.AddItem( new GUIContent( "Collapse All" ), false, () =>
+						{
+							treeView.CollapseAll();
+							IsExpanded = true;
+						} );
+
+						if( searchResult != null && searchResult.NumberOfGroups > 1 && !string.IsNullOrEmpty( treeViewState.searchTerm ) )
+						{
+							if( contextMenu.GetItemCount() > 0 )
+								contextMenu.AddSeparator( "" );
+
+							contextMenu.AddItem( new GUIContent( "Apply Search to All Results" ), false, () =>
+							{
+								for( int i = 0; i < searchResult.NumberOfGroups; i++ )
+								{
+									if( searchResult[i].treeView == null )
+										continue;
+
+									string previousSearchTerm = searchResult[i].treeViewState.searchTerm ?? "";
+									SearchResultTreeView.SearchMode previousSearchMode = searchResult[i].treeViewState.searchMode;
+
+									searchResult[i].treeViewState.searchTerm = treeViewState.searchTerm ?? "";
+									searchResult[i].treeViewState.searchMode = treeViewState.searchMode;
+
+									if( treeViewState.searchTerm != previousSearchTerm || treeViewState.searchMode != previousSearchMode )
+										searchResult[i].treeView.RefreshSearch( previousSearchTerm );
+								}
+							} );
+						}
 					}
+
+					if( Type == GroupType.Scene && !EditorApplication.isPlaying && EditorSceneManager.loadedSceneCount > 1 )
+					{
+						// Show context menu when SearchResultGroup's header is right clicked
+						Scene scene = EditorSceneManager.GetSceneByPath( ScenePath );
+						if( scene.isLoaded )
+						{
+							if( contextMenu.GetItemCount() > 0 )
+								contextMenu.AddSeparator( "" );
+
+							contextMenu.AddItem( new GUIContent( "Close Scene" ), false, () =>
+							{
+								if( !scene.isDirty || EditorSceneManager.SaveModifiedScenesIfUserWantsTo( new Scene[1] { scene } ) )
+									EditorSceneManager.CloseScene( scene, true );
+							} );
+						}
+					}
+
+					contextMenu.ShowAsContext();
+				}
+			}
+
+			if( searchResult != null )
+			{
+				bool guiEnabled = GUI.enabled;
+				GUI.enabled = Type != GroupType.UnusedObjects;
+
+				headerRect.x += width - ( refreshButtonWidth + headerHeight );
+				headerRect.width = refreshButtonWidth;
+				if( GUI.Button( headerRect, "Refresh" ) )
+				{
+					searchResult.RefreshSearchResultGroup( this, noAssetDatabaseChanges );
+					GUIUtility.ExitGUI();
 				}
 
-				for( int i = 0; i < guiNodes.Length; i++ )
-					guiNodes[i].CalculateDepth();
+				GUI.enabled = guiEnabled;
 			}
 
-			calculatedGUIMode = parameters.pathDrawingMode;
-			calculatedGUIWidth = guiRectWidth;
+			GUI.backgroundColor = c;
 
-			calculatedGUIHeight = -5f; // will start from -5f + 5f = 0f
-			for( int i = 0; i < guiNodes.Length; i++ )
+			if( IsExpanded )
 			{
-				calculatedGUIHeight += 5f;
-				guiNodes[i].CalculateHeight( guiRectWidth );
-				guiNodes[i].CalculateOffset( new Vector2( 0f, calculatedGUIHeight ) );
-				calculatedGUIHeight += guiNodes[i].size.y;
+				if( PendingSearch )
+					GUILayout.Box( "Lazy Search: this scene potentially has some references, hit Refresh to find them", Utilities.BoxGUIStyle );
+				else if( references.Count == 0 )
+					GUILayout.Box( ( Type == GroupType.UnusedObjects ) ? "No unused objects left..." : "No references found...", Utilities.BoxGUIStyle );
+				else
+				{
+					if( Type == GroupType.UnusedObjects )
+					{
+						if( searchResult != null && searchResult.HasPendingLazySceneSearchResults )
+							EditorGUILayout.HelpBox( "Some scene(s) aren't searched yet (lazy scene search). Refreshing those scene(s) will automatically update this list.", MessageType.Warning );
+
+						if( searchResult != null && searchResult.SearchParameters.dontSearchInSourceAssets && searchResult.SearchParameters.objectsToSearch.Length > 1 )
+							EditorGUILayout.HelpBox( "'Don't search \"SEARCHED OBJECTS\" themselves for references' is enabled, some of these objects might be used by \"SEARCHED OBJECTS\".", MessageType.Warning );
+
+						EditorGUILayout.HelpBox( "Although no references to these objects are found, they might still be used somewhere (e.g. via Resources.Load). If you intend to delete these objects, consider creating a backup of your project first.", MessageType.Info );
+					}
+
+					if( treeView == null )
+					{
+						bool isFirstInitialization = ( treeViewState == null );
+						if( isFirstInitialization )
+							treeViewState = new SearchResultTreeViewState();
+
+						// This isn't inside isFirstInitialization because SearchResultTreeViewState might have been initialized by
+						// Unity's serialization system after a domain reload
+						bool shouldUpdateInitialTreeViewNodeId = ( treeViewState.initialNodeId == 0 && searchResult != null );
+						if( shouldUpdateInitialTreeViewNodeId )
+							treeViewState.initialNodeId = searchResult.nextTreeViewId;
+
+						treeView = new SearchResultTreeView( treeViewState, references, ( Type == GroupType.UnusedObjects ) ? SearchResultTreeView.TreeType.UnusedObjects : SearchResultTreeView.TreeType.Normal, searchResult != null ? searchResult.UsedObjects : null, searchResult != null && searchResult.SearchParameters.hideDuplicateRows, searchResult != null && searchResult.SearchParameters.hideReduntantPrefabVariantLinks, true );
+
+						if( isFirstInitialization )
+						{
+							if( Type != GroupType.UnusedObjects )
+								treeView.ExpandMainReferences();
+							else
+								treeView.ExpandAll();
+						}
+
+						if( shouldUpdateInitialTreeViewNodeId )
+							searchResult.nextTreeViewId = treeViewState.finalNodeId;
+					}
+
+					if( treeViewSearchField == null )
+					{
+						treeViewSearchField = new SearchField() { autoSetFocusOnFindCommand = false };
+						treeViewSearchField.downOrUpArrowKeyPressed += () => treeView.SetFocusAndEnsureSelectedItem(); // Not assigning SetFocusAndEnsureSelectedItem directly in case treeView's value changes
+					}
+
+					Rect searchFieldRect = EditorGUILayout.GetControlRect( false, EditorGUIUtility.singleLineHeight );
+					string previousSearchTerm = treeViewState.searchTerm ?? "";
+					SearchResultTreeView.SearchMode previousSearchMode = treeViewState.searchMode;
+					treeViewState.searchTerm = treeViewSearchField.OnToolbarGUI( new Rect( searchFieldRect.x, searchFieldRect.y, searchFieldRect.width - 100f, searchFieldRect.height ), treeViewState.searchTerm ) ?? "";
+					treeViewState.searchMode = (SearchResultTreeView.SearchMode) EditorGUI.EnumPopup( new Rect( searchFieldRect.xMax - 100f, searchFieldRect.y, 100f, searchFieldRect.height ), treeViewState.searchMode );
+					if( treeViewState.searchTerm != previousSearchTerm || treeViewState.searchMode != previousSearchMode )
+						treeView.RefreshSearch( previousSearchTerm );
+
+					KeyCode pressedKeyboardNavigationKey = KeyCode.None;
+					bool treeViewKeyboardNavigation = false;
+					if( ev.type == EventType.KeyDown )
+					{
+						pressedKeyboardNavigationKey = ev.keyCode;
+						switch( pressedKeyboardNavigationKey )
+						{
+							case KeyCode.UpArrow:
+							case KeyCode.DownArrow:
+							case KeyCode.LeftArrow:
+							case KeyCode.RightArrow:
+							case KeyCode.PageUp:
+							case KeyCode.PageDown:
+							case KeyCode.Home:
+							case KeyCode.End:
+							case KeyCode.F: treeViewKeyboardNavigation = true; break;
+						}
+
+						SearchResultTooltip.Hide();
+					}
+					else if( ( ev.type == EventType.ValidateCommand || ev.type == EventType.ExecuteCommand ) && ev.commandName == "Find" && treeView.HasFocus() )
+					{
+						if( ev.type == EventType.ExecuteCommand )
+						{
+							treeViewSearchField.SetFocus();
+
+							// Framed rect padding: Top = 2, Bottom = 2 + the first element in the TreeView
+							scrollPosition = FrameRectInScrollView( scrollPosition, new Vector2( searchFieldRect.y - 2f, searchFieldRect.yMax + EditorGUIUtility.singleLineHeight + 2f ), window.position.height );
+							window.Repaint();
+
+							SearchResultTooltip.Hide();
+						}
+
+						ev.Use();
+					}
+					else if( ev.type == EventType.ScrollWheel )
+						SearchResultTooltip.Hide();
+
+					bool isFirstRowSelected = false, isLastRowSelected = false, isSelectedRowExpanded = false, canExpandSelectedRow = false;
+					if( treeViewKeyboardNavigation && treeView.HasFocus() && treeView.HasSelection() )
+						treeView.GetRowStateWithId( treeViewState.lastClickedID, out isFirstRowSelected, out isLastRowSelected, out isSelectedRowExpanded, out canExpandSelectedRow );
+
+					Rect treeViewRect = EditorGUILayout.GetControlRect( false, treeView.totalHeight );
+					if( ev.type == EventType.Repaint )
+					{
+						lastTreeViewRect = treeViewRect;
+
+#if !UNITY_2018_2_OR_NEWER
+						// TreeView calls RowGUI for all rows instead of only the visible rows on early Unity versions which leads to performance issues. Do manual row culling on those versions
+						// Credit: https://github.com/Unity-Technologies/UnityCsReference/blob/a048de916b23331bf6dfe92c4a6c205989b83b4f/Editor/Mono/GUI/TreeView/TreeViewGUI.cs#L273-L276
+						float topPixel = scrollPosition - treeViewRect.y;
+						float heightInPixels = window.position.height;
+						treeView.visibleRowTop = (int) Mathf.Floor( topPixel / treeView.rowHeight );
+						treeView.visibleRowBottom = treeView.visibleRowTop + (int) Mathf.Ceil( heightInPixels / treeView.rowHeight );
+#endif
+					}
+
+					treeView.OnGUI( treeViewRect );
+
+					if( treeViewKeyboardNavigation && treeView.HasFocus() && treeView.HasSelection() )
+					{
+						Rect targetTreeViewRowRect;
+						if( treeView.GetRowRectWithId( treeViewState.lastClickedID, out targetTreeViewRowRect ) )
+						{
+							// Allow keyboard navigation between different SearchResultGroups' TreeViews
+							Rect targetTreeViewRect = lastTreeViewRect;
+							if( !ev.control && !ev.command && !ev.shift )
+							{
+								if( isFirstRowSelected && ( pressedKeyboardNavigationKey == KeyCode.UpArrow || pressedKeyboardNavigationKey == KeyCode.PageUp || pressedKeyboardNavigationKey == KeyCode.Home || ( pressedKeyboardNavigationKey == KeyCode.LeftArrow && !isSelectedRowExpanded ) ) )
+								{
+									int searchResultGroupIndex = searchResult.IndexOf( this );
+									for( int i = searchResultGroupIndex - 1; i >= 0; i-- )
+									{
+										if( !searchResult[i].PendingSearch && searchResult[i].IsExpanded && searchResult[i].references.Count > 0 )
+										{
+											searchResult[i].treeView.SetFocus();
+
+											targetTreeViewRect = searchResult[i].lastTreeViewRect;
+											targetTreeViewRowRect = searchResult[i].treeView.SelectLastRowAndReturnRect();
+
+											break;
+										}
+									}
+								}
+								else if( isLastRowSelected && ( pressedKeyboardNavigationKey == KeyCode.DownArrow || pressedKeyboardNavigationKey == KeyCode.PageDown || pressedKeyboardNavigationKey == KeyCode.End || ( pressedKeyboardNavigationKey == KeyCode.RightArrow && !canExpandSelectedRow ) ) )
+								{
+									int searchResultGroupIndex = searchResult.IndexOf( this );
+									for( int i = searchResultGroupIndex + 1; i < searchResult.NumberOfGroups; i++ )
+									{
+										if( !searchResult[i].PendingSearch && searchResult[i].IsExpanded && searchResult[i].references.Count > 0 )
+										{
+											searchResult[i].treeView.SetFocus();
+
+											targetTreeViewRect = searchResult[i].lastTreeViewRect;
+											targetTreeViewRowRect = searchResult[i].treeView.SelectFirstRowAndReturnRect();
+
+											break;
+										}
+									}
+								}
+							}
+
+							// When key event isn't automatically used by the focused TreeView (happens when its search results are empty), if we navigate to
+							// a new TreeView, key event will be consumed by that TreeView and hence, keyboard navigation will occur twice
+							if( ev.type != EventType.Used )
+								ev.Use();
+
+							float scrollTop = targetTreeViewRect.y + targetTreeViewRowRect.y;
+							float scrollBottom = targetTreeViewRect.y + targetTreeViewRowRect.yMax;
+
+							scrollPosition = FrameRectInScrollView( scrollPosition, new Vector2( scrollTop, scrollBottom ), window.position.height );
+							window.Repaint();
+						}
+					}
+				}
 			}
+
+			return scrollPosition;
+		}
+
+		// Frame selection (it isn't handled automatically when using an external scroll view)
+		// Credit: https://github.com/Unity-Technologies/UnityCsReference/blob/d0fe81a19ce788fd1d94f826cf797aafc37db8ea/Editor/Mono/GUI/TreeView/TreeViewController.cs#L1329-L1351
+		private float FrameRectInScrollView( float scrollPosition, Vector2 rectBounds, float windowHeight )
+		{
+			return Mathf.Clamp( scrollPosition, rectBounds.y - windowHeight, rectBounds.x );
 		}
 
 		// Serialize this result group
-		public SearchResult.SerializableResultGroup Serialize( Dictionary<ReferenceNode, int> nodeToIndex, List<SearchResult.SerializableNode> serializedNodes )
+		internal SearchResult.SerializableResultGroup Serialize( Dictionary<ReferenceNode, int> nodeToIndex, List<SearchResult.SerializableNode> serializedNodes )
 		{
 			SearchResult.SerializableResultGroup serializedResultGroup = new SearchResult.SerializableResultGroup()
 			{
 				title = Title,
 				type = Type,
 				isExpanded = IsExpanded,
-				pendingSearch = PendingSearch
+				pendingSearch = PendingSearch,
+				treeViewState = treeViewState
 			};
 
 			if( references != null )
@@ -900,31 +1040,44 @@ namespace AssetUsageDetectorNamespace
 		}
 
 		// Deserialize this result group from the serialized data
-		public void Deserialize( SearchResult.SerializableResultGroup serializedResultGroup, List<ReferenceNode> allNodes )
+		internal void Deserialize( SearchResult.SerializableResultGroup serializedResultGroup, List<ReferenceNode> allNodes )
 		{
+			treeViewState = serializedResultGroup.treeViewState;
+
 			if( serializedResultGroup.initialSerializedNodes != null )
 			{
 				for( int i = 0; i < serializedResultGroup.initialSerializedNodes.Count; i++ )
 					references.Add( allNodes[serializedResultGroup.initialSerializedNodes[i]] );
 			}
-
-			referencePathsShortUnique = null;
-			referencePathsShortest = null;
 		}
+
+		IEnumerator IEnumerable.GetEnumerator() { return ( (IEnumerable) references ).GetEnumerator(); }
+		IEnumerator<ReferenceNode> IEnumerable<ReferenceNode>.GetEnumerator() { return ( (IEnumerable<ReferenceNode>) references ).GetEnumerator(); }
 	}
 
 	// Custom class to hold an object in the path to a reference as a node
 	public class ReferenceNode
 	{
-		public struct Link
+		internal enum UsedState { Unused, MixedCollapsed, MixedExpanded, Used };
+
+		public class Link
 		{
 			public readonly ReferenceNode targetNode;
-			public readonly string description;
+			public readonly List<string> descriptions;
+			public bool isWeakLink; // Weak links can be omitted from search results if this ReferenceNode isn't referenced by any other node
 
-			public Link( ReferenceNode targetNode, string description )
+			public Link( ReferenceNode targetNode, string description, bool isWeakLink )
 			{
 				this.targetNode = targetNode;
-				this.description = description;
+				this.descriptions = string.IsNullOrEmpty( description ) ? new List<string>() : new List<string>( 1 ) { description };
+				this.isWeakLink = isWeakLink;
+			}
+
+			public Link( ReferenceNode targetNode, List<string> descriptions, bool isWeakLink )
+			{
+				this.targetNode = targetNode;
+				this.descriptions = descriptions;
+				this.isWeakLink = isWeakLink;
 			}
 		}
 
@@ -932,25 +1085,27 @@ namespace AssetUsageDetectorNamespace
 		private static int uid_last = 0;
 		private readonly int uid;
 
+		public string Label { get; private set; }
+		public bool IsMainReference { get; private set; } // True: if belongs to a scene search result group, then it's an object in that scene. If belongs to the assets search result group, then it's an asset
+
 		internal object nodeObject;
 		private int? instanceId; // instanceId of the nodeObject if it is a Unity object, null otherwise
-		private string description; // String to print on this node
-
-		private readonly List<Link> links;
-
 		public Object UnityObject { get { return instanceId.HasValue ? EditorUtility.InstanceIDToObject( instanceId.Value ) : null; } }
 
+		private readonly List<Link> links = new List<Link>( 2 );
 		public int NumberOfOutgoingLinks { get { return links.Count; } }
 		public Link this[int index] { get { return links[index]; } }
 
+		internal UsedState usedState;
+
 		public ReferenceNode()
 		{
-			links = new List<Link>( 2 );
 			uid = uid_last++;
+			usedState = UsedState.Used;
 		}
 
 		// Add a one-way connection to another node
-		public void AddLinkTo( ReferenceNode nextNode, string description = null )
+		public void AddLinkTo( ReferenceNode nextNode, string description = null, bool isWeakLink = false )
 		{
 			if( nextNode != null && nextNode != this )
 			{
@@ -962,161 +1117,80 @@ namespace AssetUsageDetectorNamespace
 				{
 					if( links[i].targetNode == nextNode )
 					{
-						if( !string.IsNullOrEmpty( description ) )
-						{
-							if( !string.IsNullOrEmpty( links[i].description ) )
-							{
-								// Avoid duplicate descriptions
-								if( !links[i].description.Contains( description ) )
-									links[i] = new Link( links[i].targetNode, string.Concat( links[i].description, Environment.NewLine, description ) );
-							}
-							else
-								links[i] = new Link( links[i].targetNode, description );
-						}
+						if( !string.IsNullOrEmpty( description ) && !links[i].descriptions.Contains( description ) )
+							links[i].descriptions.Add( description );
 
+						links[i].isWeakLink &= isWeakLink;
 						return;
 					}
 				}
 
-				links.Add( new Link( nextNode, description ) );
+				links.Add( new Link( nextNode, description, isWeakLink ) );
 			}
+		}
+
+		public void RemoveLink( int index )
+		{
+			links.RemoveAt( index );
+		}
+
+		public bool RemoveLink( ReferenceNode nextNode )
+		{
+			for( int i = links.Count - 1; i >= 0; i-- )
+			{
+				if( links[i].targetNode == nextNode )
+				{
+					links.RemoveAt( i );
+					return true;
+				}
+			}
+
+			return false;
+		}
+
+		public void SortLinks()
+		{
+			if( links.Count > 1 )
+			{
+				SearchResult.SortedEntry[] sortedEntries = new SearchResult.SortedEntry[links.Count];
+				for( int i = links.Count - 1; i >= 0; i-- )
+					sortedEntries[i] = new SearchResult.SortedEntry( links[i] );
+
+				Array.Sort( sortedEntries );
+
+				for( int i = 0; i < sortedEntries.Length; i++ )
+					links[i] = (Link) sortedEntries[i].entry;
+			}
+		}
+
+		internal bool HasLinkToObjectWithDescriptions( int instanceId, List<string> descriptions )
+		{
+			for( int i = links.Count - 1; i >= 0; i-- )
+			{
+				Link link = links[i];
+				if( link.targetNode.instanceId == instanceId )
+				{
+					List<string> _descriptions = link.descriptions;
+					if( _descriptions.Count != descriptions.Count )
+						return false;
+
+					for( int j = _descriptions.Count - 1; j >= 0; j-- )
+					{
+						if( _descriptions[j] != descriptions[j] )
+							return false;
+					}
+
+					return true;
+				}
+			}
+
+			return false;
 		}
 
 		public void CopyReferencesTo( ReferenceNode other )
 		{
 			other.links.Clear();
 			other.links.AddRange( links );
-		}
-
-		// Remove any redundant connections that this node has
-		public void VerifyLinksRecursively()
-		{
-			// Make sure that this functions isn't called multiple times per node (avoids StackOverflowException)
-			if( description != null )
-				return;
-
-			description = "";
-
-			for( int i = links.Count - 1; i >= 0; i-- )
-			{
-				// Links from a GameObject to its components should be omitted if the component has no references (these are redundant links)
-				if( links[i].targetNode.links.Count == 0 && nodeObject is GameObject )
-				{
-					Component component = links[i].targetNode.nodeObject as Component;
-					if( component != null && !component.Equals( null ) && component.gameObject == (GameObject) nodeObject )
-					{
-						links.RemoveAtFast( i );
-						continue;
-					}
-				}
-
-				links[i].targetNode.VerifyLinksRecursively();
-			}
-
-			description = null;
-		}
-
-		// Initialize node's commonly used variables
-		public void InitializeRecursively()
-		{
-			if( description != null ) // Already initialized
-				return;
-
-			Object unityObject = nodeObject as Object;
-			if( unityObject != null )
-			{
-				instanceId = unityObject.GetInstanceID();
-				description = unityObject.name + " (" + unityObject.GetType() + ")";
-			}
-			else if( nodeObject != null )
-			{
-				instanceId = null;
-				description = nodeObject.GetType() + " object";
-			}
-			else
-			{
-				instanceId = null;
-				description = "<<destroyed>>";
-			}
-
-			nodeObject = null; // Don't hold Object reference, allow Unity to GC used memory
-
-			for( int i = 0; i < links.Count; i++ )
-				links[i].targetNode.InitializeRecursively();
-		}
-
-		// Finds all leaf nodes that originate from this node and have GameObject/Component node objects in the specified scene
-		public void GetLeafSceneNodesRecursive( Scene scene, HashSet<ReferenceNode> leafNodes, ReferenceNode latestSceneObjectNode, HashSet<Object> objectsToSearchSet, List<ReferenceNode> callStack )
-		{
-			if( links.Count == 0 || callStack.ContainsFast( this ) || ( nodeObject is Object && objectsToSearchSet.Contains( (Object) nodeObject ) ) ) // This is a searched object's node
-			{
-				leafNodes.Add( latestSceneObjectNode );
-				return;
-			}
-
-			Object unityObject = nodeObject as Object;
-			if( unityObject != null )
-			{
-				if( AssetDatabase.Contains( unityObject ) )
-				{
-					leafNodes.Add( latestSceneObjectNode );
-					return;
-				}
-				else if( unityObject is Component )
-				{
-					if( ( (Component) unityObject ).gameObject.scene == scene )
-						latestSceneObjectNode = this;
-					else
-					{
-						leafNodes.Add( latestSceneObjectNode );
-						return;
-					}
-				}
-				else if( unityObject is GameObject )
-				{
-					if( ( (GameObject) unityObject ).scene == scene )
-						latestSceneObjectNode = this;
-					else
-					{
-						leafNodes.Add( latestSceneObjectNode );
-						return;
-					}
-				}
-			}
-
-			callStack.Add( this );
-
-			for( int i = 0; i < links.Count; i++ )
-				links[i].targetNode.GetLeafSceneNodesRecursive( scene, leafNodes, latestSceneObjectNode, objectsToSearchSet, callStack );
-
-			callStack.RemoveAt( callStack.Count - 1 );
-		}
-
-		// Returns whether or not specified node is part of this node's siblings
-		public bool NodeExistsInChildrenRecursive( ReferenceNode node, List<ReferenceNode> callStack )
-		{
-			if( callStack.ContainsFast( this ) )
-				return false;
-
-			for( int i = 0; i < links.Count; i++ )
-			{
-				if( links[i].targetNode == node )
-					return true;
-			}
-
-			callStack.Add( this );
-
-			for( int i = 0; i < links.Count; i++ )
-			{
-				if( links[i].targetNode.NodeExistsInChildrenRecursive( node, callStack ) )
-				{
-					callStack.RemoveAt( callStack.Count - 1 );
-					return true;
-				}
-			}
-
-			callStack.RemoveAt( callStack.Count - 1 );
-			return false;
 		}
 
 		// Clear this node so that it can be reused later
@@ -1126,105 +1200,136 @@ namespace AssetUsageDetectorNamespace
 			links.Clear();
 		}
 
-		// Calculate short unique paths that start with this node
-		public void CalculateShortUniquePaths( List<SearchResultGroup.ReferencePath> currentPaths, bool startPathsWithSceneObjects )
+		public void InitializeRecursively()
 		{
-			CalculateShortUniquePaths( currentPaths, startPathsWithSceneObjects, new List<ReferenceNode>( 8 ), new List<int>( 8 ) { -1 }, 0, new List<ReferenceNode>( 8 ) );
+			if( Label != null ) // Already initialized
+				return;
+
+			Object unityObject = nodeObject as Object;
+			if( unityObject != null )
+			{
+				instanceId = unityObject.GetInstanceID();
+				Label = unityObject.name + " (" + unityObject.GetType().Name + ")";
+			}
+			else if( nodeObject != null )
+			{
+				instanceId = null;
+				Label = nodeObject.GetType() + " object";
+			}
+			else
+			{
+				instanceId = null;
+				Label = "<<destroyed>>";
+			}
+
+			nodeObject = null; // Don't hold Object reference, allow Unity to GC used memory
+
+			for( int i = 0; i < links.Count; i++ )
+				links[i].targetNode.InitializeRecursively();
 		}
 
-		// Just some boring calculations to find the short unique paths recursively
-		private void CalculateShortUniquePaths( List<SearchResultGroup.ReferencePath> shortestPaths, bool startPathsWithSceneObjects, List<ReferenceNode> currentPath, List<int> currentPathIndices, int latestObjectIndexInPath, List<ReferenceNode> stack )
+		public ReferenceNode CreateReverseGraphRecursively( SearchResultGroup searchResultGroup, List<ReferenceNode> reverseGraphRoots, Dictionary<ReferenceNode, ReferenceNode> reverseGraphNodes, HashSet<Object> objectsToSearchSet )
 		{
-			int currentIndex = currentPath.Count;
-			currentPath.Add( this );
-
-			if( links.Count == 0 || stack.ContainsFast( this ) )
+			ReferenceNode result;
+			if( !reverseGraphNodes.TryGetValue( this, out result ) )
 			{
-				// Check if the path to the reference is unique (not discovered so far)
-				bool isUnique = true;
-				for( int i = 0; i < shortestPaths.Count; i++ )
-				{
-					if( shortestPaths[i].startNode == currentPath[latestObjectIndexInPath] && shortestPaths[i].pathLinksToFollow.Length == currentPathIndices.Count - latestObjectIndexInPath - 1 )
-					{
-						int j = latestObjectIndexInPath + 1;
-						for( int k = 0; j < currentPathIndices.Count; j++, k++ )
-						{
-							if( shortestPaths[i].pathLinksToFollow[k] != currentPathIndices[j] )
-								break;
-						}
+				reverseGraphNodes[this] = result = new ReferenceNode() { nodeObject = nodeObject };
 
-						if( j == currentPathIndices.Count )
+				Object obj = nodeObject as Object;
+				if( obj && objectsToSearchSet.Contains( obj ) )
+					reverseGraphRoots.Add( result );
+				//else // When 'else' is uncommented, 'Don't search "Find referenced of" themselves for references" option simply does nothing. I am not entirely sure if commenting it out will have any side effects, so fingers crossed?
+				{
+					for( int i = 0; i < links.Count; i++ )
+					{
+						ReferenceNode linkedNode = links[i].targetNode.CreateReverseGraphRecursively( searchResultGroup, reverseGraphRoots, reverseGraphNodes, objectsToSearchSet );
+						linkedNode.links.Add( new Link( result, links[i].descriptions, links[i].isWeakLink ) );
+					}
+				}
+
+				if( obj )
+				{
+					if( obj is Component )
+						obj = ( (Component) obj ).gameObject;
+
+					switch( searchResultGroup.Type )
+					{
+						case SearchResultGroup.GroupType.Assets: result.IsMainReference = obj.IsAsset() && ( obj is GameObject || ( obj.hideFlags & ( HideFlags.HideInInspector | HideFlags.HideInHierarchy ) ) == HideFlags.None ); break;
+						case SearchResultGroup.GroupType.ProjectSettings: result.IsMainReference = obj.IsAsset() && AssetDatabase.GetAssetPath( obj ).StartsWith( "ProjectSettings/" ); break;
+						case SearchResultGroup.GroupType.Scene:
+						case SearchResultGroup.GroupType.DontDestroyOnLoad:
 						{
-							isUnique = false;
+							if( obj is GameObject )
+							{
+								Scene scene = ( (GameObject) obj ).scene;
+								if( scene.IsValid() )
+									result.IsMainReference = ( searchResultGroup.Type == SearchResultGroup.GroupType.Scene ) ? scene.path == searchResultGroup.ScenePath : scene.name == "DontDestroyOnLoad";
+							}
+
 							break;
 						}
 					}
 				}
-
-				// Don't allow duplicate short paths
-				if( isUnique )
-				{
-					int[] pathIndices = new int[currentPathIndices.Count - latestObjectIndexInPath - 1];
-					for( int i = latestObjectIndexInPath + 1, j = 0; i < currentPathIndices.Count; i++, j++ )
-						pathIndices[j] = currentPathIndices[i];
-
-					shortestPaths.Add( new SearchResultGroup.ReferencePath( currentPath[latestObjectIndexInPath], pathIndices ) );
-				}
-			}
-			else
-			{
-				if( instanceId.HasValue ) // nodeObject is Unity object
-				{
-					if( !startPathsWithSceneObjects || !AssetDatabase.Contains( instanceId.Value ) )
-						latestObjectIndexInPath = currentIndex;
-				}
-
-				for( int i = 0; i < links.Count; i++ )
-				{
-					currentPathIndices.Add( i );
-					stack.Add( this );
-
-					links[i].targetNode.CalculateShortUniquePaths( shortestPaths, startPathsWithSceneObjects, currentPath, currentPathIndices, latestObjectIndexInPath, stack );
-
-					stack.RemoveAt( stack.Count - 1 );
-					currentPathIndices.RemoveAt( currentIndex + 1 );
-				}
 			}
 
-			currentPath.RemoveAt( currentIndex );
+			return result;
 		}
 
-		public ReferenceNodeGUI GenerateGUINode( string linkToPrevNodeDescription )
+		public void RemoveRedundantLinksRecursively( HashSet<ReferenceNode> visitedNodes )
 		{
-			return new ReferenceNodeGUI()
+			if( !visitedNodes.Add( this ) )
+				return;
+
+			List<ReferenceNode> stack = null;
+			for( int i = links.Count - 1; i >= 0; i-- )
 			{
-				label = new GUIContent( string.IsNullOrEmpty( linkToPrevNodeDescription ) ? description : ( linkToPrevNodeDescription + "\n" + description ) ),
-				instanceId = instanceId
-			};
-		}
+				if( !links[i].isWeakLink )
+					continue;
 
-		public ReferenceNodeGUI GenerateGUINodeRecursive( List<ReferenceNode> stack, string linkToPrevNodeDescription )
-		{
-			ReferenceNodeGUI guiNode = GenerateGUINode( linkToPrevNodeDescription );
+				if( links[i].targetNode.links.Count == 0 )
+					links.RemoveAt( i );
+				else
+				{
+					if( stack == null )
+						stack = new List<ReferenceNode>( 2 );
+					else
+						stack.Clear();
 
-			if( stack.ContainsFast( this ) )
-				guiNode.links = new ReferenceNodeGUI[0];
-			else
-			{
-				stack.Add( this );
-
-				guiNode.links = new ReferenceNodeGUI[links.Count];
-				for( int i = 0; i < links.Count; i++ )
-					guiNode.links[i] = links[i].targetNode.GenerateGUINodeRecursive( stack, links[i].description );
-
-				stack.RemoveAt( stack.Count - 1 );
+					if( !links[i].targetNode.CheckForNonWeakLinksRecursively( stack ) )
+						links.RemoveAt( i );
+				}
 			}
 
-			return guiNode;
+			for( int i = links.Count - 1; i >= 0; i-- )
+				links[i].targetNode.RemoveRedundantLinksRecursively( visitedNodes );
+		}
+
+		private bool CheckForNonWeakLinksRecursively( List<ReferenceNode> stack )
+		{
+			if( stack.Contains( this ) || links.Count == 0 )
+				return false;
+
+			for( int i = links.Count - 1; i >= 0; i-- )
+			{
+				if( !links[i].isWeakLink )
+					return true;
+			}
+
+			stack.Add( this );
+
+			for( int i = links.Count - 1; i >= 0; i-- )
+			{
+				if( links[i].targetNode.CheckForNonWeakLinksRecursively( stack ) )
+					return true;
+			}
+
+			stack.RemoveAt( stack.Count - 1 );
+
+			return false;
 		}
 
 		// Serialize this node and its connected nodes recursively
-		public int SerializeRecursively( Dictionary<ReferenceNode, int> nodeToIndex, List<SearchResult.SerializableNode> serializedNodes )
+		internal int SerializeRecursively( Dictionary<ReferenceNode, int> nodeToIndex, List<SearchResult.SerializableNode> serializedNodes )
 		{
 			int index;
 			if( nodeToIndex.TryGetValue( this, out index ) )
@@ -1232,9 +1337,11 @@ namespace AssetUsageDetectorNamespace
 
 			SearchResult.SerializableNode serializedNode = new SearchResult.SerializableNode()
 			{
+				label = Label,
+				isMainReference = IsMainReference,
 				instanceId = instanceId ?? 0,
 				isUnityObject = instanceId.HasValue,
-				description = description
+				usedState = usedState
 			};
 
 			index = serializedNodes.Count;
@@ -1244,12 +1351,14 @@ namespace AssetUsageDetectorNamespace
 			if( links.Count > 0 )
 			{
 				serializedNode.links = new List<int>( links.Count );
-				serializedNode.linkDescriptions = new List<string>( links.Count );
+				serializedNode.linkDescriptions = new List<SearchResult.SerializableNode.SerializableLinkDescriptions>( links.Count );
+				serializedNode.linkWeakStates = new List<bool>( links.Count );
 
 				for( int i = 0; i < links.Count; i++ )
 				{
 					serializedNode.links.Add( links[i].targetNode.SerializeRecursively( nodeToIndex, serializedNodes ) );
-					serializedNode.linkDescriptions.Add( links[i].description );
+					serializedNode.linkDescriptions.Add( new SearchResult.SerializableNode.SerializableLinkDescriptions() { value = links[i].descriptions } );
+					serializedNode.linkWeakStates.Add( links[i].isWeakLink );
 				}
 			}
 
@@ -1257,119 +1366,27 @@ namespace AssetUsageDetectorNamespace
 		}
 
 		// Deserialize this node and its links from the serialized data
-		public void Deserialize( SearchResult.SerializableNode serializedNode, List<ReferenceNode> allNodes )
+		internal void Deserialize( SearchResult.SerializableNode serializedNode, List<ReferenceNode> allNodes )
 		{
 			if( serializedNode.isUnityObject )
 				instanceId = serializedNode.instanceId;
 			else
 				instanceId = null;
 
-			description = serializedNode.description;
+			Label = serializedNode.label;
+			IsMainReference = serializedNode.isMainReference;
+			usedState = serializedNode.usedState;
 
 			if( serializedNode.links != null )
 			{
 				for( int i = 0; i < serializedNode.links.Count; i++ )
-					links.Add( new Link( allNodes[serializedNode.links[i]], serializedNode.linkDescriptions[i] ) );
+					links.Add( new Link( allNodes[serializedNode.links[i]], serializedNode.linkDescriptions[i].value, serializedNode.linkWeakStates[i] ) );
 			}
 		}
 
 		public override int GetHashCode()
 		{
 			return uid;
-		}
-	}
-
-	public class ReferenceNodeGUI
-	{
-		public GUIContent label;
-		public ReferenceNodeGUI[] links;
-		public int? instanceId;
-
-		private int depth;
-
-		private Vector2 offset;
-		public Vector2 size;
-
-		public void CalculateDepth()
-		{
-			depth = 0;
-
-			for( int i = 0; i < links.Length; i++ )
-			{
-				links[i].CalculateDepth();
-				if( links[i].depth > depth )
-					depth = links[i].depth;
-			}
-
-			depth++;
-		}
-
-		public void CalculateHeight( float totalWidth )
-		{
-			size.x = totalWidth / depth;
-			totalWidth -= size.x;
-			size.y = Utilities.BoxGUIStyle.CalcHeight( label, size.x );
-			float connectedNodesHeight = 0f;
-			for( int i = 0; i < links.Length; i++ )
-			{
-				links[i].CalculateHeight( totalWidth );
-				connectedNodesHeight += links[i].size.y;
-			}
-
-			if( size.y < connectedNodesHeight )
-				size.y = connectedNodesHeight;
-			else if( size.y > connectedNodesHeight )
-				ExpandHeightLeftToRight();
-		}
-
-		private void ExpandHeightLeftToRight()
-		{
-			float connectedNodesHeight = 0f;
-			for( int i = 0; i < links.Length; i++ )
-				connectedNodesHeight += links[i].size.y;
-
-			if( size.y > connectedNodesHeight )
-			{
-				for( int i = 0; i < links.Length; i++ )
-				{
-					links[i].size.y = size.y * links[i].size.y / connectedNodesHeight;
-					links[i].ExpandHeightLeftToRight();
-				}
-			}
-		}
-
-		public void CalculateOffset( Vector2 baseOffset )
-		{
-			offset = baseOffset;
-			baseOffset.x += size.x;
-
-			for( int i = 0; i < links.Length; i++ )
-			{
-				links[i].CalculateOffset( baseOffset );
-				baseOffset.y += links[i].size.y;
-			}
-		}
-
-		public void DrawOnGUI( SearchResultDrawParameters parameters )
-		{
-			Rect rect = parameters.guiRect;
-			rect.position += offset;
-			rect.size = size;
-
-			if( GUI.Button( rect, label, Utilities.BoxGUIStyle ) && instanceId.HasValue )
-			{
-				// If a reference is clicked, highlight it (either on Hierarchy view or Project view)
-				if( SearchResult.SelectClickedObjects )
-					EditorUtility.InstanceIDToObject( instanceId.Value ).SelectInEditor();
-				else
-					EditorUtility.InstanceIDToObject( instanceId.Value ).PingInEditor();
-			}
-
-			for( int i = 0; i < links.Length; i++ )
-				links[i].DrawOnGUI( parameters );
-
-			if( parameters.showTooltips && Event.current.type == EventType.Repaint && rect.Contains( Event.current.mousePosition ) )
-				parameters.tooltip = label.text;
 		}
 	}
 }

@@ -49,14 +49,11 @@ namespace AssetUsageDetectorNamespace
 		private static readonly string nativeCollectionsNamespace = typeof( NativeArray<int> ).Namespace;
 #endif
 
+		private static MethodInfo screenFittedRectGetter;
+
 		private static readonly HashSet<string> folderContentsSet = new HashSet<string>();
 
-		private static readonly StringBuilder stringBuilder = new StringBuilder( 10 );
-
-#if UNITY_2018_3_OR_NEWER
-		private static int previousPingedPrefabInstanceId;
-		private static double previousPingedPrefabPingTime;
-#endif
+		internal static readonly StringBuilder stringBuilder = new StringBuilder( 400 );
 
 		public static readonly GUILayoutOption GL_EXPAND_WIDTH = GUILayout.ExpandWidth( true );
 		public static readonly GUILayoutOption GL_EXPAND_HEIGHT = GUILayout.ExpandHeight( true );
@@ -79,7 +76,8 @@ namespace AssetUsageDetectorNamespace
 					m_boxGUIStyle = new GUIStyle( EditorStyles.helpBox )
 					{
 						alignment = TextAnchor.MiddleCenter,
-						font = EditorStyles.label.font
+						font = EditorStyles.label.font,
+						richText = true
 					};
 
 					Color textColor = GUI.skin.button.normal.textColor;
@@ -99,56 +97,15 @@ namespace AssetUsageDetectorNamespace
 			}
 		}
 
-		private static GUIStyle m_tooltipGUIStyle; // GUIStyle used to draw the tooltip
-		public static GUIStyle TooltipGUIStyle
-		{
-			get
-			{
-				GUIStyleState normalState;
-
-				if( m_tooltipGUIStyle != null )
-					normalState = m_tooltipGUIStyle.normal;
-				else
-				{
-					m_tooltipGUIStyle = new GUIStyle( EditorStyles.helpBox )
-					{
-						alignment = TextAnchor.MiddleCenter,
-						font = EditorStyles.label.font
-					};
-
-					normalState = m_tooltipGUIStyle.normal;
-
-					normalState.background = null;
-					normalState.scaledBackgrounds = new Texture2D[0];
-					normalState.textColor = Color.black;
-				}
-
-				if( normalState.background == null || normalState.background.Equals( null ) )
-				{
-					Texture2D backgroundTexture = new Texture2D( 1, 1 ) { hideFlags = HideFlags.HideAndDontSave };
-					backgroundTexture.SetPixel( 0, 0, new Color( 0.88f, 0.88f, 0.88f, 0.85f ) );
-					backgroundTexture.Apply();
-
-					normalState.background = backgroundTexture;
-				}
-
-				return m_tooltipGUIStyle;
-			}
-		}
-
-		// Get a unique-ish string hash code for an object
-		public static string Hash( this object obj )
-		{
-			if( obj is Object )
-				return obj.GetHashCode().ToString();
-
-			return obj.GetHashCode() + obj.GetType().Name;
-		}
-
 		// Check if object is an asset or a Scene object
 		public static bool IsAsset( this object obj )
 		{
 			return obj is Object && AssetDatabase.Contains( (Object) obj );
+		}
+
+		public static bool IsAsset( this Object obj )
+		{
+			return AssetDatabase.Contains( obj );
 		}
 
 		// Check if object is a folder asset
@@ -175,128 +132,65 @@ namespace AssetUsageDetectorNamespace
 			return folderContentsSet;
 		}
 
-		// Select an object in the editor
-		public static void SelectInEditor( this Object obj )
+		public static void GetObjectsToSelectAndPing( this Object obj, out Object selection, out Object pingTarget )
 		{
-			if( obj == null )
+			if( obj == null || obj.Equals( null ) )
+			{
+				selection = pingTarget = null;
 				return;
-
-			if( obj is Component )
-				obj = ( (Component) obj ).gameObject;
-
-			Event e = Event.current;
-
-			// If CTRL or Shift keys are pressed, do a multi-select;
-			// otherwise select only the clicked object and ping it in editor
-			if( !e.control && !e.shift )
-				Selection.activeObject = obj.PingInEditor();
-			else
-			{
-				Object[] selection = Selection.objects;
-				Object[] newSelection;
-
-				int selectionIndex = Array.IndexOf( selection, obj );
-				if( selectionIndex == -1 )
-				{
-					// Include object in selection
-					newSelection = new Object[selection.Length + 1];
-					selection.CopyTo( newSelection, 0 );
-					newSelection[selection.Length] = obj;
-				}
-				else
-				{
-					// Remove object from selection
-					newSelection = new Object[selection.Length - 1];
-					int j = 0;
-					for( int i = 0; i < selectionIndex; i++, j++ )
-						newSelection[j] = selection[i];
-					for( int i = selectionIndex + 1; i < selection.Length; i++, j++ )
-						newSelection[j] = selection[i];
-				}
-
-				Selection.objects = newSelection;
 			}
-		}
 
-		// Ping an object in either Project view or Hierarchy view
-		public static Object PingInEditor( this Object obj )
-		{
 			if( obj is Component )
 				obj = ( (Component) obj ).gameObject;
 
-			Object selection = obj;
+			selection = pingTarget = obj;
 
-			// Pinging a prefab only works if the pinged object is the root of the prefab
-			// or a direct child of it. Pinging any grandchildren of the prefab
-			// does not work; in which case, traverse the parent hierarchy until
-			// a pingable parent is reached
-			if( obj.IsAsset() && obj is GameObject )
+			if( obj.IsAsset() )
 			{
+				if( obj is GameObject )
+				{
+					// Pinging a prefab only works if the pinged object is the root of the prefab or a direct child of it. Pinging any grandchildren
+					// of the prefab doesn't work; in which case, traverse the parent hierarchy until a pingable parent is reached
 #if UNITY_2018_3_OR_NEWER
-				Transform objTR = ( (GameObject) obj ).transform.root;
+					Transform objTR = ( (GameObject) obj ).transform.root;
 
-				PrefabAssetType prefabAssetType = PrefabUtility.GetPrefabAssetType( objTR.gameObject );
-				if( prefabAssetType == PrefabAssetType.Regular || prefabAssetType == PrefabAssetType.Variant )
-				{
-					string assetPath = AssetDatabase.GetAssetPath( objTR.gameObject );
-					PrefabStage openPrefabStage = PrefabStageUtility.GetCurrentPrefabStage();
-
-					// Try to open the prefab stage of pinged prefabs if they are double clicked
-					bool previousPingedPrefabIsDoubleClicked = previousPingedPrefabInstanceId == objTR.GetInstanceID();
-					if( previousPingedPrefabIsDoubleClicked && EditorApplication.timeSinceStartup - previousPingedPrefabPingTime <= 0.3f &&
-#if UNITY_2020_1_OR_NEWER
-						( openPrefabStage == null || !openPrefabStage.stageHandle.IsValid() || assetPath != openPrefabStage.assetPath ) )
-#else
-						( openPrefabStage == null || !openPrefabStage.stageHandle.IsValid() || assetPath != openPrefabStage.prefabAssetPath ) )
-#endif
+					PrefabAssetType prefabAssetType = PrefabUtility.GetPrefabAssetType( objTR.gameObject );
+					if( prefabAssetType == PrefabAssetType.Regular || prefabAssetType == PrefabAssetType.Variant )
 					{
-						AssetDatabase.OpenAsset( objTR.gameObject );
-						openPrefabStage = PrefabStageUtility.GetCurrentPrefabStage();
-					}
-
-					previousPingedPrefabInstanceId = objTR.GetInstanceID();
-					previousPingedPrefabPingTime = EditorApplication.timeSinceStartup;
-
+						string assetPath = AssetDatabase.GetAssetPath( objTR.gameObject );
+						PrefabStage openPrefabStage = PrefabStageUtility.GetCurrentPrefabStage();
 #if UNITY_2020_1_OR_NEWER
-					if( openPrefabStage != null && openPrefabStage.stageHandle.IsValid() && assetPath == openPrefabStage.assetPath )
+						if( openPrefabStage != null && openPrefabStage.stageHandle.IsValid() && assetPath == openPrefabStage.assetPath )
 #else
-					if( openPrefabStage != null && openPrefabStage.stageHandle.IsValid() && assetPath == openPrefabStage.prefabAssetPath )
+						if( openPrefabStage != null && openPrefabStage.stageHandle.IsValid() && assetPath == openPrefabStage.prefabAssetPath )
 #endif
-					{
-						GameObject prefabStageGO = FollowSymmetricHierarchy( (GameObject) obj, ( (GameObject) obj ).transform.root.gameObject, openPrefabStage.prefabContentsRoot );
-						if( prefabStageGO != null )
 						{
-							objTR = prefabStageGO.transform;
-							selection = objTR.gameObject;
+							GameObject prefabStageGO = FollowSymmetricHierarchy( (GameObject) obj, ( (GameObject) obj ).transform.root.gameObject, openPrefabStage.prefabContentsRoot );
+							if( prefabStageGO != null )
+							{
+								objTR = prefabStageGO.transform;
+								selection = objTR.gameObject;
+							}
 						}
-					}
 #if UNITY_2019_1_OR_NEWER
-					else if( obj != objTR.gameObject )
-					{
-						if( !previousPingedPrefabIsDoubleClicked ) // Don't spam this log unnecessarily
-							Debug.Log( "Open " + assetPath + " in prefab mode to select and edit " + obj.name );
-
-						selection = objTR.gameObject;
+						else if( obj != objTR.gameObject )
+							selection = objTR.gameObject;
+#endif
 					}
 #else
-					else
-					{
-						if( !previousPingedPrefabIsDoubleClicked ) // Don't spam this log unnecessarily
-							Debug.Log( "Open " + assetPath + " in prefab mode to select and edit " + obj.name );
-					}
+					Transform objTR = ( (GameObject) obj ).transform;
+					while( objTR.parent != null && objTR.parent.parent != null )
+						objTR = objTR.parent;
 #endif
+
+					pingTarget = objTR.gameObject;
 				}
-#else
-				Transform objTR = ( (GameObject) obj ).transform;
-				while( objTR.parent != null && objTR.parent.parent != null )
-					objTR = objTR.parent;
-#endif
-
-				obj = objTR.gameObject;
+				else if( ( obj.hideFlags & ( HideFlags.HideInInspector | HideFlags.HideInHierarchy ) ) != HideFlags.None )
+				{
+					// Can't ping assets that are hidden from Project window (e.g. animator states of AnimatorController), ping the main asset at that path instead
+					pingTarget = AssetDatabase.LoadMainAssetAtPath( AssetDatabase.GetAssetPath( obj ) );
+				}
 			}
-
-			EditorGUIUtility.PingObject( obj );
-			return selection;
 		}
 
 		// We are passing "go"s root Transform to thisRoot parameter. If we use go.transform.root instead, when we are in prefab mode on
@@ -331,6 +225,43 @@ namespace AssetUsageDetectorNamespace
 			}
 
 			return root2.gameObject;
+		}
+
+		// Returns -1 if t1 is above t2 in Hierarchy, 1 if t1 is below t2 in Hierarchy and 0 if they are the same object
+		public static int CompareHierarchySiblingIndices( Transform t1, Transform t2 )
+		{
+			Transform parent1 = t1.parent;
+			Transform parent2 = t2.parent;
+
+			if( parent1 == parent2 )
+				return t1.GetSiblingIndex() - t2.GetSiblingIndex();
+
+			int deltaHierarchyDepth = 0;
+			for( ; parent1; parent1 = parent1.parent )
+				deltaHierarchyDepth++;
+			for( ; parent2; parent2 = parent2.parent )
+				deltaHierarchyDepth--;
+
+			for( ; deltaHierarchyDepth > 0; deltaHierarchyDepth-- )
+			{
+				t1 = t1.parent;
+				if( t1 == t2 )
+					return 1;
+			}
+			for( ; deltaHierarchyDepth < 0; deltaHierarchyDepth++ )
+			{
+				t2 = t2.parent;
+				if( t1 == t2 )
+					return -1;
+			}
+
+			while( t1.parent != t2.parent )
+			{
+				t1 = t1.parent;
+				t2 = t2.parent;
+			}
+
+			return t1.GetSiblingIndex() - t2.GetSiblingIndex();
 		}
 
 		// Check if the field is serializable
@@ -507,9 +438,18 @@ namespace AssetUsageDetectorNamespace
 		// Draw horizontal line inside OnGUI
 		public static void DrawSeparatorLine()
 		{
-			GUILayout.Space( 4 );
+			GUILayout.Space( 4f );
 			GUILayout.Box( "", GL_HEIGHT_2, GL_EXPAND_WIDTH );
-			GUILayout.Space( 4 );
+			GUILayout.Space( 4f );
+		}
+
+		// Restricts the given Rect within the screen's bounds
+		public static Rect GetScreenFittedRect( Rect originalRect )
+		{
+			if( screenFittedRectGetter == null )
+				screenFittedRectGetter = typeof( EditorWindow ).Assembly.GetType( "UnityEditor.ContainerWindow" ).GetMethod( "FitRectToScreen", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static );
+
+			return (Rect) screenFittedRectGetter.Invoke( null, new object[3] { originalRect, true, true } );
 		}
 
 		// Check if all the objects inside the list are null
@@ -609,14 +549,6 @@ namespace AssetUsageDetectorNamespace
 			}
 
 			return false;
-		}
-
-		public static void RemoveAtFast<T>( this List<T> list, int index )
-		{
-			int lastElementIndex = list.Count - 1;
-
-			list[index] = list[lastElementIndex];
-			list.RemoveAt( lastElementIndex );
 		}
 	}
 }

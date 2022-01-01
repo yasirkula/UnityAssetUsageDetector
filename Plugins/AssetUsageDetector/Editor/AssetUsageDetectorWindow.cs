@@ -16,7 +16,7 @@ namespace AssetUsageDetectorNamespace
 
 	public class AssetUsageDetectorWindow : EditorWindow, IHasCustomMenu
 	{
-		private const float PLAY_MODE_REFRESH_INTERVAL = 1f; // Interval to refresh the editor window in play mode
+		private enum WindowFilter { AlwaysReturnActive, ReturnActiveIfNotLocked, AlwaysReturnNew };
 
 		private const string PREFS_SEARCH_SCENES = "AUD_SceneSearch";
 		private const string PREFS_SEARCH_ASSETS = "AUD_AssetsSearch";
@@ -26,18 +26,39 @@ namespace AssetUsageDetectorNamespace
 		private const string PREFS_SEARCH_FIELDS = "AUD_Fields";
 		private const string PREFS_SEARCH_PROPERTIES = "AUD_Properties";
 		private const string PREFS_SEARCH_NON_SERIALIZABLES = "AUD_NonSerializables";
+		private const string PREFS_SEARCH_UNUSED_MATERIAL_PROPERTIES = "AUD_SearchUnusedMaterialProps";
 		private const string PREFS_LAZY_SCENE_SEARCH = "AUD_LazySceneSearch";
-		private const string PREFS_PATH_DRAWING_MODE = "AUD_PathDrawing";
+		private const string PREFS_CALCULATE_UNUSED_OBJECTS = "AUD_FindUnusedObjs";
+		private const string PREFS_HIDE_DUPLICATE_ROWS = "AUD_HideDuplicates";
+		private const string PREFS_HIDE_REDUNDANT_PREFAB_VARIANT_LINKS = "AUD_HideRedundantPVariantLinks";
 		private const string PREFS_SHOW_PROGRESS = "AUD_Progress";
-		private const string PREFS_SHOW_TOOLTIPS = "AUD_Tooltips";
 
 		private static readonly GUIContent windowTitle = new GUIContent( "Asset Usage Detector" );
 		private static readonly Vector2 windowMinSize = new Vector2( 325f, 220f );
 
-		private AssetUsageDetector core = new AssetUsageDetector();
+		private readonly GUILayoutOption GL_WIDTH_12 = GUILayout.Width( 12f );
+
+		private GUIStyle lockButtonStyle;
+
+		private readonly AssetUsageDetector core = new AssetUsageDetector();
 		private SearchResult searchResult; // Overall search results
 
+		// This isn't readonly so that it can be serialized
 		private List<ObjectToSearch> objectsToSearch = new List<ObjectToSearch>() { new ObjectToSearch( null ) };
+
+		private bool m_isLocked;
+		private bool IsLocked
+		{
+			get { return m_isLocked; }
+			set
+			{
+				if( m_isLocked != value )
+				{
+					m_isLocked = value;
+					titleContent = value ? new GUIContent( "[L] " + windowTitle.text, EditorGUIUtility.IconContent( "InspectorLock" ).image ) : windowTitle;
+				}
+			}
+		}
 
 		private Phase currentPhase = Phase.Setup;
 
@@ -57,70 +78,129 @@ namespace AssetUsageDetectorNamespace
 
 		private bool lazySceneSearch = true;
 		private bool searchNonSerializableVariables = true;
+		private bool searchUnusedMaterialProperties = true;
+		private bool calculateUnusedObjects = false;
+		private bool hideDuplicateRows = true;
+		private bool hideReduntantPrefabVariantLinks = true;
 		private bool noAssetDatabaseChanges = false;
 		private bool showDetailedProgressBar = true;
 
 		private BindingFlags fieldModifiers, propertyModifiers;
-
-		private SearchResultDrawParameters searchResultDrawParameters = new SearchResultDrawParameters( PathDrawingMode.ShortRelevantParts, false, false );
-
-		private double nextPlayModeRefreshTime = 0f;
 
 		private readonly ObjectToSearchListDrawer objectsToSearchDrawer = new ObjectToSearchListDrawer();
 		private readonly ObjectListDrawer searchInAssetsSubsetDrawer = new ObjectListDrawer( "Search following asset(s) only:", false );
 		private readonly ObjectListDrawer excludedAssetsDrawer = new ObjectListDrawer( "Don't search following asset(s):", false );
 		private readonly ObjectListDrawer excludedScenesDrawer = new ObjectListDrawer( "Don't search in following scene(s):", false );
 
-		private readonly GUIContent showTooltipsLabel = new GUIContent( "Show tooltips", "Display nodes' contents in a tooltip when cursor hovers over them" );
+		private bool drawObjectsToSearchSection = true;
 
 		private Vector2 scrollPosition = Vector2.zero;
 
 		private bool shouldRepositionSelf;
 		private Rect windowTargetPosition;
 
-		private static AssetUsageDetectorWindow mainWindow = null;
-
-		void IHasCustomMenu.AddItemsToMenu( GenericMenu menu )
+		void IHasCustomMenu.AddItemsToMenu( GenericMenu contextMenu )
 		{
-			if( currentPhase == Phase.Complete )
-				menu.AddItem( new GUIContent( "Select Clicked Objects" ), SearchResult.SelectClickedObjects, () => SearchResult.SelectClickedObjects = !SearchResult.SelectClickedObjects );
+			contextMenu.AddItem( new GUIContent( "Lock" ), IsLocked, () => IsLocked = !IsLocked );
+			contextMenu.AddSeparator( "" );
+
+#if UNITY_2018_3_OR_NEWER
+			contextMenu.AddItem( new GUIContent( "Settings" ), false, () => SettingsService.OpenProjectSettings( "Project/yasirkula/Asset Usage Detector" ) );
+#else
+			contextMenu.AddItem( new GUIContent( "Settings" ), false, () =>
+			{
+				System.Type preferencesWindowType = typeof( EditorWindow ).Assembly.GetType( "UnityEditor.PreferencesWindow" );
+				preferencesWindowType.GetMethod( "ShowPreferencesWindow", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static ).Invoke( null, null );
+
+				EditorWindow preferencesWindow = GetWindow( preferencesWindowType );
+				if( (bool) preferencesWindowType.GetField( "m_RefreshCustomPreferences", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance ).GetValue( preferencesWindow ) )
+				{
+					preferencesWindowType.GetMethod( "AddCustomSections", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance ).Invoke( preferencesWindow, null );
+					preferencesWindowType.GetField( "m_RefreshCustomPreferences", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance ).SetValue( preferencesWindow, false );
+				}
+
+				int targetSectionIndex = -1;
+				System.Collections.IList sections = (System.Collections.IList) preferencesWindowType.GetField( "m_Sections", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance ).GetValue( preferencesWindow );
+				for( int i = 0; i < sections.Count; i++ )
+				{
+					if( ( (GUIContent) sections[i].GetType().GetField( "content", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance ).GetValue( sections[i] ) ).text == "Asset Usage Detector" )
+					{
+						targetSectionIndex = i;
+						break;
+					}
+				}
+
+				if( targetSectionIndex >= 0 )
+					preferencesWindowType.GetProperty( "selectedSectionIndex", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance ).SetValue( preferencesWindow, targetSectionIndex, null );
+			} );
+#endif
+
+			if( currentPhase == Phase.Setup )
+			{
+				contextMenu.AddSeparator( "" );
+				contextMenu.AddItem( new GUIContent( "Refresh Sub-Assets of Searched Objects" ), false, () =>
+				{
+					for( int i = objectsToSearch.Count - 1; i >= 0; i-- )
+						objectsToSearch[i].RefreshSubAssets();
+				} );
+			}
+		}
+
+		// Shows lock button at the top-right corner
+		// Credit: http://leahayes.co.uk/2013/04/30/adding-the-little-padlock-button-to-your-editorwindow.html
+		private void ShowButton( Rect position )
+		{
+			if( lockButtonStyle == null )
+				lockButtonStyle = "IN LockButton";
+
+			IsLocked = GUI.Toggle( position, IsLocked, GUIContent.none, lockButtonStyle );
+		}
+
+		private static AssetUsageDetectorWindow GetWindow( WindowFilter filter )
+		{
+			AssetUsageDetectorWindow[] windows = Resources.FindObjectsOfTypeAll<AssetUsageDetectorWindow>();
+			AssetUsageDetectorWindow window = System.Array.Find( windows, ( w ) => w && !w.IsLocked );
+			if( !window )
+				window = System.Array.Find( windows, ( w ) => w );
+
+			if( window && ( filter == WindowFilter.AlwaysReturnActive || ( !window.IsLocked && filter == WindowFilter.ReturnActiveIfNotLocked ) ) )
+			{
+				window.Show();
+				return window;
+			}
+
+			Rect? windowTargetPosition = null;
+			if( window )
+			{
+				Rect position = window.position;
+				position.position += new Vector2( 50f, 50f );
+				windowTargetPosition = position;
+			}
+
+			window = CreateInstance<AssetUsageDetectorWindow>();
+			window.titleContent = windowTitle;
+			window.minSize = windowMinSize;
+
+			if( windowTargetPosition.HasValue )
+			{
+				window.shouldRepositionSelf = true;
+				window.windowTargetPosition = windowTargetPosition.Value;
+			}
+
+			window.Show( true );
+			return window;
 		}
 
 		[MenuItem( "Window/Asset Usage Detector/Active Window" )]
 		private static void OpenActiveWindow()
 		{
-			if( !mainWindow )
-			{
-				mainWindow = GetWindow<AssetUsageDetectorWindow>();
-				mainWindow.titleContent = windowTitle;
-				mainWindow.minSize = windowMinSize;
-			}
-
-			mainWindow.Show();
+			GetWindow( WindowFilter.AlwaysReturnActive );
 		}
 
 		[MenuItem( "Window/Asset Usage Detector/New Window" )]
 		private static void OpenNewWindow()
 		{
-			Rect? windowTargetPosition = null;
-			if( mainWindow )
-			{
-				Rect position = mainWindow.position;
-				position.position += new Vector2( 50f, 50f );
-				windowTargetPosition = position;
-			}
-
-			mainWindow = CreateInstance<AssetUsageDetectorWindow>();
-			mainWindow.titleContent = windowTitle;
-			mainWindow.minSize = windowMinSize;
-
-			if( windowTargetPosition.HasValue )
-			{
-				mainWindow.shouldRepositionSelf = true;
-				mainWindow.windowTargetPosition = windowTargetPosition.Value;
-			}
-
-			mainWindow.Show( true );
+			GetWindow( WindowFilter.AlwaysReturnNew );
 		}
 
 		// Quickly initiate search for the selected assets
@@ -164,7 +244,7 @@ namespace AssetUsageDetectorNamespace
 		// Quickly show the AssetUsageDetector window and initiate a search
 		public static void ShowAndSearch( IEnumerable<Object> searchObjects, bool? shouldSearchChildren = null )
 		{
-			ShowAndSearchInternal( searchObjects, null, shouldSearchChildren );
+			GetWindow( WindowFilter.ReturnActiveIfNotLocked ).ShowAndSearchInternal( searchObjects, null, shouldSearchChildren );
 		}
 
 		// Quickly show the AssetUsageDetector window and initiate a search
@@ -176,7 +256,7 @@ namespace AssetUsageDetectorNamespace
 				return;
 			}
 
-			ShowAndSearchInternal( searchParameters.objectsToSearch, searchParameters, shouldSearchChildren );
+			GetWindow( WindowFilter.ReturnActiveIfNotLocked ).ShowAndSearchInternal( searchParameters.objectsToSearch, searchParameters, shouldSearchChildren );
 		}
 
 		private static void CallSearchSelectedAssetReferencesOnce()
@@ -191,61 +271,63 @@ namespace AssetUsageDetectorNamespace
 			SearchSelectedAssetReferencesWithChildren( new MenuCommand( null ) );
 		}
 
-		private static void ShowAndSearchInternal( IEnumerable<Object> searchObjects, AssetUsageDetector.Parameters searchParameters, bool? shouldSearchChildren )
+		private void ShowAndSearchInternal( IEnumerable<Object> searchObjects, AssetUsageDetector.Parameters searchParameters, bool? shouldSearchChildren )
 		{
-			if( mainWindow && !mainWindow.ReturnToSetupPhase() )
+			if( !ReturnToSetupPhase() )
 			{
 				Debug.LogError( "Need to reset the previous search first!" );
 				return;
 			}
 
-			OpenActiveWindow();
-
-			mainWindow.objectsToSearch.Clear();
+			objectsToSearch.Clear();
 			if( searchObjects != null )
 			{
 				foreach( Object obj in searchObjects )
-					mainWindow.objectsToSearch.Add( new ObjectToSearch( obj, shouldSearchChildren ) );
+					objectsToSearch.Add( new ObjectToSearch( obj, shouldSearchChildren ) );
 			}
 
 			if( searchParameters != null )
 			{
-				mainWindow.ParseSceneSearchMode( searchParameters.searchInScenes );
-				mainWindow.searchInAssetsFolder = searchParameters.searchInAssetsFolder;
-				mainWindow.dontSearchInSourceAssets = searchParameters.dontSearchInSourceAssets;
-				mainWindow.searchInProjectSettings = searchParameters.searchInProjectSettings;
-				mainWindow.searchDepthLimit = searchParameters.searchDepthLimit;
-				mainWindow.fieldModifiers = searchParameters.fieldModifiers;
-				mainWindow.propertyModifiers = searchParameters.propertyModifiers;
-				mainWindow.searchNonSerializableVariables = searchParameters.searchNonSerializableVariables;
-				mainWindow.lazySceneSearch = searchParameters.lazySceneSearch;
-				mainWindow.noAssetDatabaseChanges = searchParameters.noAssetDatabaseChanges;
-				mainWindow.showDetailedProgressBar = searchParameters.showDetailedProgressBar;
+				ParseSceneSearchMode( searchParameters.searchInScenes );
+				searchInAssetsFolder = searchParameters.searchInAssetsFolder;
+				dontSearchInSourceAssets = searchParameters.dontSearchInSourceAssets;
+				searchInProjectSettings = searchParameters.searchInProjectSettings;
+				searchDepthLimit = searchParameters.searchDepthLimit;
+				fieldModifiers = searchParameters.fieldModifiers;
+				propertyModifiers = searchParameters.propertyModifiers;
+				searchNonSerializableVariables = searchParameters.searchNonSerializableVariables;
+				searchUnusedMaterialProperties = searchParameters.searchUnusedMaterialProperties;
+				lazySceneSearch = searchParameters.lazySceneSearch;
+				calculateUnusedObjects = searchParameters.calculateUnusedObjects;
+				hideDuplicateRows = searchParameters.hideDuplicateRows;
+				hideReduntantPrefabVariantLinks = searchParameters.hideReduntantPrefabVariantLinks;
+				noAssetDatabaseChanges = searchParameters.noAssetDatabaseChanges;
+				showDetailedProgressBar = searchParameters.showDetailedProgressBar;
 
-				mainWindow.searchInAssetsSubset.Clear();
+				searchInAssetsSubset.Clear();
 				if( searchParameters.searchInAssetsSubset != null )
 				{
 					foreach( Object obj in searchParameters.searchInAssetsSubset )
-						mainWindow.searchInAssetsSubset.Add( obj );
+						searchInAssetsSubset.Add( obj );
 				}
 
-				mainWindow.excludedAssets.Clear();
+				excludedAssets.Clear();
 				if( searchParameters.excludedAssetsFromSearch != null )
 				{
 					foreach( Object obj in searchParameters.excludedAssetsFromSearch )
-						mainWindow.excludedAssets.Add( obj );
+						excludedAssets.Add( obj );
 				}
 
-				mainWindow.excludedScenes.Clear();
+				excludedScenes.Clear();
 				if( searchParameters.excludedScenesFromSearch != null )
 				{
 					foreach( Object obj in searchParameters.excludedScenesFromSearch )
-						mainWindow.excludedScenes.Add( obj );
+						excludedScenes.Add( obj );
 				}
 			}
 
-			mainWindow.InitiateSearch();
-			mainWindow.Repaint();
+			InitiateSearch();
+			Repaint();
 		}
 
 		private void Awake()
@@ -255,7 +337,8 @@ namespace AssetUsageDetectorNamespace
 
 		private void OnEnable()
 		{
-			mainWindow = this;
+			if( currentPhase == Phase.Complete && AssetUsageDetectorSettings.ShowCustomTooltip )
+				wantsMouseMove = wantsMouseEnterLeaveWindow = true; // These values aren't preserved during domain reload on Unity 2020.3.0f1
 
 #if UNITY_2018_3_OR_NEWER
 			PrefabStage.prefabStageClosing -= ReplacePrefabStageObjectsWithAssets;
@@ -268,9 +351,7 @@ namespace AssetUsageDetectorNamespace
 #if UNITY_2018_3_OR_NEWER
 			PrefabStage.prefabStageClosing -= ReplacePrefabStageObjectsWithAssets;
 #endif
-
-			if( mainWindow == this )
-				mainWindow = null;
+			SearchResultTooltip.Hide();
 		}
 
 		private void OnDestroy()
@@ -284,11 +365,6 @@ namespace AssetUsageDetectorNamespace
 				searchResult.RestoreInitialSceneSetup();
 		}
 
-		private void OnFocus()
-		{
-			mainWindow = this;
-		}
-
 		private void SavePrefs()
 		{
 			EditorPrefs.SetInt( PREFS_SEARCH_SCENES, (int) GetSceneSearchMode( false ) );
@@ -298,10 +374,12 @@ namespace AssetUsageDetectorNamespace
 			EditorPrefs.SetInt( PREFS_SEARCH_DEPTH_LIMIT, searchDepthLimit );
 			EditorPrefs.SetInt( PREFS_SEARCH_FIELDS, (int) fieldModifiers );
 			EditorPrefs.SetInt( PREFS_SEARCH_PROPERTIES, (int) propertyModifiers );
-			EditorPrefs.SetInt( PREFS_PATH_DRAWING_MODE, (int) searchResultDrawParameters.pathDrawingMode );
 			EditorPrefs.SetBool( PREFS_SEARCH_NON_SERIALIZABLES, searchNonSerializableVariables );
+			EditorPrefs.SetBool( PREFS_SEARCH_UNUSED_MATERIAL_PROPERTIES, searchUnusedMaterialProperties );
 			EditorPrefs.SetBool( PREFS_LAZY_SCENE_SEARCH, lazySceneSearch );
-			EditorPrefs.SetBool( PREFS_SHOW_TOOLTIPS, searchResultDrawParameters.showTooltips );
+			EditorPrefs.SetBool( PREFS_CALCULATE_UNUSED_OBJECTS, calculateUnusedObjects );
+			EditorPrefs.SetBool( PREFS_HIDE_DUPLICATE_ROWS, hideDuplicateRows );
+			EditorPrefs.SetBool( PREFS_HIDE_REDUNDANT_PREFAB_VARIANT_LINKS, hideReduntantPrefabVariantLinks );
 			EditorPrefs.SetBool( PREFS_SHOW_PROGRESS, showDetailedProgressBar );
 		}
 
@@ -313,23 +391,14 @@ namespace AssetUsageDetectorNamespace
 			dontSearchInSourceAssets = EditorPrefs.GetBool( PREFS_DONT_SEARCH_SOURCE_ASSETS, true );
 			searchInProjectSettings = EditorPrefs.GetBool( PREFS_SEARCH_PROJECT_SETTINGS, true );
 			searchDepthLimit = EditorPrefs.GetInt( PREFS_SEARCH_DEPTH_LIMIT, 4 );
-
-			// Fetch public, protected and private non-static fields and properties from objects by default
 			fieldModifiers = (BindingFlags) EditorPrefs.GetInt( PREFS_SEARCH_FIELDS, (int) ( BindingFlags.Public | BindingFlags.NonPublic ) );
 			propertyModifiers = (BindingFlags) EditorPrefs.GetInt( PREFS_SEARCH_PROPERTIES, (int) ( BindingFlags.Public | BindingFlags.NonPublic ) );
-
-			try
-			{
-				searchResultDrawParameters.pathDrawingMode = (PathDrawingMode) EditorPrefs.GetInt( PREFS_PATH_DRAWING_MODE, (int) PathDrawingMode.ShortRelevantParts );
-			}
-			catch
-			{
-				searchResultDrawParameters.pathDrawingMode = PathDrawingMode.ShortRelevantParts;
-			}
-
 			searchNonSerializableVariables = EditorPrefs.GetBool( PREFS_SEARCH_NON_SERIALIZABLES, true );
+			searchUnusedMaterialProperties = EditorPrefs.GetBool( PREFS_SEARCH_UNUSED_MATERIAL_PROPERTIES, true );
 			lazySceneSearch = EditorPrefs.GetBool( PREFS_LAZY_SCENE_SEARCH, true );
-			searchResultDrawParameters.showTooltips = EditorPrefs.GetBool( PREFS_SHOW_TOOLTIPS, false );
+			calculateUnusedObjects = EditorPrefs.GetBool( PREFS_CALCULATE_UNUSED_OBJECTS, false );
+			hideDuplicateRows = EditorPrefs.GetBool( PREFS_HIDE_DUPLICATE_ROWS, true );
+			hideReduntantPrefabVariantLinks = EditorPrefs.GetBool( PREFS_HIDE_REDUNDANT_PREFAB_VARIANT_LINKS, true );
 			showDetailedProgressBar = EditorPrefs.GetBool( PREFS_SHOW_PROGRESS, true );
 		}
 
@@ -359,13 +428,6 @@ namespace AssetUsageDetectorNamespace
 
 		private void Update()
 		{
-			// Refresh the window at a regular interval in play mode to update the tooltip
-			if( EditorApplication.isPlaying && currentPhase == Phase.Complete && searchResultDrawParameters.showTooltips && EditorApplication.timeSinceStartup >= nextPlayModeRefreshTime )
-			{
-				nextPlayModeRefreshTime = EditorApplication.timeSinceStartup + PLAY_MODE_REFRESH_INTERVAL; ;
-				Repaint();
-			}
-
 			if( shouldRepositionSelf )
 			{
 				shouldRepositionSelf = false;
@@ -390,47 +452,50 @@ namespace AssetUsageDetectorNamespace
 			}
 			else if( currentPhase == Phase.Setup )
 			{
-				objectsToSearchDrawer.Draw( objectsToSearch );
+				DrawObjectsToSearchSection();
 
-				GUILayout.Space( 10 );
+				GUILayout.Space( 10f );
 
 				Color c = GUI.backgroundColor;
-				GUI.backgroundColor = Color.cyan;
-				GUILayout.Box( "SEARCH IN", Utilities.BoxGUIStyle, Utilities.GL_EXPAND_WIDTH );
+				GUI.backgroundColor = AssetUsageDetectorSettings.SettingsHeaderColor;
+				GUILayout.Box( "<b>SEARCH IN</b>", Utilities.BoxGUIStyle, Utilities.GL_EXPAND_WIDTH );
 				GUI.backgroundColor = c;
 
-				searchInAssetsFolder = EditorGUILayout.ToggleLeft( "Project window (Assets folder)", searchInAssetsFolder );
+				searchInAssetsFolder = WordWrappingToggleLeft( "Project window (Assets folder)", searchInAssetsFolder );
 
 				if( searchInAssetsFolder )
 				{
 					GUILayout.BeginHorizontal();
-					GUILayout.Space( 35 );
+					GUILayout.Space( 35f );
 					GUILayout.BeginVertical();
 
 					searchInAssetsSubsetDrawer.Draw( searchInAssetsSubset );
 					excludedAssetsDrawer.Draw( excludedAssets );
 
-					dontSearchInSourceAssets = EditorGUILayout.ToggleLeft( "Don't search \"Find references of\" themselves for references", dontSearchInSourceAssets );
-
 					GUILayout.EndVertical();
 					GUILayout.EndHorizontal();
 				}
+
+				GUILayout.Space( 5f );
+
+				dontSearchInSourceAssets = WordWrappingToggleLeft( "Don't search \"SEARCHED OBJECTS\" themselves for references", dontSearchInSourceAssets );
+				searchUnusedMaterialProperties = WordWrappingToggleLeft( "Search unused material properties (e.g. normal map of a material that no longer uses normal mapping)", searchUnusedMaterialProperties );
 
 				Utilities.DrawSeparatorLine();
 
 				if( searchInAllScenes && !EditorApplication.isPlaying )
 					GUI.enabled = false;
 
-				searchInOpenScenes = EditorGUILayout.ToggleLeft( "Currently open (loaded) scene(s)", searchInOpenScenes );
+				searchInOpenScenes = WordWrappingToggleLeft( "Currently open (loaded) scene(s)", searchInOpenScenes );
 
 				if( !EditorApplication.isPlaying )
 				{
-					searchInScenesInBuild = EditorGUILayout.ToggleLeft( "Scenes in Build Settings", searchInScenesInBuild );
+					searchInScenesInBuild = WordWrappingToggleLeft( "Scenes in Build Settings", searchInScenesInBuild );
 
 					if( searchInScenesInBuild )
 					{
 						GUILayout.BeginHorizontal();
-						GUILayout.Space( 35 );
+						GUILayout.Space( 35f );
 
 						searchInScenesInBuildTickedOnly = EditorGUILayout.ToggleLeft( "Ticked only", searchInScenesInBuildTickedOnly, Utilities.GL_WIDTH_100 );
 						searchInScenesInBuildTickedOnly = !EditorGUILayout.ToggleLeft( "All", !searchInScenesInBuildTickedOnly, Utilities.GL_WIDTH_100 );
@@ -440,11 +505,11 @@ namespace AssetUsageDetectorNamespace
 
 					GUI.enabled = true;
 
-					searchInAllScenes = EditorGUILayout.ToggleLeft( "All scenes in the project", searchInAllScenes );
+					searchInAllScenes = WordWrappingToggleLeft( "All scenes in the project", searchInAllScenes );
 				}
 
 				GUILayout.BeginHorizontal();
-				GUILayout.Space( 35 );
+				GUILayout.Space( 35f );
 				GUILayout.BeginVertical();
 
 				excludedScenesDrawer.Draw( excludedScenes );
@@ -454,71 +519,24 @@ namespace AssetUsageDetectorNamespace
 
 				Utilities.DrawSeparatorLine();
 
-				searchInProjectSettings = EditorGUILayout.ToggleLeft( "Project Settings (Player Settings, Graphics Settings etc.)", searchInProjectSettings );
+				searchInProjectSettings = WordWrappingToggleLeft( "Project Settings (Player Settings, Graphics Settings etc.)", searchInProjectSettings );
 
-				GUILayout.Space( 10 );
+				GUILayout.Space( 10f );
 
-				//GUILayout.Box( "SEARCH SETTINGS", Utilities.BoxGUIStyle, Utilities.GL_EXPAND_WIDTH );
-
-				//GUILayout.BeginHorizontal();
-
-				//GUILayout.Label( new GUIContent( "> Search depth: " + searchDepthLimit, "Depth limit for recursively searching variables of objects" ), Utilities.GL_WIDTH_250 );
-
-				//searchDepthLimit = (int) GUILayout.HorizontalSlider( searchDepthLimit, 0, 4 );
-
-				//GUILayout.EndHorizontal();
-
-				//GUILayout.Label( "> Search variables:" );
-
-				//GUILayout.BeginHorizontal();
-
-				//GUILayout.Space( 35 );
-
-				//if( EditorGUILayout.ToggleLeft( "Public", ( fieldModifiers & BindingFlags.Public ) == BindingFlags.Public, Utilities.GL_WIDTH_100 ) )
-				//	fieldModifiers |= BindingFlags.Public;
-				//else
-				//	fieldModifiers &= ~BindingFlags.Public;
-
-				//if( EditorGUILayout.ToggleLeft( "Non-public", ( fieldModifiers & BindingFlags.NonPublic ) == BindingFlags.NonPublic, Utilities.GL_WIDTH_100 ) )
-				//	fieldModifiers |= BindingFlags.NonPublic;
-				//else
-				//	fieldModifiers &= ~BindingFlags.NonPublic;
-
-				//GUILayout.EndHorizontal();
-
-				//GUILayout.Label( "> Search properties:" );
-
-				//GUILayout.BeginHorizontal();
-
-				//GUILayout.Space( 35 );
-
-				//if( EditorGUILayout.ToggleLeft( "Public", ( propertyModifiers & BindingFlags.Public ) == BindingFlags.Public, Utilities.GL_WIDTH_100 ) )
-				//	propertyModifiers |= BindingFlags.Public;
-				//else
-				//	propertyModifiers &= ~BindingFlags.Public;
-
-				//if( EditorGUILayout.ToggleLeft( "Non-public", ( propertyModifiers & BindingFlags.NonPublic ) == BindingFlags.NonPublic, Utilities.GL_WIDTH_100 ) )
-				//	propertyModifiers |= BindingFlags.NonPublic;
-				//else
-				//	propertyModifiers &= ~BindingFlags.NonPublic;
-
-				//GUILayout.EndHorizontal();
-
-				//GUILayout.Space( 10 );
-
-				//searchNonSerializableVariables = EditorGUILayout.ToggleLeft( "Search non-serializable fields and properties", searchNonSerializableVariables );
-
-				//GUILayout.Space( 10 );
-
-				GUI.backgroundColor = Color.cyan;
-				GUILayout.Box( "SETTINGS", Utilities.BoxGUIStyle, Utilities.GL_EXPAND_WIDTH );
+				GUI.backgroundColor = AssetUsageDetectorSettings.SettingsHeaderColor;
+				GUILayout.Box( "<b>SETTINGS</b>", Utilities.BoxGUIStyle, Utilities.GL_EXPAND_WIDTH );
 				GUI.backgroundColor = c;
 
-				lazySceneSearch = EditorGUILayout.ToggleLeft( "Lazy scene search: scenes are searched in detail only when they are manually refreshed (faster search)", lazySceneSearch );
-				noAssetDatabaseChanges = EditorGUILayout.ToggleLeft( "I haven't modified any assets/scenes since the last search (faster search)", noAssetDatabaseChanges );
-				showDetailedProgressBar = EditorGUILayout.ToggleLeft( "Update search progress bar more often (slower search)", showDetailedProgressBar );
+				lazySceneSearch = WordWrappingToggleLeft( "Lazy scene search: scenes are searched in detail only when they are manually refreshed (faster search)", lazySceneSearch );
+				calculateUnusedObjects = WordWrappingToggleLeft( "Calculate unused objects", calculateUnusedObjects );
+				hideDuplicateRows = WordWrappingToggleLeft( "Hide duplicate rows in search results", hideDuplicateRows );
+#if UNITY_2018_3_OR_NEWER
+				hideReduntantPrefabVariantLinks = WordWrappingToggleLeft( "Hide redundant prefab variant links (when the same value is assigned to the same Component of a prefab and its variant(s))", hideReduntantPrefabVariantLinks );
+#endif
+				noAssetDatabaseChanges = WordWrappingToggleLeft( "I haven't modified any assets/scenes since the last search (faster search)", noAssetDatabaseChanges );
+				showDetailedProgressBar = WordWrappingToggleLeft( "Update search progress bar more often (cancelable search) (slower search)", showDetailedProgressBar );
 
-				GUILayout.Space( 10 );
+				GUILayout.Space( 10f );
 
 				// Don't let the user press the GO button without any valid search location
 				if( !searchInAllScenes && !searchInOpenScenes && !searchInScenesInBuild && !searchInAssetsFolder && !searchInProjectSettings )
@@ -529,15 +547,19 @@ namespace AssetUsageDetectorNamespace
 					InitiateSearch();
 					GUIUtility.ExitGUI();
 				}
+
+				GUILayout.Space( 5f );
 			}
 			else if( currentPhase == Phase.Complete )
 			{
 				// Draw the results of the search
 				GUI.enabled = false;
 
-				objectsToSearchDrawer.Draw( objectsToSearch );
+				DrawObjectsToSearchSection();
 
-				GUILayout.Space( 10 );
+				if( drawObjectsToSearchSection )
+					GUILayout.Space( 10f );
+
 				GUI.enabled = true;
 
 				if( GUILayout.Button( "Reset Search", Utilities.GL_HEIGHT_30 ) )
@@ -551,85 +573,64 @@ namespace AssetUsageDetectorNamespace
 				else if( !searchResult.SearchCompletedSuccessfully )
 					EditorGUILayout.HelpBox( "ERROR: search was interrupted, check the logs for more info", MessageType.Error );
 
-				Color c = GUI.backgroundColor;
-				GUI.backgroundColor = Color.green;
-				GUILayout.Box( "Don't forget to save scene(s) if you made any changes!", Utilities.BoxGUIStyle, Utilities.GL_EXPAND_WIDTH );
-				GUI.backgroundColor = c;
-
 				if( searchResult.NumberOfGroups == 0 )
 				{
-					GUILayout.Space( 10 );
+					GUILayout.Space( 10f );
 					GUILayout.Box( "No references found...", Utilities.BoxGUIStyle, Utilities.GL_EXPAND_WIDTH );
 				}
 				else
 				{
-					//GUILayout.Space( 10 );
-					//GUILayout.BeginHorizontal();
+					noAssetDatabaseChanges = WordWrappingToggleLeft( "I haven't modified any assets/scenes since the last search (faster Refresh)", noAssetDatabaseChanges );
 
-					//// Select all the references after filtering them (select only the GameObject's)
-					//if( GUILayout.Button( "Select All\n(GameObject-wise)", Utilities.GL_HEIGHT_35 ) )
-					//{
-					//	GameObject[] objects = searchResult.SelectAllAsGameObjects();
-					//	if( objects != null && objects.Length > 0 )
-					//		Selection.objects = objects;
-					//}
+					EditorGUILayout.Space();
 
-					//// Select all the references without filtering them
-					//if( GUILayout.Button( "Select All\n(Object-wise)", Utilities.GL_HEIGHT_35 ) )
-					//{
-					//	Object[] objects = searchResult.SelectAllAsObjects();
-					//	if( objects != null && objects.Length > 0 )
-					//		Selection.objects = objects;
-					//}
-
-					//GUILayout.EndHorizontal();
-
-					//GUILayout.Space( 10 );
-
-					searchResultDrawParameters.showTooltips = EditorGUILayout.ToggleLeft( showTooltipsLabel, searchResultDrawParameters.showTooltips );
-					noAssetDatabaseChanges = EditorGUILayout.ToggleLeft( "I haven't modified any assets/scenes since the last search (faster Refresh)", noAssetDatabaseChanges );
-					searchResultDrawParameters.noAssetDatabaseChanges = noAssetDatabaseChanges;
-
-					Utilities.DrawSeparatorLine();
-
-					GUILayout.Label( "Path drawing mode:" );
-
-					GUILayout.BeginHorizontal();
-
-					GUILayout.Space( 35 );
-
-					if( EditorGUILayout.ToggleLeft( "Full: Draw the complete paths to the references", searchResultDrawParameters.pathDrawingMode == PathDrawingMode.Full ) )
-						searchResultDrawParameters.pathDrawingMode = PathDrawingMode.Full;
-
-					GUILayout.EndHorizontal();
-
-					GUILayout.BeginHorizontal();
-
-					GUILayout.Space( 35 );
-
-					if( EditorGUILayout.ToggleLeft( "Shorter: Draw only the most relevant parts (that start with a UnityEngine.Object) of the complete paths", searchResultDrawParameters.pathDrawingMode == PathDrawingMode.ShortRelevantParts ) )
-						searchResultDrawParameters.pathDrawingMode = PathDrawingMode.ShortRelevantParts;
-
-					GUILayout.EndHorizontal();
-
-					GUILayout.BeginHorizontal();
-
-					GUILayout.Space( 35 );
-
-					if( EditorGUILayout.ToggleLeft( "Shortest: Draw only the last two nodes of the complete paths", searchResultDrawParameters.pathDrawingMode == PathDrawingMode.Shortest ) )
-						searchResultDrawParameters.pathDrawingMode = PathDrawingMode.Shortest;
-
-					GUILayout.EndHorizontal();
-
-					searchResult.DrawOnGUI( searchResultDrawParameters );
+					scrollPosition.y = searchResult.DrawOnGUI( this, scrollPosition.y, noAssetDatabaseChanges );
 				}
 			}
 
-			GUILayout.Space( 10 );
+			if( Event.current.type == EventType.MouseLeaveWindow )
+			{
+				SearchResultTooltip.Hide();
+
+				if( searchResult != null )
+					searchResult.CancelDelayedTreeViewTooltip();
+			}
 
 			GUILayout.EndVertical();
 
 			EditorGUILayout.EndScrollView();
+		}
+
+		private void DrawObjectsToSearchSection()
+		{
+			Color c = GUI.backgroundColor;
+			GUI.backgroundColor = AssetUsageDetectorSettings.SettingsHeaderColor;
+			GUILayout.Box( "<b>SEARCHED OBJECTS</b>", Utilities.BoxGUIStyle, Utilities.GL_EXPAND_WIDTH );
+			GUI.backgroundColor = c;
+
+			Rect searchedObjectsHeaderRect = GUILayoutUtility.GetLastRect();
+			searchedObjectsHeaderRect.x += 5f;
+			searchedObjectsHeaderRect.yMin += ( searchedObjectsHeaderRect.height - EditorGUIUtility.singleLineHeight ) * 0.5f;
+			searchedObjectsHeaderRect.height = EditorGUIUtility.singleLineHeight;
+
+			drawObjectsToSearchSection = EditorGUI.Foldout( searchedObjectsHeaderRect, drawObjectsToSearchSection, GUIContent.none, true );
+
+			if( drawObjectsToSearchSection )
+				objectsToSearchDrawer.Draw( objectsToSearch );
+		}
+
+		private bool WordWrappingToggleLeft( string label, bool value )
+		{
+			GUILayout.BeginHorizontal();
+			bool result = EditorGUILayout.ToggleLeft( GUIContent.none, value, GL_WIDTH_12 );
+			if( GUILayout.Button( label, EditorStyles.wordWrappedLabel ) )
+			{
+				GUI.FocusControl( null );
+				result = !value;
+			}
+			GUILayout.EndHorizontal();
+
+			return result;
 		}
 
 		private void InitiateSearch()
@@ -657,12 +658,19 @@ namespace AssetUsageDetectorNamespace
 				//propertyModifiers = propertyModifiers,
 				//searchDepthLimit = searchDepthLimit,
 				//searchNonSerializableVariables = searchNonSerializableVariables,
+				searchUnusedMaterialProperties = searchUnusedMaterialProperties,
 				lazySceneSearch = lazySceneSearch,
+				calculateUnusedObjects = calculateUnusedObjects,
+				hideDuplicateRows = hideDuplicateRows,
+				hideReduntantPrefabVariantLinks = hideReduntantPrefabVariantLinks,
 				noAssetDatabaseChanges = noAssetDatabaseChanges,
 				showDetailedProgressBar = showDetailedProgressBar
 			} );
 
 			currentPhase = Phase.Complete;
+
+			if( AssetUsageDetectorSettings.ShowCustomTooltip )
+				wantsMouseMove = wantsMouseEnterLeaveWindow = true;
 		}
 
 #if UNITY_2018_3_OR_NEWER
@@ -712,8 +720,28 @@ namespace AssetUsageDetectorNamespace
 
 			searchResult = null;
 			currentPhase = Phase.Setup;
+			wantsMouseMove = wantsMouseEnterLeaveWindow = false;
+
+			SearchResultTooltip.Hide();
 
 			return true;
+		}
+
+		internal void OnSettingsChanged( bool highlightedSearchTextColorChanged = false, bool tooltipDescriptionsColorChanged = false )
+		{
+			if( searchResult == null )
+				return;
+
+			wantsMouseMove = wantsMouseEnterLeaveWindow = AssetUsageDetectorSettings.ShowCustomTooltip;
+
+			for( int i = searchResult.NumberOfGroups - 1; i >= 0; i-- )
+			{
+				if( searchResult[i].treeView != null )
+				{
+					searchResult[i].treeView.rowHeight = EditorGUIUtility.singleLineHeight + AssetUsageDetectorSettings.ExtraRowHeight;
+					searchResult[i].treeView.OnSettingsChanged( highlightedSearchTextColorChanged, tooltipDescriptionsColorChanged );
+				}
+			}
 		}
 	}
 }
