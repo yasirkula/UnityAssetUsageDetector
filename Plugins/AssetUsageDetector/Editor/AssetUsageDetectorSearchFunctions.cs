@@ -438,6 +438,81 @@ namespace AssetUsageDetectorNamespace
 				}
 			}
 #endif
+			else if( component is ParticleSystemRenderer )
+			{
+				// Search ParticleSystemRenderer's custom meshes for references (at runtime, they can't be searched with reflection, unfortunately)
+				if( isInPlayMode && !AssetDatabase.Contains( component ) )
+				{
+					Mesh[] meshes = new Mesh[( (ParticleSystemRenderer) component ).meshCount];
+					int meshCount = ( (ParticleSystemRenderer) component ).GetMeshes( meshes );
+					for( int i = 0; i < meshCount; i++ )
+						referenceNode.AddLinkTo( SearchObject( meshes[i] ), "Renderer Module: Mesh" );
+				}
+			}
+			else if( component is ParticleSystem )
+			{
+				// At runtime, some ParticleSystem properties can't be searched with reflection, search them manually here
+				if( isInPlayMode && !AssetDatabase.Contains( component ) )
+				{
+					ParticleSystem particleSystem = (ParticleSystem) component;
+
+					try
+					{
+						ParticleSystem.CollisionModule collisionModule = particleSystem.collision;
+#if UNITY_2020_2_OR_NEWER
+						for( int i = 0, j = collisionModule.planeCount; i < j; i++ )
+#else
+						for( int i = 0, j = collisionModule.maxPlaneCount; i < j; i++ )
+#endif
+						{
+							Transform plane = collisionModule.GetPlane( i );
+							referenceNode.AddLinkTo( SearchObject( plane ), "Collision Module: Plane" );
+						}
+					}
+					catch { }
+
+					try
+					{
+						ParticleSystem.TriggerModule triggerModule = particleSystem.trigger;
+#if UNITY_2020_2_OR_NEWER
+						for( int i = 0, j = triggerModule.colliderCount; i < j; i++ )
+#else
+						for( int i = 0, j = triggerModule.maxColliderCount; i < j; i++ )
+#endif
+						{
+							Component collider = triggerModule.GetCollider( i );
+							referenceNode.AddLinkTo( SearchObject( collider ), "Trigger Module: Collider" );
+						}
+					}
+					catch { }
+
+#if UNITY_2017_1_OR_NEWER
+					try
+					{
+						ParticleSystem.TextureSheetAnimationModule textureSheetAnimationModule = particleSystem.textureSheetAnimation;
+						for( int i = 0, j = textureSheetAnimationModule.spriteCount; i < j; i++ )
+						{
+							Sprite sprite = textureSheetAnimationModule.GetSprite( i );
+							referenceNode.AddLinkTo( SearchObject( sprite ), "Texture Sheet Animation Module: Sprite" );
+						}
+					}
+					catch { }
+#endif
+
+#if UNITY_5_5_OR_NEWER
+					try
+					{
+						ParticleSystem.SubEmittersModule subEmittersModule = particleSystem.subEmitters;
+						for( int i = 0, j = subEmittersModule.subEmittersCount; i < j; i++ )
+						{
+							ParticleSystem subEmitterSystem = subEmittersModule.GetSubEmitterSystem( i );
+							referenceNode.AddLinkTo( SearchObject( subEmitterSystem ), "Sub Emitters Module: ParticleSystem" );
+						}
+					}
+					catch { }
+#endif
+				}
+			}
 
 			SearchVariablesWithSerializedObject( referenceNode );
 			return referenceNode;
