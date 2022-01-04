@@ -321,16 +321,28 @@ namespace AssetUsageDetectorNamespace
 							openScenes.Add( scene.path );
 					}
 
+					List<string> skippedScenes = new List<string>( scenesToSearch.Count );
 					scenesToSearch.RemoveWhere( ( path ) =>
 					{
 						if( !openScenes.Contains( path ) )
 						{
-							Debug.Log( "Can't search unloaded scenes while in play mode, skipped " + path );
+							skippedScenes.Add( path );
 							return true;
 						}
 
 						return false;
 					} );
+
+					if( skippedScenes.Count > 0 )
+					{
+						StringBuilder sb = Utilities.stringBuilder;
+						sb.Length = 0;
+						sb.Append( "Can't search unloaded scenes while in play mode, skipped " ).Append( skippedScenes.Count ).AppendLine( " scene(s):" );
+						for( int i = 0; i < skippedScenes.Count; i++ )
+							sb.Append( "- " ).AppendLine( skippedScenes[i] );
+
+						Debug.Log( sb.ToString() );
+					}
 				}
 
 				// Initialize data used by search functions
