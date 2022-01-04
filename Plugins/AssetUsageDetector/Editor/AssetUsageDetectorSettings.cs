@@ -171,7 +171,11 @@ namespace AssetUsageDetectorNamespace
 		public static void PreferencesGUI()
 		{
 			float labelWidth = EditorGUIUtility.labelWidth;
+#if UNITY_2018_3_OR_NEWER
 			EditorGUIUtility.labelWidth += 60f;
+#else
+			EditorGUIUtility.labelWidth += 20f;
+#endif
 
 			EditorGUI.BeginChangeCheck();
 
