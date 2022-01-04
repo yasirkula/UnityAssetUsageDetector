@@ -46,6 +46,8 @@ namespace AssetUsageDetectorNamespace
 		// This isn't readonly so that it can be serialized
 		private List<ObjectToSearch> objectsToSearch = new List<ObjectToSearch>() { new ObjectToSearch( null ) };
 
+#pragma warning disable 0649
+		[SerializeField] // Since titleContent persists between Editor sessions, so should the IsLocked property because otherwise, "[L]" in title becomes confusing when the EditorWindow isn't actually locked
 		private bool m_isLocked;
 		private bool IsLocked
 		{
@@ -59,6 +61,7 @@ namespace AssetUsageDetectorNamespace
 				}
 			}
 		}
+#pragma warning restore 0649
 
 		private Phase currentPhase = Phase.Setup;
 
@@ -166,6 +169,8 @@ namespace AssetUsageDetectorNamespace
 			if( window && ( filter == WindowFilter.AlwaysReturnActive || ( !window.IsLocked && filter == WindowFilter.ReturnActiveIfNotLocked ) ) )
 			{
 				window.Show();
+				window.Focus();
+
 				return window;
 			}
 
@@ -188,6 +193,8 @@ namespace AssetUsageDetectorNamespace
 			}
 
 			window.Show( true );
+			window.Focus();
+
 			return window;
 		}
 
