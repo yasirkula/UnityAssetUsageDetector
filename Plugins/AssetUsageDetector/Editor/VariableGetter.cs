@@ -10,23 +10,23 @@ namespace AssetUsageDetectorNamespace
 	// Custom struct to hold a variable, its important properties and its getter function
 	public struct VariableGetterHolder
 	{
-		public readonly string name;
-		public readonly bool isProperty;
+		public readonly MemberInfo variable;
 		public readonly bool isSerializable;
 		private readonly VariableGetVal getter;
 
+		public string Name { get { return variable.Name; } }
+		public bool IsProperty { get { return variable is PropertyInfo; } }
+
 		public VariableGetterHolder( FieldInfo fieldInfo, VariableGetVal getter, bool isSerializable )
 		{
-			name = fieldInfo.Name;
-			isProperty = false;
+			this.variable = fieldInfo;
 			this.isSerializable = isSerializable;
 			this.getter = getter;
 		}
 
 		public VariableGetterHolder( PropertyInfo propertyInfo, VariableGetVal getter, bool isSerializable )
 		{
-			name = propertyInfo.Name;
-			isProperty = true;
+			this.variable = propertyInfo;
 			this.isSerializable = isSerializable;
 			this.getter = getter;
 		}

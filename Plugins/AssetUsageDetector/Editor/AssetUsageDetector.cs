@@ -44,6 +44,8 @@ namespace AssetUsageDetectorNamespace
 
 			public bool searchUnusedMaterialProperties = true;
 
+			public SearchRefactoring searchRefactoring = null;
+
 			public bool lazySceneSearch = true;
 			public bool calculateUnusedObjects = false;
 			public bool hideDuplicateRows = true;
@@ -52,6 +54,8 @@ namespace AssetUsageDetectorNamespace
 			public bool showDetailedProgressBar = true;
 		}
 		#endregion
+
+		private Parameters searchParameters;
 
 		// A set that contains the searched scene object(s), asset(s) and their sub-assets (if any)
 		private readonly HashSet<Object> objectsToSearchSet = new HashSet<Object>();
@@ -78,14 +82,9 @@ namespace AssetUsageDetectorNamespace
 		// Stack of SearchObject function parameters to avoid infinite loops (which happens when same object is passed as parameter to function)
 		private readonly List<object> callStack = new List<object>( 64 );
 
-		private int searchDepthLimit; // Depth limit for recursively searching variables of objects
-
 		private Object currentSearchedObject;
 		private int currentDepth;
 
-		private bool searchUnusedMaterialProperties;
-
-		private bool dontSearchInSourceAssets;
 		private bool searchingSourceAssets;
 		private bool isInPlayMode;
 
@@ -166,6 +165,8 @@ namespace AssetUsageDetectorNamespace
 
 			try
 			{
+				this.searchParameters = searchParameters;
+
 				// Initialize commonly used variables
 				searchResult = new List<SearchResultGroup>(); // Overall search results
 
@@ -173,10 +174,6 @@ namespace AssetUsageDetectorNamespace
 				currentDepth = 0;
 				searchedObjectsCount = 0;
 				searchStartTime = EditorApplication.timeSinceStartup;
-
-				searchDepthLimit = searchParameters.searchDepthLimit;
-				dontSearchInSourceAssets = searchParameters.dontSearchInSourceAssets;
-				searchUnusedMaterialProperties = searchParameters.searchUnusedMaterialProperties;
 
 				searchedObjects.Clear();
 				searchedUnityObjects.Clear();
@@ -545,7 +542,7 @@ namespace AssetUsageDetectorNamespace
 				}
 
 				// Searching source assets last prevents some references from being excluded due to callStack.ContainsFast
-				if( !dontSearchInSourceAssets )
+				if( !searchParameters.dontSearchInSourceAssets )
 				{
 					searchingSourceAssets = true;
 
@@ -833,7 +830,7 @@ namespace AssetUsageDetectorNamespace
 				if( !string.IsNullOrEmpty( assetPath ) )
 				{
 					assetsToSearchPathsSet.Add( assetPath );
-					if( dontSearchInSourceAssets && AssetDatabase.IsMainAsset( obj ) )
+					if( searchParameters.dontSearchInSourceAssets && AssetDatabase.IsMainAsset( obj ) )
 						excludedAssetsPathsSet.Add( assetPath );
 				}
 
@@ -1062,7 +1059,7 @@ namespace AssetUsageDetectorNamespace
 			else
 			{
 				// Comply with the recursive search limit
-				if( currentDepth >= searchDepthLimit )
+				if( currentDepth >= searchParameters.searchDepthLimit )
 					return null;
 
 				callStack.Add( obj );

@@ -37,6 +37,33 @@ There are 5 ways to install this plugin:
 
 ![SearchResults2](Images/SearchResults2Dark.png)
 
+## SEARCH REFACTORING
+
+While searching for references using the Scripting API, it's possible to get notified of the found references *during* the search (some references like *Assembly Definition File* references or *Shader Graph* references aren't supported) and in most cases, refactor them (e.g. changing all usages of a searched object with something else or *null*). Disabling *Lazy Scene Search* is recommended while using this feature and it's advised to backup your project beforehand.
+
+To initiate a search using the Scripting API, you need to put your script either in *Editor* folder or add `AssetUsageDetector.Editor` as reference to your *Assembly Definition File*. Then, you can either create a new instance of `AssetUsageDetectorNamespace.AssetUsageDetector` object and call its `Run` method, or call the `AssetUsageDetectorNamespace.AssetUsageDetectorWindow.ShowAndSearch` method. In either case, you'll be handling the search refactoring in the **searchRefactoring** callback:
+
+```csharp
+void ReplaceFontUsages( Font from, Font to )
+{
+	AssetUsageDetector assetUsageDetector = new AssetUsageDetector();
+	assetUsageDetector.Run( new AssetUsageDetector.Parameters()
+	{
+		objectsToSearch = new Object[] { from },
+		lazySceneSearch = false,
+		searchRefactoring = ( searchMatch ) =>
+		{
+			Debug.LogFormat( "Found a {0} reference from {1} to {2}", searchMatch.GetType().Name, searchMatch.Source, searchMatch.Value );
+			searchMatch.ChangeValue( to );
+		}
+	} );
+}
+```
+
+**NOTE:** Refactored references won't be reflected to the returned search results, old references will continue to be displayed. After saving the changes (modified scenes) and initiating another search, correct search results will be shown.
+
+**NOTE2:** After refactoring the references, consider performing a normal search to see if all references were correctly refactored. If some references weren't refactored (even though they could've been), feel free to report it.
+
 ## KNOWN LIMITATIONS
 
 - *Addressables* aren't supported

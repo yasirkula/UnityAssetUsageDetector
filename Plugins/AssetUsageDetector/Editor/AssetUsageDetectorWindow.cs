@@ -90,6 +90,8 @@ namespace AssetUsageDetectorNamespace
 
 		private BindingFlags fieldModifiers, propertyModifiers;
 
+		private SearchRefactoring searchRefactoring = null; // Its value can be assigned via ShowAndSearch
+
 		private readonly ObjectToSearchListDrawer objectsToSearchDrawer = new ObjectToSearchListDrawer();
 		private readonly ObjectListDrawer searchInAssetsSubsetDrawer = new ObjectListDrawer( "Search following asset(s) only:", false );
 		private readonly ObjectListDrawer excludedAssetsDrawer = new ObjectListDrawer( "Don't search following asset(s):", false );
@@ -304,6 +306,7 @@ namespace AssetUsageDetectorNamespace
 				propertyModifiers = searchParameters.propertyModifiers;
 				searchNonSerializableVariables = searchParameters.searchNonSerializableVariables;
 				searchUnusedMaterialProperties = searchParameters.searchUnusedMaterialProperties;
+				searchRefactoring = searchParameters.searchRefactoring;
 				lazySceneSearch = searchParameters.lazySceneSearch;
 				calculateUnusedObjects = searchParameters.calculateUnusedObjects;
 				hideDuplicateRows = searchParameters.hideDuplicateRows;
@@ -666,6 +669,7 @@ namespace AssetUsageDetectorNamespace
 				//searchDepthLimit = searchDepthLimit,
 				//searchNonSerializableVariables = searchNonSerializableVariables,
 				searchUnusedMaterialProperties = searchUnusedMaterialProperties,
+				searchRefactoring = searchRefactoring,
 				lazySceneSearch = lazySceneSearch,
 				calculateUnusedObjects = calculateUnusedObjects,
 				hideDuplicateRows = hideDuplicateRows,
@@ -675,6 +679,9 @@ namespace AssetUsageDetectorNamespace
 			} );
 
 			currentPhase = Phase.Complete;
+
+			// We really don't want SearchRefactoring to affect next searches unless the search is initiated via ShowAndSearch again
+			searchRefactoring = null;
 
 			if( AssetUsageDetectorSettings.ShowCustomTooltip )
 				wantsMouseMove = wantsMouseEnterLeaveWindow = true;

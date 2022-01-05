@@ -358,13 +358,18 @@ namespace AssetUsageDetectorNamespace
 #if UNITY_2018_3_OR_NEWER
 				Object prefab = go;
 				while( prefab = PrefabUtility.GetCorrespondingObjectFromSource( prefab ) )
+#else
+				Object prefab = PrefabUtility.GetPrefabParent( go );
+				if( prefab )
 #endif
 				{
-#if !UNITY_2018_3_OR_NEWER
-					Object prefab = PrefabUtility.GetPrefabParent( go );
-#endif
 					if( objectsToSearchSet.Contains( prefab ) && assetsToSearchRootPrefabs.ContainsFast( prefab as GameObject ) )
+					{
 						referenceNode.AddLinkTo( GetReferenceNode( prefab ), "Prefab object" );
+
+						if( searchParameters.searchRefactoring != null )
+							searchParameters.searchRefactoring( new PrefabMatch( go, prefab ) );
+					}
 				}
 			}
 
@@ -392,14 +397,43 @@ namespace AssetUsageDetectorNamespace
 				// Although SearchVariablesWithSerializedObject can detect these references with SerializedObject, it isn't possible when reflection is used in Play mode
 				MonoScript script = MonoScript.FromMonoBehaviour( (MonoBehaviour) component );
 				if( objectsToSearchSet.Contains( script ) )
+				{
 					referenceNode.AddLinkTo( GetReferenceNode( script ) );
+
+					if( searchParameters.searchRefactoring != null )
+						searchParameters.searchRefactoring( new BehaviourUsageMatch( component.gameObject, script, component ) );
+				}
 			}
 
 			if( component is Animation )
 			{
 				// Search animation clips for references
-				foreach( AnimationState anim in (Animation) component )
-					referenceNode.AddLinkTo( SearchObject( anim.clip ) );
+				if( searchParameters.searchRefactoring == null )
+				{
+					foreach( AnimationState anim in (Animation) component )
+						referenceNode.AddLinkTo( SearchObject( anim.clip ) );
+				}
+				else
+				{
+					AnimationClip[] clips = AnimationUtility.GetAnimationClips( component.gameObject );
+					bool modifiedClips = false;
+					for( int i = 0; i < clips.Length; i++ )
+					{
+						referenceNode.AddLinkTo( SearchObject( clips[i] ) );
+
+						if( objectsToSearchSet.Contains( clips[i] ) )
+						{
+							searchParameters.searchRefactoring( new AnimationSystemMatch( component, clips[i], ( newValue ) =>
+							{
+								clips[i] = (AnimationClip) newValue;
+								modifiedClips = true;
+							} ) );
+						}
+					}
+
+					if( modifiedClips )
+						AnimationUtility.SetAnimationClips( (Animation) component, clips );
+				}
 
 				// Search the objects that are animated by this Animation component for references
 				SearchAnimatedObjects( referenceNode );
@@ -407,7 +441,11 @@ namespace AssetUsageDetectorNamespace
 			else if( component is Animator )
 			{
 				// Search animation clips for references (via AnimatorController)
-				referenceNode.AddLinkTo( SearchObject( ( (Animator) component ).runtimeAnimatorController ) );
+				RuntimeAnimatorController animatorController = ( (Animator) component ).runtimeAnimatorController;
+				referenceNode.AddLinkTo( SearchObject( animatorController ) );
+
+				if( searchParameters.searchRefactoring != null && objectsToSearchSet.Contains( animatorController ) )
+					searchParameters.searchRefactoring( new AnimationSystemMatch( component, animatorController, ( newValue ) => ( (Animator) component ).runtimeAnimatorController = (RuntimeAnimatorController) newValue ) );
 
 				// Search the objects that are animated by this Animator component for references
 				SearchAnimatedObjects( referenceNode );
@@ -422,7 +460,12 @@ namespace AssetUsageDetectorNamespace
 				if( tiles != null )
 				{
 					for( int i = 0; i < tiles.Length; i++ )
+					{
 						referenceNode.AddLinkTo( SearchObject( tiles[i] ), "Tile" );
+
+						if( searchParameters.searchRefactoring != null && objectsToSearchSet.Contains( tiles[i] ) )
+							searchParameters.searchRefactoring( new OtherSearchMatch( component, tiles[i], ( newValue ) => ( (Tilemap) component ).SwapTile( tiles[i], (TileBase) newValue ) ) );
+					}
 				}
 			}
 #endif
@@ -434,7 +477,13 @@ namespace AssetUsageDetectorNamespace
 				if( playableAsset != null && !playableAsset.Equals( null ) )
 				{
 					foreach( PlayableBinding binding in playableAsset.outputs )
-						referenceNode.AddLinkTo( SearchObject( ( (PlayableDirector) component ).GetGenericBinding( binding.sourceObject ) ), "Binding: " + binding.streamName );
+					{
+						Object bindingValue = ( (PlayableDirector) component ).GetGenericBinding( binding.sourceObject );
+						referenceNode.AddLinkTo( SearchObject( bindingValue ), "Binding: " + binding.streamName );
+
+						if( searchParameters.searchRefactoring != null && objectsToSearchSet.Contains( bindingValue ) )
+							searchParameters.searchRefactoring( new AnimationSystemMatch( component, bindingValue, ( newValue ) => ( (PlayableDirector) component ).SetGenericBinding( binding.sourceObject, newValue ) ) );
+					}
 				}
 			}
 #endif
@@ -445,8 +494,23 @@ namespace AssetUsageDetectorNamespace
 				{
 					Mesh[] meshes = new Mesh[( (ParticleSystemRenderer) component ).meshCount];
 					int meshCount = ( (ParticleSystemRenderer) component ).GetMeshes( meshes );
+					bool modifiedMeshes = false;
 					for( int i = 0; i < meshCount; i++ )
+					{
 						referenceNode.AddLinkTo( SearchObject( meshes[i] ), "Renderer Module: Mesh" );
+
+						if( searchParameters.searchRefactoring != null && objectsToSearchSet.Contains( meshes[i] ) )
+						{
+							searchParameters.searchRefactoring( new OtherSearchMatch( component, meshes[i], ( newValue ) =>
+							{
+								meshes[i] = (Mesh) newValue;
+								modifiedMeshes = true;
+							} ) );
+						}
+					}
+
+					if( modifiedMeshes )
+						( (ParticleSystemRenderer) component ).SetMeshes( meshes, meshCount );
 				}
 			}
 			else if( component is ParticleSystem )
@@ -467,6 +531,9 @@ namespace AssetUsageDetectorNamespace
 						{
 							Transform plane = collisionModule.GetPlane( i );
 							referenceNode.AddLinkTo( SearchObject( plane ), "Collision Module: Plane" );
+
+							if( searchParameters.searchRefactoring != null && objectsToSearchSet.Contains( plane ) )
+								searchParameters.searchRefactoring( new OtherSearchMatch( collisionModule, plane, component, ( newValue ) => collisionModule.SetPlane( i, (Transform) newValue ) ) );
 						}
 					}
 					catch { }
@@ -482,6 +549,9 @@ namespace AssetUsageDetectorNamespace
 						{
 							Component collider = triggerModule.GetCollider( i );
 							referenceNode.AddLinkTo( SearchObject( collider ), "Trigger Module: Collider" );
+
+							if( searchParameters.searchRefactoring != null && objectsToSearchSet.Contains( collider ) )
+								searchParameters.searchRefactoring( new OtherSearchMatch( triggerModule, collider, component, ( newValue ) => triggerModule.SetCollider( i, (Component) newValue ) ) );
 						}
 					}
 					catch { }
@@ -494,6 +564,9 @@ namespace AssetUsageDetectorNamespace
 						{
 							Sprite sprite = textureSheetAnimationModule.GetSprite( i );
 							referenceNode.AddLinkTo( SearchObject( sprite ), "Texture Sheet Animation Module: Sprite" );
+
+							if( searchParameters.searchRefactoring != null && objectsToSearchSet.Contains( sprite ) )
+								searchParameters.searchRefactoring( new OtherSearchMatch( textureSheetAnimationModule, sprite, component, ( newValue ) => textureSheetAnimationModule.SetSprite( i, (Sprite) newValue ) ) );
 						}
 					}
 					catch { }
@@ -507,6 +580,9 @@ namespace AssetUsageDetectorNamespace
 						{
 							ParticleSystem subEmitterSystem = subEmittersModule.GetSubEmitterSystem( i );
 							referenceNode.AddLinkTo( SearchObject( subEmitterSystem ), "Sub Emitters Module: ParticleSystem" );
+
+							if( searchParameters.searchRefactoring != null && objectsToSearchSet.Contains( subEmitterSystem ) )
+								searchParameters.searchRefactoring( new OtherSearchMatch( subEmittersModule, subEmitterSystem, component, ( newValue ) => subEmittersModule.SetSubEmitterSystem( i, (ParticleSystem) newValue ) ) );
 						}
 					}
 					catch { }
@@ -554,7 +630,7 @@ namespace AssetUsageDetectorNamespace
 								string propertyName = materialSO.FindProperty( "m_SavedProperties.m_TexEnvs.Array.data[" + texturePropertyIndex + "].first" ).stringValue;
 								if( material.HasProperty( propertyName ) )
 									linkDescriptions[j] = "[Property: " + propertyName + "]";
-								else if( searchUnusedMaterialProperties )
+								else if( searchParameters.searchUnusedMaterialProperties )
 								{
 									// Move unused references to the end of the list so that used references come first
 									linkDescriptions.Add( "[Property (UNUSED): " + propertyName + "]" );
@@ -583,7 +659,12 @@ namespace AssetUsageDetectorNamespace
 						string propertyName = ShaderUtil.GetPropertyName( shader, i );
 						Texture assignedTexture = material.GetTexture( propertyName );
 						if( objectsToSearchSet.Contains( assignedTexture ) )
+						{
 							referenceNode.AddLinkTo( GetReferenceNode( assignedTexture ), "Shader property: " + propertyName );
+
+							if( searchParameters.searchRefactoring != null )
+								searchParameters.searchRefactoring( new OtherSearchMatch( material, assignedTexture, ( newValue ) => material.SetTexture( propertyName, (Texture) newValue ) ) );
+						}
 					}
 				}
 			}
@@ -615,7 +696,12 @@ namespace AssetUsageDetectorNamespace
 #endif
 
 							if( objectsToSearchSet.Contains( defaultTexture ) )
+							{
 								referenceNode.AddLinkTo( GetReferenceNode( defaultTexture ), "Default Texture: " + propertyName );
+
+								if( searchParameters.searchRefactoring != null )
+									searchParameters.searchRefactoring( new AssetImporterDefaultValueMatch( shaderImporter, defaultTexture, propertyName, null ) );
+							}
 						}
 					}
 				}
@@ -662,11 +748,16 @@ namespace AssetUsageDetectorNamespace
 				VariableGetterHolder[] variables = GetFilteredVariablesForType( scriptType );
 				for( int i = 0; i < variables.Length; i++ )
 				{
-					if( variables[i].isSerializable && !variables[i].isProperty )
+					if( variables[i].isSerializable && !variables[i].IsProperty )
 					{
-						Object defaultValue = scriptImporter.GetDefaultReference( variables[i].name );
+						Object defaultValue = scriptImporter.GetDefaultReference( variables[i].Name );
 						if( objectsToSearchSet.Contains( defaultValue ) )
-							referenceNode.AddLinkTo( GetReferenceNode( defaultValue ), "Default variable value: " + variables[i].name );
+						{
+							referenceNode.AddLinkTo( GetReferenceNode( defaultValue ), "Default variable value: " + variables[i].Name );
+
+							if( searchParameters.searchRefactoring != null )
+								searchParameters.searchRefactoring( new AssetImporterDefaultValueMatch( scriptImporter, defaultValue, variables[i].Name, variables ) );
+						}
 					}
 				}
 			}
@@ -685,7 +776,12 @@ namespace AssetUsageDetectorNamespace
 				for( int i = 0; i < layers.Length; i++ )
 				{
 					if( objectsToSearchSet.Contains( layers[i].avatarMask ) )
+					{
 						referenceNode.AddLinkTo( GetReferenceNode( layers[i].avatarMask ), layers[i].name + " Mask" );
+
+						if( searchParameters.searchRefactoring != null )
+							searchParameters.searchRefactoring( new AnimationSystemMatch( layers[i], layers[i].avatarMask, controller, ( newValue ) => layers[i].avatarMask = (AvatarMask) newValue ) );
+					}
 
 					referenceNode.AddLinkTo( SearchObject( layers[i].stateMachine ) );
 				}
@@ -696,7 +792,33 @@ namespace AssetUsageDetectorNamespace
 				{
 					RuntimeAnimatorController parentController = ( (AnimatorOverrideController) controller ).runtimeAnimatorController;
 					if( objectsToSearchSet.Contains( parentController ) )
+					{
 						referenceNode.AddLinkTo( GetReferenceNode( parentController ) );
+
+						if( searchParameters.searchRefactoring != null )
+							searchParameters.searchRefactoring( new AnimationSystemMatch( controller, parentController, ( newValue ) => ( (AnimatorOverrideController) controller ).runtimeAnimatorController = (RuntimeAnimatorController) newValue ) );
+					}
+
+					if( searchParameters.searchRefactoring != null )
+					{
+						List<KeyValuePair<AnimationClip, AnimationClip>> overrideClips = new List<KeyValuePair<AnimationClip, AnimationClip>>( ( (AnimatorOverrideController) controller ).overridesCount );
+						( (AnimatorOverrideController) controller ).GetOverrides( overrideClips );
+						bool modifiedOverrideClips = false;
+						for( int i = overrideClips.Count - 1; i >= 0; i-- )
+						{
+							if( objectsToSearchSet.Contains( overrideClips[i].Value ) )
+							{
+								searchParameters.searchRefactoring( new AnimationSystemMatch( controller, overrideClips[i].Value, ( newValue ) =>
+								{
+									overrideClips[i] = new KeyValuePair<AnimationClip, AnimationClip>( overrideClips[i].Key, (AnimationClip) newValue );
+									modifiedOverrideClips = true;
+								} ) );
+							}
+						}
+
+						if( modifiedOverrideClips )
+							( (AnimatorOverrideController) controller ).ApplyOverrides( overrideClips );
+					}
 				}
 
 				AnimationClip[] animClips = controller.animationClips;
@@ -727,7 +849,12 @@ namespace AssetUsageDetectorNamespace
 				{
 					MonoScript script = MonoScript.FromScriptableObject( behaviours[i] );
 					if( objectsToSearchSet.Contains( script ) )
+					{
 						referenceNode.AddLinkTo( GetReferenceNode( script ) );
+
+						if( searchParameters.searchRefactoring != null )
+							searchParameters.searchRefactoring( new BehaviourUsageMatch( animatorStateMachine, script, behaviours[i] ) );
+					}
 				}
 			}
 
@@ -741,6 +868,9 @@ namespace AssetUsageDetectorNamespace
 
 			referenceNode.AddLinkTo( SearchObject( animatorState.motion ), "Motion" );
 
+			if( searchParameters.searchRefactoring != null && animatorState.motion as AnimationClip && objectsToSearchSet.Contains( animatorState.motion ) )
+				searchParameters.searchRefactoring( new AnimationSystemMatch( animatorState, animatorState.motion, ( newValue ) => animatorState.motion = (Motion) newValue ) );
+
 			if( searchMonoBehavioursForScript )
 			{
 				StateMachineBehaviour[] behaviours = animatorState.behaviours;
@@ -748,7 +878,12 @@ namespace AssetUsageDetectorNamespace
 				{
 					MonoScript script = MonoScript.FromScriptableObject( behaviours[i] );
 					if( objectsToSearchSet.Contains( script ) )
+					{
 						referenceNode.AddLinkTo( GetReferenceNode( script ) );
+
+						if( searchParameters.searchRefactoring != null )
+							searchParameters.searchRefactoring( new BehaviourUsageMatch( animatorState, script, behaviours[i] ) );
+					}
 				}
 			}
 
@@ -768,7 +903,12 @@ namespace AssetUsageDetectorNamespace
 
 			ChildMotion[] children = blendTree.children;
 			for( int i = 0; i < children.Length; i++ )
+			{
 				referenceNode.AddLinkTo( SearchObject( children[i].motion ), "Motion" );
+
+				if( searchParameters.searchRefactoring != null && children[i].motion as AnimationClip && objectsToSearchSet.Contains( children[i].motion ) )
+					searchParameters.searchRefactoring( new AnimationSystemMatch( blendTree, children[i].motion, ( newValue ) => children[i].motion = (Motion) newValue ) );
+			}
 
 			return referenceNode;
 		}
@@ -784,14 +924,44 @@ namespace AssetUsageDetectorNamespace
 			{
 				// Search through all the keyframes in this curve
 				ObjectReferenceKeyframe[] keyframes = AnimationUtility.GetObjectReferenceCurve( clip, objectCurves[i] );
+				bool modifiedKeyframes = false;
 				for( int j = 0; j < keyframes.Length; j++ )
+				{
 					referenceNode.AddLinkTo( SearchObject( keyframes[j].value ), "Keyframe: " + keyframes[j].time );
+
+					if( searchParameters.searchRefactoring != null && objectsToSearchSet.Contains( keyframes[j].value ) )
+					{
+						searchParameters.searchRefactoring( new AnimationSystemMatch( clip, keyframes[j].value, ( newValue ) =>
+						{
+							keyframes[j].value = newValue;
+							modifiedKeyframes = true;
+						} ) );
+					}
+				}
+
+				if( modifiedKeyframes )
+					AnimationUtility.SetObjectReferenceCurve( clip, objectCurves[i], keyframes );
 			}
 
 			// Get all events from animation clip
 			AnimationEvent[] events = AnimationUtility.GetAnimationEvents( clip );
+			bool modifiedEvents = false;
 			for( int i = 0; i < events.Length; i++ )
+			{
 				referenceNode.AddLinkTo( SearchObject( events[i].objectReferenceParameter ), "AnimationEvent: " + events[i].time );
+
+				if( searchParameters.searchRefactoring != null && objectsToSearchSet.Contains( events[i].objectReferenceParameter ) )
+				{
+					searchParameters.searchRefactoring( new AnimationSystemMatch( clip, events[i].objectReferenceParameter, ( newValue ) =>
+					{
+						events[i].objectReferenceParameter = newValue;
+						modifiedEvents = true;
+					} ) );
+				}
+			}
+
+			if( modifiedEvents )
+				AnimationUtility.SetAnimationEvents( clip, events );
 
 			return referenceNode;
 		}
@@ -805,24 +975,39 @@ namespace AssetUsageDetectorNamespace
 			SerializedObject spriteAtlasSO = new SerializedObject( spriteAtlas );
 			if( spriteAtlas.isVariant )
 			{
-				Object masterAtlas = spriteAtlasSO.FindProperty( "m_MasterAtlas" ).objectReferenceValue;
+				SerializedProperty masterAtlasProperty = spriteAtlasSO.FindProperty( "m_MasterAtlas" );
+				Object masterAtlas = masterAtlasProperty.objectReferenceValue;
 				if( objectsToSearchSet.Contains( masterAtlas ) )
+				{
 					referenceNode.AddLinkTo( SearchObject( masterAtlas ), "Master Atlas" );
+
+					if( searchParameters.searchRefactoring != null )
+						searchParameters.searchRefactoring( new SerializedPropertyMatch( spriteAtlas, masterAtlas, masterAtlasProperty ) );
+				}
 			}
 
-#if UNITY_2018_2_OR_NEWER
-			Object[] packables = spriteAtlas.GetPackables();
-			if( packables != null )
-			{
-				for( int i = 0; i < packables.Length; i++ )
-					SearchSpriteAtlas( referenceNode, packables[i] );
-			}
-#else
 			SerializedProperty packables = spriteAtlasSO.FindProperty( "m_EditorData.packables" );
 			if( packables != null )
 			{
 				for( int i = 0, length = packables.arraySize; i < length; i++ )
-					SearchSpriteAtlas( referenceNode, packables.GetArrayElementAtIndex( i ).objectReferenceValue );
+				{
+					SerializedProperty packedSpriteProperty = packables.GetArrayElementAtIndex( i );
+					Object packedSprite = packedSpriteProperty.objectReferenceValue;
+					SearchSpriteAtlas( referenceNode, packedSprite );
+
+					if( searchParameters.searchRefactoring != null && objectsToSearchSet.Contains( packedSprite ) )
+						searchParameters.searchRefactoring( new SerializedPropertyMatch( spriteAtlas, packedSprite, packedSpriteProperty ) );
+				}
+			}
+#if UNITY_2018_2_OR_NEWER
+			else
+			{
+				Object[] _packables = spriteAtlas.GetPackables();
+				if( _packables != null )
+				{
+					for( int i = 0; i < _packables.Length; i++ )
+						SearchSpriteAtlas( referenceNode, _packables[i] );
+				}
 			}
 #endif
 
@@ -1188,28 +1373,34 @@ namespace AssetUsageDetectorNamespace
 							continue;
 						}
 
+						Object propertyValue;
 						ReferenceNode searchResult;
 						switch( iterator.propertyType )
 						{
 							case SerializedPropertyType.ObjectReference:
-								searchResult = SearchObject( PreferablyGameObject( iterator.objectReferenceValue ) );
+								propertyValue = iterator.objectReferenceValue;
+								searchResult = SearchObject( PreferablyGameObject( propertyValue ) );
 								enterChildren = false;
 								break;
 							case SerializedPropertyType.ExposedReference:
-								searchResult = SearchObject( PreferablyGameObject( iterator.exposedReferenceValue ) );
+								propertyValue = iterator.exposedReferenceValue;
+								searchResult = SearchObject( PreferablyGameObject( propertyValue ) );
 								enterChildren = false;
 								break;
 #if UNITY_2019_3_OR_NEWER
 							case SerializedPropertyType.ManagedReference:
-								searchResult = SearchObject( PreferablyGameObject( GetRawSerializedPropertyValue( iterator ) ) );
+								propertyValue = GetRawSerializedPropertyValue( iterator ) as Object;
+								searchResult = SearchObject( PreferablyGameObject( propertyValue ) );
 								enterChildren = false;
 								break;
 #endif
 							case SerializedPropertyType.Generic:
+								propertyValue = null;
 								searchResult = null;
 								enterChildren = true;
 								break;
 							default:
+								propertyValue = null;
 								searchResult = null;
 								enterChildren = false;
 								break;
@@ -1221,7 +1412,12 @@ namespace AssetUsageDetectorNamespace
 
 							// m_RD.texture is a redundant reference that shows up when searching sprites
 							if( !propertyPath.EndsWithFast( "m_RD.texture" ) )
+							{
 								referenceNode.AddLinkTo( searchResult, "Variable: " + propertyPath.Replace( ".Array.data[", "[" ) ); // "arrayVariable.Array.data[0]" becomes "arrayVariable[0]"
+
+								if( searchParameters.searchRefactoring != null && objectsToSearchSet.Contains( propertyValue ) )
+									searchParameters.searchRefactoring( new SerializedPropertyMatch( (Object) referenceNode.nodeObject, propertyValue, iterator ) );
+							}
 						}
 					} while( iterator.Next( enterChildren ) );
 
@@ -1256,7 +1452,12 @@ namespace AssetUsageDetectorNamespace
 					{
 						ReferenceNode searchResult = SearchObject( PreferablyGameObject( variableValue ) );
 						if( searchResult != null && searchResult != referenceNode )
-							referenceNode.AddLinkTo( searchResult, ( variables[i].isProperty ? "Property: " : "Variable: " ) + variables[i].name );
+						{
+							referenceNode.AddLinkTo( searchResult, ( variables[i].IsProperty ? "Property: " : "Variable: " ) + variables[i].Name );
+
+							if( searchParameters.searchRefactoring != null && objectsToSearchSet.Contains( variableValue as Object ) )
+								searchParameters.searchRefactoring( new ReflectionMatch( referenceNode.nodeObject, (Object) variableValue, variables[i].variable ) );
+						}
 					}
 
 					if( variableValue is IEnumerable && !( variableValue is Transform ) )
@@ -1264,13 +1465,30 @@ namespace AssetUsageDetectorNamespace
 						// If the field is IEnumerable (possibly an array or collection), search through members of it
 						// Note that Transform IEnumerable (children of the transform) is not iterated
 						int index = 0;
+						List<Object> foundReferences = null;
 						foreach( object element in (IEnumerable) variableValue )
 						{
 							ReferenceNode searchResult = SearchObject( PreferablyGameObject( element ) );
 							if( searchResult != null && searchResult != referenceNode )
-								referenceNode.AddLinkTo( searchResult, string.Concat( variables[i].isProperty ? "Property: " : "Variable: ", variables[i].name, "[", index + "]" ) );
+							{
+								referenceNode.AddLinkTo( searchResult, string.Concat( variables[i].IsProperty ? "Property: " : "Variable: ", variables[i].Name, "[", index + "]" ) );
+
+								if( searchParameters.searchRefactoring != null && objectsToSearchSet.Contains( element as Object ) )
+								{
+									if( foundReferences == null )
+										foundReferences = new List<Object>( 2 ) { (Object) element };
+									else if( !foundReferences.Contains( (Object) element ) )
+										foundReferences.Add( (Object) element );
+								}
+							}
 
 							index++;
+						}
+
+						if( foundReferences != null )
+						{
+							for( int j = foundReferences.Count - 1; j >= 0; j-- )
+								searchParameters.searchRefactoring( new ReflectionMatch( referenceNode.nodeObject, foundReferences[j], variableValue ) );
 						}
 					}
 				}
@@ -1285,7 +1503,7 @@ namespace AssetUsageDetectorNamespace
 					sb.Length = 0;
 					sb.EnsureCapacity( callStack.Count * 50 + 1000 );
 
-					sb.Append( "Skipped searching " ).Append( referenceNode.nodeObject.GetType().FullName ).Append( "." ).Append( variables[i].name ).AppendLine( " because it threw exception:" ).Append( e ).AppendLine();
+					sb.Append( "Skipped searching " ).Append( referenceNode.nodeObject.GetType().FullName ).Append( "." ).Append( variables[i].Name ).AppendLine( " because it threw exception:" ).Append( e ).AppendLine();
 
 					Object latestUnityObjectInCallStack = AppendCallStackToStringBuilder( sb );
 					Debug.LogWarning( sb.ToString(), latestUnityObjectInCallStack );
@@ -1430,7 +1648,7 @@ namespace AssetUsageDetectorNamespace
 
 		// Credit: http://answers.unity.com/answers/425602/view.html
 		// Returns the raw System.Object value of a SerializedProperty
-		public object GetRawSerializedPropertyValue( SerializedProperty property )
+		private object GetRawSerializedPropertyValue( SerializedProperty property )
 		{
 			object result = property.serializedObject.targetObject;
 			string[] path = property.propertyPath.Replace( ".Array.data[", "[" ).Split( '.' );
