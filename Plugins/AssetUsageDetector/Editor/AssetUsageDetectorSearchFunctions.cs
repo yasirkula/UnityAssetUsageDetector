@@ -571,6 +571,23 @@ namespace AssetUsageDetectorNamespace
 					referenceNode.RemoveLink( i );
 			}
 
+			// At runtime, Textures assigned to clone materials can't be searched with reflection, search them manually here
+			if( searchTextureReferences && isInPlayMode && !AssetDatabase.Contains( material ) )
+			{
+				Shader shader = material.shader;
+				int shaderPropertyCount = ShaderUtil.GetPropertyCount( shader );
+				for( int i = 0; i < shaderPropertyCount; i++ )
+				{
+					if( ShaderUtil.GetPropertyType( shader, i ) == ShaderUtil.ShaderPropertyType.TexEnv )
+					{
+						string propertyName = ShaderUtil.GetPropertyName( shader, i );
+						Texture assignedTexture = material.GetTexture( propertyName );
+						if( objectsToSearchSet.Contains( assignedTexture ) )
+							referenceNode.AddLinkTo( GetReferenceNode( assignedTexture ), "Shader property: " + propertyName );
+					}
+				}
+			}
+
 			return referenceNode;
 		}
 
