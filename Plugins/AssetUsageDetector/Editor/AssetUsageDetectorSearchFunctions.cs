@@ -216,6 +216,7 @@ namespace AssetUsageDetectorNamespace
 					{ typeof( AnimatorStateTransition ), SearchAnimatorStateTransition },
 					{ typeof( BlendTree ), SearchBlendTree },
 					{ typeof( AnimationClip ), SearchAnimationClip },
+					{ typeof( TerrainData ), SearchTerrainData },
 #if UNITY_2017_1_OR_NEWER
 					{ typeof( SpriteAtlas ), SearchSpriteAtlas },
 #endif
@@ -966,6 +967,14 @@ namespace AssetUsageDetectorNamespace
 			return referenceNode;
 		}
 
+		// TerrainData's properties like tree/detail/layer definitions aren't exposed to SerializedObject so use reflection instead
+		private ReferenceNode SearchTerrainData( Object unityObject )
+		{
+			ReferenceNode referenceNode = PopReferenceNode( unityObject );
+			SearchVariablesWithReflection( referenceNode );
+			return referenceNode;
+		}
+
 #if UNITY_2017_1_OR_NEWER
 		private ReferenceNode SearchSpriteAtlas( Object unityObject )
 		{
@@ -1625,6 +1634,11 @@ namespace AssetUsageDetectorNamespace
 							continue;
 						// Ignore "meshFilter" property of TextMeshPro and TMP_SubMesh components because this property adds a MeshFilter component to the object if it doesn't exist
 						else if( propertyName == "meshFilter" && ( currType.Name == "TextMeshPro" || currType.Name == "TMP_SubMesh" ) )
+							continue;
+						// Ignore "users" property of TerrainData because it returns the Terrains in the scene that use that TerrainData. This causes issues with callStack because TerrainData
+						// is already in callStack when Terrains are searched via "users" property of it and hence, Terrain->TerrainData references for that TerrainData can't be found in scenes
+						// (this is how callStack works, it prevents searching an object if it's already in callStack to avoid infinite recursion)
+						else if( propertyName == "users" && typeof( TerrainData ).IsAssignableFrom( currType ) )
 							continue;
 						else
 						{

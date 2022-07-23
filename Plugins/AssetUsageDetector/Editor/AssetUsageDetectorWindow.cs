@@ -461,7 +461,10 @@ namespace AssetUsageDetectorNamespace
 				GUILayout.Label( ". . . Search in progress or something went wrong (check console) . . ." );
 
 				if( GUILayout.Button( "RETURN", Utilities.GL_HEIGHT_30 ) )
+				{
 					ReturnToSetupPhase();
+					GUIUtility.ExitGUI();
+				}
 			}
 			else if( currentPhase == Phase.Setup )
 			{
@@ -576,7 +579,10 @@ namespace AssetUsageDetectorNamespace
 				GUI.enabled = true;
 
 				if( GUILayout.Button( "Reset Search", Utilities.GL_HEIGHT_30 ) )
+				{
 					ReturnToSetupPhase();
+					GUIUtility.ExitGUI();
+				}
 
 				if( searchResult == null )
 				{
