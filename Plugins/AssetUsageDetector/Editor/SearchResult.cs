@@ -725,7 +725,7 @@ namespace AssetUsageDetectorNamespace
 					if( searchResult != null )
 						contextMenu.AddItem( new GUIContent( "Hide" ), false, () => searchResult.RemoveSearchResultGroup( this ) );
 
-					if( references.Count > 0 )
+					if( references.Count > 0 && treeView != null )
 					{
 						if( contextMenu.GetItemCount() > 0 )
 							contextMenu.AddSeparator( "" );
