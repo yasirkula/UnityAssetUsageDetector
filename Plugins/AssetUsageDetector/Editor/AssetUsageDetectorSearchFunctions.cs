@@ -1121,7 +1121,7 @@ namespace AssetUsageDetectorNamespace
 			{
 				// New Shader Graph serialization format is used: https://github.com/Unity-Technologies/Graphics/pull/222
 				// Iterate over all these occurrences:   "guid\": \"GUID_VALUE\" (\" is used instead of " because it is a nested JSON)
-				IterateOverValuesInString( graphJson, "\"guid\\\"", '"', ( guid ) =>
+				IterateOverValuesInString( graphJson, new string[] { "\"guid\\\"" }, '"', ( guid ) =>
 				{
 					if( guid.Length > 1 )
 					{
@@ -1141,7 +1141,7 @@ namespace AssetUsageDetectorNamespace
 				if( shaderIncludesToSearchSet.Count > 0 )
 				{
 					// Iterate over all these occurrences:   "m_FunctionSource": "GUID_VALUE" (this one is not nested JSON)
-					IterateOverValuesInString( graphJson, "\"m_FunctionSource\"", '"', ( guid ) =>
+					IterateOverValuesInString( graphJson, new string[] { "\"m_FunctionSource\"" }, '"', ( guid ) =>
 					{
 						string referencePath = AssetDatabase.GUIDToAssetPath( guid );
 						if( !string.IsNullOrEmpty( referencePath ) && assetsToSearchPathsSet.Contains( referencePath ) )
@@ -1324,8 +1324,8 @@ namespace AssetUsageDetectorNamespace
 		{
 			string shaderPath = AssetDatabase.GetAssetPath( (Object) referenceNode.nodeObject );
 
-			// Iterate over all these occurrences:   #include: "INCLUDE_REFERENCE"
-			IterateOverValuesInString( File.ReadAllText( shaderPath ), "#include ", '"', ( include ) =>
+			// Iterate over all these occurrences:    #include "INCLUDE_REFERENCE"   or   #include_with_pragmas "INCLUDE_REFERENCE"
+			IterateOverValuesInString( File.ReadAllText( shaderPath ), new string[] { "#include ", "#include_with_pragmas " }, '"', ( include ) =>
 			{
 				bool isIncludePotentialReference = shaderIncludesToSearchSet.Contains( include );
 				if( !isIncludePotentialReference )
@@ -1744,26 +1744,30 @@ namespace AssetUsageDetectorNamespace
 		// Iterates over all occurrences of specific key-value pairs in string
 		// Example1: #include "VALUE"  valuePrefix=#include, valueWrapperChar="
 		// Example2: "guid": "VALUE"  valuePrefix="guid", valueWrapperChar="
-		private void IterateOverValuesInString( string str, string valuePrefix, char valueWrapperChar, Action<string> valueAction )
+		private void IterateOverValuesInString( string str, string[] valuePrefixes, char valueWrapperChar, Action<string> valueAction )
 		{
-			int valueStartIndex, valueEndIndex = 0;
-			while( true )
+			for( int i = 0; i < valuePrefixes.Length; i++ )
 			{
-				valueStartIndex = str.IndexOf( valuePrefix, valueEndIndex );
-				if( valueStartIndex < 0 )
-					return;
+				string valuePrefix = valuePrefixes[i];
+				int valueStartIndex, valueEndIndex = 0;
+				while( true )
+				{
+					valueStartIndex = str.IndexOf( valuePrefix, valueEndIndex );
+					if( valueStartIndex < 0 )
+						break;
 
-				valueStartIndex = str.IndexOf( valueWrapperChar, valueStartIndex + valuePrefix.Length );
-				if( valueStartIndex < 0 )
-					return;
+					valueStartIndex = str.IndexOf( valueWrapperChar, valueStartIndex + valuePrefix.Length );
+					if( valueStartIndex < 0 )
+						break;
 
-				valueStartIndex++;
-				valueEndIndex = str.IndexOf( valueWrapperChar, valueStartIndex );
-				if( valueEndIndex < 0 )
-					return;
+					valueStartIndex++;
+					valueEndIndex = str.IndexOf( valueWrapperChar, valueStartIndex );
+					if( valueEndIndex < 0 )
+						break;
 
-				if( valueEndIndex > valueStartIndex )
-					valueAction( str.Substring( valueStartIndex, valueEndIndex - valueStartIndex ) );
+					if( valueEndIndex > valueStartIndex )
+						valueAction( str.Substring( valueStartIndex, valueEndIndex - valueStartIndex ) );
+				}
 			}
 		}
 

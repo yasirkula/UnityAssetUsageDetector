@@ -1,4 +1,4 @@
-= Asset Usage Detector =
+= Asset Usage Detector (v2.2.3) =
 
 Online documentation available at: https://github.com/yasirkula/UnityAssetUsageDetector
 E-mail: yasirkula@gmail.com
