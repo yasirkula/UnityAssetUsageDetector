@@ -1626,6 +1626,10 @@ namespace AssetUsageDetectorNamespace
 #endif
 							typeof( Collider2D ).IsAssignableFrom( currType ) ) )
 							continue;
+						// Ignore certain Material properties that are already searched via SearchMaterial function (also, if a material doesn't have a _Color or _BaseColor
+						// property and its "color" property is called, it logs an error to the console, so this rule helps avoid that scenario, as well)
+						else if( ( propertyName == "color" || propertyName == "mainTexture" ) && typeof( Material ).IsAssignableFrom( currType ) )
+							continue;
 						// Ignore "parameters" property of Animator since it doesn't contain any useful data and logs a warning to the console when Animator is inactive
 						else if( typeof( Animator ).IsAssignableFrom( currType ) && propertyName == "parameters" )
 							continue;
