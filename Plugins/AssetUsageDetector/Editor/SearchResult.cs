@@ -371,9 +371,15 @@ namespace AssetUsageDetectorNamespace
 			return scrollPosition;
 		}
 
-		public int IndexOf( SearchResultGroup searchResult )
+		public int IndexOf( SearchResultGroup searchResultGroup )
 		{
-			return result.IndexOf( searchResult );
+			return result.IndexOf( searchResultGroup );
+		}
+
+		public void CollapseAllSearchResultGroups()
+		{
+			for( int i = 0; i < result.Count; i++ )
+				result[i].Collapse();
 		}
 
 		public void CancelDelayedTreeViewTooltip()
@@ -598,6 +604,11 @@ namespace AssetUsageDetectorNamespace
 			treeView = null;
 			treeViewState = null;
 			treeViewSearchField = null;
+		}
+
+		public void Collapse()
+		{
+			IsExpanded = false;
 		}
 
 		// Initializes commonly used variables of the nodes

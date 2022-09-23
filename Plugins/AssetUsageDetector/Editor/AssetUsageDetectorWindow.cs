@@ -152,6 +152,14 @@ namespace AssetUsageDetectorNamespace
 						objectsToSearch[i].RefreshSubAssets();
 				} );
 			}
+			else if( currentPhase == Phase.Complete )
+			{
+				if( searchResult != null && searchResult.NumberOfGroups > 0 )
+				{
+					contextMenu.AddSeparator( "" );
+					contextMenu.AddItem( new GUIContent( "Collapse All" ), false, searchResult.CollapseAllSearchResultGroups );
+				}
+			}
 		}
 
 		// Shows lock button at the top-right corner
