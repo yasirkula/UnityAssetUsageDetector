@@ -37,6 +37,18 @@ There are 5 ways to install this plugin:
 
 ![SearchResults2](Images/SearchResults2Dark.png)
 
+## ADDRESSABLES SUPPORT
+
+This plugin has experimental support for *Addressables* package. However, the search may take significantly longer to finish when Addressables are searched. Some manual modifications are needed to enable Addressables support:
+
+- The plugin mustn't be installed as a package, i.e. it must reside inside the *Assets* folder and not the *Packages* folder (it can reside inside a subfolder of Assets like *Assets/Plugins*)
+- Modify the **AssetUsageDetector.Editor** Assembly Definition File as follows:
+
+![AddressablesAssemblyChanges](Images/AddressablesAssemblyChanges.png)
+
+- If *Version Defines* isn't present (on older Unity versions), manually add `ASSET_USAGE_ADDRESSABLES` compiler directive to **Player Settings/Scripting Define Symbols** (these symbols are platform specific, so if you change the active platform later, you'll have to add the compiler directive again)
+- Enable the "Addressables support" option in Asset Usage Detector window
+
 ## SEARCH REFACTORING
 
 While searching for references using the Scripting API, it's possible to get notified of the found references *during* the search (some references like *Assembly Definition File* references or *Shader Graph* references aren't supported) and in most cases, refactor them (e.g. changing all usages of a searched object with something else or *null*). Disabling *Lazy Scene Search* is recommended while using this feature and it's advised to backup your project beforehand.

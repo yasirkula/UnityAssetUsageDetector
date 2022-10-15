@@ -47,6 +47,9 @@ namespace AssetUsageDetectorNamespace
 			public SearchRefactoring searchRefactoring = null;
 
 			public bool lazySceneSearch = true;
+#if ASSET_USAGE_ADDRESSABLES
+			public bool addressablesSupport = false;
+#endif
 			public bool calculateUnusedObjects = false;
 			public bool hideDuplicateRows = true;
 			public bool hideReduntantPrefabVariantLinks = true;
@@ -1103,6 +1106,11 @@ namespace AssetUsageDetectorNamespace
 		// Check if the asset at specified path depends on any of the references
 		private bool AssetHasAnyReference( string assetPath )
 		{
+#if ASSET_USAGE_ADDRESSABLES
+			if( searchParameters.addressablesSupport )
+				return true;
+#endif
+
 			if( assetsToSearchPathsSet.Contains( assetPath ) )
 				return true;
 

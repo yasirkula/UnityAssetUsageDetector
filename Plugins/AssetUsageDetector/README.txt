@@ -1,4 +1,4 @@
-= Asset Usage Detector (v2.2.3) =
+= Asset Usage Detector (v2.3.0) =
 
 Online documentation available at: https://github.com/yasirkula/UnityAssetUsageDetector
 E-mail: yasirkula@gmail.com
@@ -6,6 +6,15 @@ E-mail: yasirkula@gmail.com
 
 ### ABOUT
 This tool helps you find usages of the selected asset(s) and/or scene object(s), i.e. lists the objects that refer to them.
+
+
+### ADDRESSABLES SUPPORT
+This plugin has experimental support for Addressables package. However, the search may take significantly longer to finish when Addressables are searched. Some manual modifications are needed to enable Addressables support:
+
+- The plugin mustn't be installed as a package, i.e. it must reside inside the Assets folder and not the Packages folder (it can reside inside a subfolder of Assets like Assets/Plugins)
+- Add ASSET_USAGE_ADDRESSABLES compiler directive to "Player Settings/Scripting Define Symbols" (these symbols are platform specific, so if you change the active platform later, you'll have to add the compiler directive again)
+- Add "Unity.Addressables" assembly to "AssetUsageDetector.Editor" Assembly Definition File's "Assembly Definition References" list
+- Enable the "Addressables support" option in Asset Usage Detector window
 
 
 ### HOW TO

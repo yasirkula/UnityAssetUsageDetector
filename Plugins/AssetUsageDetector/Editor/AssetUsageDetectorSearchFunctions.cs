@@ -21,6 +21,9 @@ using UnityEditor.Compilation;
 #if UNITY_2017_2_OR_NEWER
 using UnityEngine.Tilemaps;
 #endif
+#if ASSET_USAGE_ADDRESSABLES
+using UnityEngine.AddressableAssets;
+#endif
 using Object = UnityEngine.Object;
 
 namespace AssetUsageDetectorNamespace
@@ -198,6 +201,12 @@ namespace AssetUsageDetectorNamespace
 		private delegate FieldInfo FieldInfoGetter( SerializedProperty p, out Type t );
 		private FieldInfoGetter fieldInfoGetter;
 
+#if ASSET_USAGE_ADDRESSABLES
+		private delegate Sprite[] SpriteAtlasPackedSpritesGetter( SpriteAtlas atlas );
+		private SpriteAtlasPackedSpritesGetter spriteAtlasPackedSpritesGetter;
+		private PropertyInfo assetReferenceSubObjectTypeGetter;
+#endif
+
 		private void InitializeSearchFunctionsData( Parameters searchParameters )
 		{
 			if( typeToSearchFunction == null )
@@ -346,6 +355,12 @@ namespace AssetUsageDetectorNamespace
 			MethodInfo fieldInfoGetterMethod = typeof( Editor ).Assembly.GetType( "UnityEditor.ScriptAttributeUtility" ).GetMethod( "GetFieldInfoFromProperty", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static );
 #endif
 			fieldInfoGetter = (FieldInfoGetter) Delegate.CreateDelegate( typeof( FieldInfoGetter ), fieldInfoGetterMethod );
+
+#if ASSET_USAGE_ADDRESSABLES
+			MethodInfo spriteAtlasPackedSpritesGetterMethod = typeof( SpriteAtlasExtensions ).GetMethod( "GetPackedSprites", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static );
+			spriteAtlasPackedSpritesGetter = (SpriteAtlasPackedSpritesGetter) Delegate.CreateDelegate( typeof( SpriteAtlasPackedSpritesGetter ), spriteAtlasPackedSpritesGetterMethod );
+			assetReferenceSubObjectTypeGetter = typeof( AssetReference ).GetProperty( "SubOjbectType", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance );
+#endif
 		}
 
 		private ReferenceNode SearchGameObject( Object unityObject )
@@ -1355,6 +1370,12 @@ namespace AssetUsageDetectorNamespace
 		{
 			if( !isInPlayMode || referenceNode.nodeObject.IsAsset() )
 			{
+#if ASSET_USAGE_ADDRESSABLES
+				// See: https://github.com/yasirkula/UnityAssetUsageDetector/issues/29
+				if( searchParameters.addressablesSupport && ( (Object) referenceNode.nodeObject ).name == "Deprecated EditorExtensionImpl" )
+					return;
+#endif
+
 				SerializedObject so = new SerializedObject( (Object) referenceNode.nodeObject );
 				SerializedProperty iterator = so.GetIterator();
 				SerializedProperty iteratorVisible = so.GetIterator();
@@ -1404,9 +1425,22 @@ namespace AssetUsageDetectorNamespace
 								break;
 #endif
 							case SerializedPropertyType.Generic:
-								propertyValue = null;
-								searchResult = null;
-								enterChildren = true;
+#if ASSET_USAGE_ADDRESSABLES
+								AssetReference assetReference;
+								if( searchParameters.addressablesSupport && iterator.type.StartsWithFast( "AssetReference" ) && ( assetReference = GetRawSerializedPropertyValue( iterator ) as AssetReference ) != null )
+								{
+									propertyValue = GetAddressablesAssetReferenceValue( assetReference );
+									searchResult = SearchObject( PreferablyGameObject( propertyValue ) );
+									enterChildren = false;
+								}
+								else
+#endif
+								{
+									propertyValue = null;
+									searchResult = null;
+									enterChildren = true;
+								}
+
 								break;
 							default:
 								propertyValue = null;
@@ -1459,6 +1493,15 @@ namespace AssetUsageDetectorNamespace
 					// no need to have duplicate search entries
 					if( !( variableValue is ICollection ) )
 					{
+#if ASSET_USAGE_ADDRESSABLES
+						if( searchParameters.addressablesSupport && variableValue is AssetReference )
+						{
+							variableValue = GetAddressablesAssetReferenceValue( (AssetReference) variableValue );
+							if( variableValue == null || variableValue.Equals( null ) )
+								continue;
+						}
+#endif
+
 						ReferenceNode searchResult = SearchObject( PreferablyGameObject( variableValue ) );
 						if( searchResult != null && searchResult != referenceNode )
 						{
@@ -1740,6 +1783,44 @@ namespace AssetUsageDetectorNamespace
 
 			return enumerator.Current;
 		}
+
+#if ASSET_USAGE_ADDRESSABLES
+		private Object GetAddressablesAssetReferenceValue( AssetReference assetReference )
+		{
+			Object result = assetReference.editorAsset;
+			if( !result )
+				return null;
+
+			string subObjectName = assetReference.SubObjectName;
+			if( !string.IsNullOrEmpty( subObjectName ) )
+			{
+				if( result is SpriteAtlas )
+				{
+					Sprite[] packedSprites = spriteAtlasPackedSpritesGetter( (SpriteAtlas) result );
+					if( packedSprites != null )
+					{
+						for( int i = 0; i < packedSprites.Length; i++ )
+						{
+							if( packedSprites[i] && packedSprites[i].name == subObjectName )
+								return packedSprites[i];
+						}
+					}
+				}
+				else
+				{
+					Type subObjectType = (Type) assetReferenceSubObjectTypeGetter.GetValue( assetReference, null ) ?? typeof( Object );
+					Object[] subAssets = AssetDatabase.LoadAllAssetRepresentationsAtPath( AssetDatabase.GetAssetPath( result ) );
+					for( int k = 0; k < subAssets.Length; k++ )
+					{
+						if( subAssets[k] && subAssets[k].name == subObjectName && subObjectType.IsAssignableFrom( subAssets[k].GetType() ) )
+							return subAssets[k];
+					}
+				}
+			}
+
+			return result;
+		}
+#endif
 
 		// Iterates over all occurrences of specific key-value pairs in string
 		// Example1: #include "VALUE"  valuePrefix=#include, valueWrapperChar="
