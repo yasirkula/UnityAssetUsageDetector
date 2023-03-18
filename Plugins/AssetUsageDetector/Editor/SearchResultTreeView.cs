@@ -299,7 +299,7 @@ namespace AssetUsageDetectorNamespace
 					if( linkDescriptions.Count > 0 )
 					{
 						Object prefabObject = PrefabUtility.GetCorrespondingObjectFromSource( unityObject );
-						if( prefabObject && parentData.node.HasLinkToObjectWithDescriptions( prefabObject.GetHashCode(), linkDescriptions ) )
+						if( prefabObject && parentData.node.HasLinkToObjectWithDescriptions( prefabObject.GetInstanceID(), linkDescriptions ) )
 							return false;
 					}
 				}

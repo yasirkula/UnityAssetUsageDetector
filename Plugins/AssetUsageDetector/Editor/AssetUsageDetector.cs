@@ -350,7 +350,7 @@ namespace AssetUsageDetectorNamespace
 
 				// Initialize the nodes of searched asset(s)
 				foreach( Object obj in objectsToSearchSet )
-					searchedUnityObjects.Add( obj.GetHashCode(), PopReferenceNode( obj ) );
+					searchedUnityObjects.Add( obj.GetInstanceID(), PopReferenceNode( obj ) );
 
 				// Progressbar values
 				int searchProgress = 0;
@@ -672,7 +672,7 @@ namespace AssetUsageDetectorNamespace
 						else
 						{
 							for( Transform parent = ( (GameObject) obj ).transform.parent; parent != null; parent = parent.parent )
-								usedObjectPathsSet.Add( parent.gameObject.GetHashCode().ToString() );
+								usedObjectPathsSet.Add( parent.gameObject.GetInstanceID().ToString() );
 						}
 					}
 				}
@@ -739,13 +739,13 @@ namespace AssetUsageDetectorNamespace
 					if( !searchedTopmostGameObject )
 					{
 						if( obj is GameObject )
-							unusedMainObjectNodes[obj.GetHashCode().ToString()] = node;
+							unusedMainObjectNodes[obj.GetInstanceID().ToString()] = node;
 						else
 							currentSearchResultGroup.AddReference( node );
 					}
 					else // List child GameObject scene objects under their parent GameObject
 					{
-						string dictionaryKey = searchedTopmostGameObject.GetHashCode().ToString();
+						string dictionaryKey = searchedTopmostGameObject.GetInstanceID().ToString();
 						List<ReferenceNode> unusedSubObjectNodesAtPath;
 						if( !unusedSubObjectNodes.TryGetValue( dictionaryKey, out unusedSubObjectNodesAtPath ) )
 							unusedSubObjectNodes[dictionaryKey] = unusedSubObjectNodesAtPath = new List<ReferenceNode>( 2 );
@@ -1012,14 +1012,14 @@ namespace AssetUsageDetectorNamespace
 				{
 					if( assetsToSearchSet.Count == 0 )
 					{
-						searchedUnityObjects.Add( unityObject.GetHashCode(), null );
+						searchedUnityObjects.Add( unityObject.GetInstanceID(), null );
 						return null;
 					}
 
 					assetPath = AssetDatabase.GetAssetPath( unityObject );
 					if( excludedAssetsPathsSet.Contains( assetPath ) || !AssetHasAnyReference( assetPath ) )
 					{
-						searchedUnityObjects.Add( unityObject.GetHashCode(), null );
+						searchedUnityObjects.Add( unityObject.GetInstanceID(), null );
 						return null;
 					}
 				}
@@ -1089,13 +1089,13 @@ namespace AssetUsageDetectorNamespace
 				if( !searchingSourceAsset )
 				{
 					if( obj is Object )
-						searchedUnityObjects.Add( unityObject.GetHashCode(), result );
+						searchedUnityObjects.Add( unityObject.GetInstanceID(), result );
 					else
 						searchedObjects.Add( GetNodeObjectHash( obj ), result );
 				}
 				else if( result != null )
 				{
-					result.CopyReferencesTo( searchedUnityObjects[unityObject.GetHashCode()] );
+					result.CopyReferencesTo( searchedUnityObjects[unityObject.GetInstanceID()] );
 					PoolReferenceNode( result );
 				}
 			}
@@ -1229,7 +1229,7 @@ namespace AssetUsageDetectorNamespace
 		{
 			if( nodeObject is Object )
 			{
-				if( searchedUnityObjects.TryGetValue( nodeObject.GetHashCode(), out referenceNode ) )
+				if( searchedUnityObjects.TryGetValue( ( (Object) nodeObject ).GetInstanceID(), out referenceNode ) )
 					return true;
 			}
 			else if( searchedObjects.TryGetValue( GetNodeObjectHash( nodeObject ), out referenceNode ) )
@@ -1245,7 +1245,7 @@ namespace AssetUsageDetectorNamespace
 			ReferenceNode result;
 			if( nodeObject is Object )
 			{
-				int hash = nodeObject.GetHashCode();
+				int hash = ( (Object) nodeObject ).GetInstanceID();
 				if( !searchedUnityObjects.TryGetValue( hash, out result ) || result == null )
 				{
 					result = PopReferenceNode( nodeObject );
