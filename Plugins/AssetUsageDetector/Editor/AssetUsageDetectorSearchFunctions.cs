@@ -1419,8 +1419,9 @@ namespace AssetUsageDetectorNamespace
 								break;
 #if UNITY_2019_3_OR_NEWER
 							case SerializedPropertyType.ManagedReference:
-								propertyValue = GetRawSerializedPropertyValue( iterator ) as Object;
-								searchResult = SearchObject( PreferablyGameObject( propertyValue ) );
+								object managedReferenceValue = GetRawSerializedPropertyValue( iterator );
+								propertyValue = managedReferenceValue as Object;
+								searchResult = SearchObject( PreferablyGameObject( managedReferenceValue ) );
 								enterChildren = false;
 								break;
 #endif
