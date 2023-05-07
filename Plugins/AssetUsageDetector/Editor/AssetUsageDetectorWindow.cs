@@ -570,7 +570,7 @@ namespace AssetUsageDetectorNamespace
 				lazySceneSearch = WordWrappingToggleLeft( "Lazy scene search: scenes are searched in detail only when they are manually refreshed (faster search)", lazySceneSearch );
 #if ASSET_USAGE_ADDRESSABLES
 				EditorGUI.EndDisabledGroup();
-				addressablesSupport = WordWrappingToggleLeft( "Addressables support (WARNING: 'Lazy scene search' will be disabled) (slower search)", addressablesSupport );
+				addressablesSupport = WordWrappingToggleLeft( "Addressables support (Experimental) (WARNING: 'Lazy scene search' will be disabled) (slower search)", addressablesSupport );
 #endif
 				calculateUnusedObjects = WordWrappingToggleLeft( "Calculate unused objects", calculateUnusedObjects );
 				hideDuplicateRows = WordWrappingToggleLeft( "Hide duplicate rows in search results", hideDuplicateRows );
