@@ -190,6 +190,11 @@ namespace AssetUsageDetectorNamespace
 					// Can't ping assets that are hidden from Project window (e.g. animator states of AnimatorController), ping the main asset at that path instead
 					pingTarget = AssetDatabase.LoadMainAssetAtPath( AssetDatabase.GetAssetPath( obj ) );
 				}
+				else if( !AssetDatabase.IsMainAsset( obj ) && Array.IndexOf( AssetDatabase.LoadAllAssetRepresentationsAtPath( AssetDatabase.GetAssetPath( obj ) ), obj ) < 0 )
+				{
+					// VFX Graph assets' nodes are serialized as part of the graph but they are invisible in the Project window even though their hideFlags is None (I don't know how)
+					pingTarget = AssetDatabase.LoadMainAssetAtPath( AssetDatabase.GetAssetPath( obj ) );
+				}
 			}
 		}
 
