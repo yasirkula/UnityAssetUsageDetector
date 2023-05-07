@@ -18,6 +18,11 @@
             "name": "com.unity.addressables",
             "expression": "0.0.0",
             "define": "ASSET_USAGE_ADDRESSABLES"
+        },
+        {
+            "name": "com.unity.visualeffectgraph",
+            "expression": "0.0.0",
+            "define": "ASSET_USAGE_VFX_GRAPH"
         }
     ],
     "noEngineReferences": false

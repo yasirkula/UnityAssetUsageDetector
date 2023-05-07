@@ -1031,7 +1031,7 @@ namespace AssetUsageDetectorNamespace
 				callStack.Add( unityObject );
 
 				// Search the Object in detail
-				Func<Object, ReferenceNode> searchFunction;
+				Func<object, ReferenceNode> searchFunction;
 				if( assetPath != null && extensionToSearchFunction.TryGetValue( Utilities.GetFileExtension( assetPath ), out searchFunction ) && AssetDatabase.IsMainAsset( unityObject ) )
 					result = searchFunction( unityObject );
 				else if( typeToSearchFunction.TryGetValue( unityObject.GetType(), out searchFunction ) )
