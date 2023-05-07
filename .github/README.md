@@ -66,7 +66,6 @@ void ReplaceFontUsages( Font from, Font to )
 
 ## KNOWN LIMITATIONS
 
-- *Addressables* aren't supported
 - *static* variables aren't searched
 - *Resources.Load* usages can't be found
 - *GUIText* materials aren't searched
