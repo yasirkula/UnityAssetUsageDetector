@@ -96,6 +96,13 @@ namespace AssetUsageDetectorNamespace
 		#endregion
 
 		#region Other Settings
+		private static bool? m_showRootAssetName = null;
+		public static bool ShowRootAssetName
+		{
+			get { if( m_showRootAssetName == null ) m_showRootAssetName = EditorPrefs.GetBool( "AUD_ShowRootAssetName", false ); return m_showRootAssetName.Value; }
+			set { if( m_showRootAssetName == value ) return; m_showRootAssetName = value; EditorPrefs.SetBool( "AUD_ShowRootAssetName", value ); }
+		}
+
 		private static bool? m_pingClickedObjects = null;
 		public static bool PingClickedObjects
 		{
@@ -179,7 +186,9 @@ namespace AssetUsageDetectorNamespace
 
 			EditorGUI.BeginChangeCheck();
 
-			SettingsHeaderColor = ColorField( "Settings Header Color", SettingsHeaderColor, Color.cyan );
+			EditorGUIUtility.labelWidth += 140f;
+			ShowRootAssetName = EditorGUILayout.Toggle( "Show Root Asset's Name For Sub-Assets (Requires Refresh)", ShowRootAssetName );
+			EditorGUIUtility.labelWidth -= 140f;
 
 			EditorGUILayout.Space();
 
@@ -202,6 +211,7 @@ namespace AssetUsageDetectorNamespace
 
 			EditorGUILayout.Space();
 
+			SettingsHeaderColor = ColorField( "Settings Header Color", SettingsHeaderColor, Color.cyan );
 			SearchResultGroupHeaderColor = ColorField( "Group Header Color", SearchResultGroupHeaderColor, Color.cyan );
 			RootRowsBackgroundColor = ColorField( "Root Rows Background Color", RootRowsBackgroundColor, EditorGUIUtility.isProSkin ? new Color( 0f, 1f, 1f, 0.15f ) : new Color( 0f, 1f, 1f, 0.25f ) );
 			RootRowsBorderColor = ColorField( "Root Rows Border Color", RootRowsBorderColor, EditorGUIUtility.isProSkin ? new Color( 0.15f, 0.15f, 0.15f, 1f ) : new Color( 0.375f, 0.375f, 0.375f, 1f ) );

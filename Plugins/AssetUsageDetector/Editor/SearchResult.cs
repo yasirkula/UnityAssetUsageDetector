@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using System.Text;
 using UnityEditor;
 using UnityEditor.IMGUI.Controls;
@@ -1221,6 +1222,13 @@ namespace AssetUsageDetectorNamespace
 			{
 				instanceId = unityObject.GetInstanceID();
 				Label = unityObject.name + " (" + unityObject.GetType().Name + ")";
+
+				if( AssetUsageDetectorSettings.ShowRootAssetName && unityObject.IsAsset() && !AssetDatabase.IsMainAsset( unityObject ) )
+				{
+					string mainAssetName = Path.GetFileNameWithoutExtension( AssetDatabase.GetAssetPath( unityObject ) );
+					if( unityObject.name != mainAssetName )
+						Label += " <" + mainAssetName + ">";
+				}
 			}
 			else if( nodeObject != null )
 			{
