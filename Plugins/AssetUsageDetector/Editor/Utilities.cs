@@ -177,6 +177,12 @@ namespace AssetUsageDetectorNamespace
 							selection = objTR.gameObject;
 #endif
 					}
+					else if( prefabAssetType == PrefabAssetType.Model )
+					{
+						objTR = ( (GameObject) obj ).transform;
+						while( objTR.parent != null && objTR.parent.parent != null )
+							objTR = objTR.parent;
+					}
 #else
 					Transform objTR = ( (GameObject) obj ).transform;
 					while( objTR.parent != null && objTR.parent.parent != null )
