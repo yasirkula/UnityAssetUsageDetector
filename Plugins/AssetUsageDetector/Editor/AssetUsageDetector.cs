@@ -289,10 +289,10 @@ namespace AssetUsageDetectorNamespace
 					if( ( searchParameters.searchInScenes & SceneSearchMode.OpenScenes ) == SceneSearchMode.OpenScenes )
 					{
 						// Get all open (and loaded) scenes
-						for( int i = 0; i < EditorSceneManager.loadedSceneCount; i++ )
+						for( int i = 0; i < SceneManager.sceneCount; i++ )
 						{
-							Scene scene = EditorSceneManager.GetSceneAt( i );
-							if( scene.IsValid() )
+							Scene scene = SceneManager.GetSceneAt( i );
+							if( scene.IsValid() && scene.isLoaded )
 								scenesToSearch.Add( scene.path );
 						}
 					}
@@ -314,10 +314,10 @@ namespace AssetUsageDetectorNamespace
 				if( isInPlayMode )
 				{
 					HashSet<string> openScenes = new HashSet<string>();
-					for( int i = 0; i < EditorSceneManager.loadedSceneCount; i++ )
+					for( int i = 0; i < SceneManager.sceneCount; i++ )
 					{
-						Scene scene = EditorSceneManager.GetSceneAt( i );
-						if( scene.IsValid() )
+						Scene scene = SceneManager.GetSceneAt( i );
+						if( scene.IsValid() && scene.isLoaded )
 							openScenes.Add( scene.path );
 					}
 

@@ -416,9 +416,9 @@ namespace AssetUsageDetectorNamespace
 		// Check if all open scenes are saved (not dirty)
 		public static bool AreScenesSaved()
 		{
-			for( int i = 0; i < EditorSceneManager.loadedSceneCount; i++ )
+			for( int i = 0; i < SceneManager.sceneCount; i++ )
 			{
-				Scene scene = EditorSceneManager.GetSceneAt( i );
+				Scene scene = SceneManager.GetSceneAt( i );
 				if( scene.isDirty || string.IsNullOrEmpty( scene.path ) )
 					return false;
 			}

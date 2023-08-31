@@ -803,7 +803,12 @@ namespace AssetUsageDetectorNamespace
 						}
 					}
 
-					if( Type == GroupType.Scene && !EditorApplication.isPlaying && EditorSceneManager.loadedSceneCount > 1 )
+#if UNITY_2022_2_OR_NEWER
+					int loadedSceneCount = SceneManager.loadedSceneCount;
+#else
+					int loadedSceneCount = EditorSceneManager.loadedSceneCount;
+#endif
+					if( Type == GroupType.Scene && !EditorApplication.isPlaying && loadedSceneCount > 1 )
 					{
 						// Show context menu when SearchResultGroup's header is right clicked
 						Scene scene = EditorSceneManager.GetSceneByPath( ScenePath );
