@@ -68,5 +68,6 @@ void ReplaceFontUsages( Font from, Font to )
 
 - *static* variables aren't searched
 - *Resources.Load* usages can't be found
+- *ref struct*s can't be searched
 - *GUIText* materials aren't searched
 - Textures in *Lens Flares* can't be searched
