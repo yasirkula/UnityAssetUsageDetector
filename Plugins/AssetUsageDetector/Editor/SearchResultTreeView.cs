@@ -1180,7 +1180,7 @@ namespace AssetUsageDetectorNamespace
 				SearchResultTreeView isolatedTreeView = new SearchResultTreeView( new SearchResultTreeViewState(), selectedNodes, TreeType.IsolatedView, null, hideDuplicateRows, hideReduntantPrefabVariantLinks, false );
 				isolatedTreeView.ExpandMainReferences();
 
-				SearchResultTreeViewIsolatedView.Show( new Vector2( EditorWindow.focusedWindow.position.width, isolatedTreeView.totalHeight + 1f ), isolatedTreeView, new GUIContent( selectedNodes[0].Label + ( selectedNodes.Count <= 1 ? "" : ( " (and " + ( selectedNodes.Count - 1 ) + " more)" ) ) ) );
+				SearchResultTreeViewIsolatedView.Show( new Vector2( EditorWindow.focusedWindow.position.width, Mathf.Max( isolatedTreeView.totalHeight, EditorGUIUtility.singleLineHeight * 5f ) + 1f ), isolatedTreeView, new GUIContent( selectedNodes[0].Label + ( selectedNodes.Count <= 1 ? "" : ( " (and " + ( selectedNodes.Count - 1 ) + " more)" ) ) ) );
 			}
 		}
 
@@ -1334,7 +1334,7 @@ namespace AssetUsageDetectorNamespace
 			SearchResultTreeViewIsolatedView window = CreateInstance<SearchResultTreeViewIsolatedView>();
 			window.treeView = treeView;
 			window.titleContent = title;
-			window.ShowAuxWindow();
+			window.Show();
 
 			window.minSize = new Vector2( 150f, Mathf.Min( preferredSize.y, EditorGUIUtility.singleLineHeight * 2f ) );
 			window.position = new Rect( new Vector2( -9999f, -9999f ), preferredSize );
