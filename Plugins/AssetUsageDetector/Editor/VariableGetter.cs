@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Reflection;
+using System.Text;
 using UnityEngine;
 
 namespace AssetUsageDetectorNamespace
@@ -39,7 +40,12 @@ namespace AssetUsageDetectorNamespace
 			}
 			catch( Exception e )
 			{
-				Debug.LogException( e );
+				StringBuilder sb = Utilities.stringBuilder;
+				sb.Length = 0;
+				sb.Append( "Error while getting the value of (" ).Append( IsProperty ? ( (PropertyInfo) variable ).PropertyType : ( (FieldInfo) variable ).FieldType ).Append( ") " )
+					.Append( variable.DeclaringType ).Append( "." ).Append( Name ).Append( ": " ).Append( e );
+
+				Debug.LogError( sb.ToString() );
 				return null;
 			}
 		}
