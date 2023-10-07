@@ -966,6 +966,8 @@ namespace AssetUsageDetectorNamespace
 				for( int i = 0; i < item.children.Count; i++ )
 					shouldExpand |= GetMainReferenceIdsRecursive( item.children[i], ids );
 			}
+			else
+				shouldExpand = true; // No main reference is encountered in this branch; expand the whole branch
 
 			if( shouldExpand )
 				ids.Add( item.id );
