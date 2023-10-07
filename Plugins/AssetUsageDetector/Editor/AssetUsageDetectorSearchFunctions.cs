@@ -205,6 +205,12 @@ namespace AssetUsageDetectorNamespace
 		private readonly FieldInfoGetter fieldInfoGetter = (FieldInfoGetter) Delegate.CreateDelegate( typeof( FieldInfoGetter ), typeof( Editor ).Assembly.GetType( "UnityEditor.ScriptAttributeUtility" ).GetMethod( "GetFieldInfoFromProperty", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static ) );
 #endif
 
+		private readonly Func<Object> lightmapSettingsGetter = (Func<Object>) Delegate.CreateDelegate( typeof( Func<Object> ), typeof( LightmapEditorSettings ).GetMethod( "GetLightmapSettings", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static ) );
+		private readonly Func<Object> renderSettingsGetter = (Func<Object>) Delegate.CreateDelegate( typeof( Func<Object> ), typeof( RenderSettings ).GetMethod( "GetRenderSettings", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static ) );
+#if UNITY_2021_2_OR_NEWER
+		private readonly Func<Cubemap> defaultReflectionProbeGetter = (Func<Cubemap>) Delegate.CreateDelegate( typeof( Func<Cubemap> ), typeof( RenderSettings ).GetProperty( "defaultReflection", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static ).GetGetMethod( true ) );
+#endif
+
 #if ASSET_USAGE_ADDRESSABLES
 		private readonly Func<SpriteAtlas, Sprite[]> spriteAtlasPackedSpritesGetter = (Func<SpriteAtlas, Sprite[]>) Delegate.CreateDelegate( typeof( Func<SpriteAtlas, Sprite[]> ), typeof( SpriteAtlasExtensions ).GetMethod( "GetPackedSprites", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static ) );
 		private readonly PropertyInfo assetReferenceSubObjectTypeGetter = typeof( AssetReference ).GetProperty( "SubOjbectType", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance );
@@ -235,6 +241,8 @@ namespace AssetUsageDetectorNamespace
 					{ typeof( BlendTree ), SearchBlendTree },
 					{ typeof( AnimationClip ), SearchAnimationClip },
 					{ typeof( TerrainData ), SearchTerrainData },
+					{ typeof( LightmapSettings ), SearchLightmapSettings },
+					{ typeof( RenderSettings ), SearchRenderSettings },
 #if UNITY_2017_1_OR_NEWER
 					{ typeof( SpriteAtlas ), SearchSpriteAtlas },
 #endif
@@ -1007,6 +1015,36 @@ namespace AssetUsageDetectorNamespace
 			return referenceNode;
 		}
 
+		private ReferenceNode SearchLightmapSettings( object obj )
+		{
+			ReferenceNode referenceNode = PopReferenceNode( obj );
+
+			referenceNode.AddLinkTo( SearchObject( LightmapSettings.lightProbes ), "Light Probes" );
+
+			LightmapData[] lightmaps = LightmapSettings.lightmaps;
+			if( lightmaps != null )
+			{
+				for( int i = 0; i < lightmaps.Length; i++ )
+					referenceNode.AddLinkTo( SearchObject( lightmaps[i] ), "Lightmap" );
+			}
+
+			SearchVariablesWithSerializedObject( referenceNode, true );
+			return referenceNode;
+		}
+
+		private ReferenceNode SearchRenderSettings( object obj )
+		{
+			ReferenceNode referenceNode = PopReferenceNode( obj );
+
+#if UNITY_2021_2_OR_NEWER
+			referenceNode.AddLinkTo( SearchObject( defaultReflectionProbeGetter() ), "Default Reflection Probe" );
+#else
+			referenceNode.AddLinkTo( SearchObject( ReflectionProbe.defaultTexture ), "Default Reflection Probe" );
+#endif
+			SearchVariablesWithSerializedObject( referenceNode, true );
+			return referenceNode;
+		}
+
 #if UNITY_2017_1_OR_NEWER
 		private ReferenceNode SearchSpriteAtlas( object obj )
 		{
@@ -1396,9 +1434,9 @@ namespace AssetUsageDetectorNamespace
 		}
 
 		// Search through variables of an object with SerializedObject
-		private void SearchVariablesWithSerializedObject( ReferenceNode referenceNode )
+		private void SearchVariablesWithSerializedObject( ReferenceNode referenceNode, bool forceUseSerializedObject = false )
 		{
-			if( !isInPlayMode || referenceNode.nodeObject.IsAsset() )
+			if( !isInPlayMode || referenceNode.nodeObject.IsAsset() || forceUseSerializedObject )
 			{
 #if ASSET_USAGE_ADDRESSABLES
 				// See: https://github.com/yasirkula/UnityAssetUsageDetector/issues/29

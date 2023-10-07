@@ -22,6 +22,7 @@ namespace AssetUsageDetectorNamespace
 		private enum WindowFilter { AlwaysReturnActive, ReturnActiveIfNotLocked, AlwaysReturnNew };
 
 		private const string PREFS_SEARCH_SCENES = "AUD_SceneSearch";
+		private const string PREFS_SEARCH_SCENE_LIGHTING_SETTINGS = "AUD_LightingSettingsSearch";
 		private const string PREFS_SEARCH_ASSETS = "AUD_AssetsSearch";
 		private const string PREFS_SEARCH_PROJECT_SETTINGS = "AUD_ProjectSettingsSearch";
 		private const string PREFS_DONT_SEARCH_SOURCE_ASSETS = "AUD_AssetsExcludeSrc";
@@ -73,6 +74,7 @@ namespace AssetUsageDetectorNamespace
 		private bool searchInScenesInBuild = true; // Scenes in build
 		private bool searchInScenesInBuildTickedOnly = true; // Scenes in build (ticked only or not)
 		private bool searchInAllScenes = true; // All scenes (including scenes that are not in build)
+		private bool searchInSceneLightingSettings = true; // Window-Rendering-Lighting settings
 		private bool searchInAssetsFolder = true; // Assets in Project window
 		private bool dontSearchInSourceAssets = true; // objectsToSearch won't be searched for internal references
 		private bool searchInProjectSettings = true; // Player Settings, Graphics Settings etc.
@@ -313,6 +315,7 @@ namespace AssetUsageDetectorNamespace
 			if( searchParameters != null )
 			{
 				ParseSceneSearchMode( searchParameters.searchInScenes );
+				searchInSceneLightingSettings = searchParameters.searchInSceneLightingSettings;
 				searchInAssetsFolder = searchParameters.searchInAssetsFolder;
 				dontSearchInSourceAssets = searchParameters.dontSearchInSourceAssets;
 				searchInProjectSettings = searchParameters.searchInProjectSettings;
@@ -396,6 +399,7 @@ namespace AssetUsageDetectorNamespace
 		private void SavePrefs()
 		{
 			EditorPrefs.SetInt( PREFS_SEARCH_SCENES, (int) GetSceneSearchMode( false ) );
+			EditorPrefs.SetBool( PREFS_SEARCH_SCENE_LIGHTING_SETTINGS, searchInSceneLightingSettings );
 			EditorPrefs.SetBool( PREFS_SEARCH_ASSETS, searchInAssetsFolder );
 			EditorPrefs.SetBool( PREFS_DONT_SEARCH_SOURCE_ASSETS, dontSearchInSourceAssets );
 			EditorPrefs.SetBool( PREFS_SEARCH_PROJECT_SETTINGS, searchInProjectSettings );
@@ -417,7 +421,7 @@ namespace AssetUsageDetectorNamespace
 		private void LoadPrefs()
 		{
 			ParseSceneSearchMode( (SceneSearchMode) EditorPrefs.GetInt( PREFS_SEARCH_SCENES, (int) ( SceneSearchMode.OpenScenes | SceneSearchMode.ScenesInBuildSettingsTickedOnly | SceneSearchMode.AllScenes ) ) );
-
+			searchInSceneLightingSettings = EditorPrefs.GetBool( PREFS_SEARCH_SCENE_LIGHTING_SETTINGS, true );
 			searchInAssetsFolder = EditorPrefs.GetBool( PREFS_SEARCH_ASSETS, true );
 			dontSearchInSourceAssets = EditorPrefs.GetBool( PREFS_DONT_SEARCH_SOURCE_ASSETS, true );
 			searchInProjectSettings = EditorPrefs.GetBool( PREFS_SEARCH_PROJECT_SETTINGS, true );
@@ -553,6 +557,10 @@ namespace AssetUsageDetectorNamespace
 
 				GUILayout.EndVertical();
 				GUILayout.EndHorizontal();
+
+				EditorGUI.BeginDisabledGroup( !searchInOpenScenes && !searchInScenesInBuild && !searchInAllScenes );
+				searchInSceneLightingSettings = WordWrappingToggleLeft( "Scene Lighting Settings (WARNING: This may change the active scene during search)", searchInSceneLightingSettings );
+				EditorGUI.EndDisabledGroup();
 
 				Utilities.DrawSeparatorLine();
 
@@ -695,6 +703,7 @@ namespace AssetUsageDetectorNamespace
 			{
 				objectsToSearch = !objectsToSearch.IsEmpty() ? new ObjectToSearchEnumerator( objectsToSearch ).ToArray() : null,
 				searchInScenes = GetSceneSearchMode( true ),
+				searchInSceneLightingSettings = searchInSceneLightingSettings,
 				searchInAssetsFolder = searchInAssetsFolder,
 				searchInAssetsSubset = !searchInAssetsSubset.IsEmpty() ? searchInAssetsSubset.ToArray() : null,
 				excludedAssetsFromSearch = !excludedAssets.IsEmpty() ? excludedAssets.ToArray() : null,
