@@ -282,7 +282,7 @@ namespace AssetUsageDetectorNamespace
 				else if( ( searchParameters.searchInScenes & SceneSearchMode.AllScenes ) == SceneSearchMode.AllScenes )
 				{
 					// Get all scenes from the Assets folder
-					string[] sceneGuids = AssetDatabase.FindAssets( "t:SceneAsset" );
+					string[] sceneGuids = AssetDatabase.FindAssets( "t:SceneAsset", new string [] { "Assets" } );
 					for( int i = 0; i < sceneGuids.Length; i++ )
 						scenesToSearch.Add( AssetDatabase.GUIDToAssetPath( sceneGuids[i] ) );
 				}
