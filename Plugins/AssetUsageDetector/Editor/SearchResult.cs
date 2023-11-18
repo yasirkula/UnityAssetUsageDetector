@@ -1180,30 +1180,6 @@ namespace AssetUsageDetectorNamespace
 			}
 		}
 
-		internal bool HasLinkToObjectWithDescriptions( int instanceId, List<string> descriptions )
-		{
-			for( int i = links.Count - 1; i >= 0; i-- )
-			{
-				Link link = links[i];
-				if( link.targetNode.instanceId == instanceId )
-				{
-					List<string> _descriptions = link.descriptions;
-					if( _descriptions.Count != descriptions.Count )
-						return false;
-
-					for( int j = _descriptions.Count - 1; j >= 0; j-- )
-					{
-						if( _descriptions[j] != descriptions[j] )
-							return false;
-					}
-
-					return true;
-				}
-			}
-
-			return false;
-		}
-
 		public void CopyReferencesTo( ReferenceNode other )
 		{
 			other.links.Clear();

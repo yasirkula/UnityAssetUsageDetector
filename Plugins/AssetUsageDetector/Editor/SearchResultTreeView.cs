@@ -287,25 +287,6 @@ namespace AssetUsageDetectorNamespace
 
 		private bool GenerateRowsRecursive( TreeViewItem parent, ReferenceNode referenceNode, ReferenceNodeData parentData, int siblingIndex, int depth, bool? itemForcedVisibility, List<ReferenceNode> stack, HashSet<ReferenceNode> processedNodes, ref int id )
 		{
-#if UNITY_2018_3_OR_NEWER
-			// If the same reference is found in both a prefab variant and its base prefab, omit the prefab variant to reduce the number of
-			// redundant links (changing the value in base prefab will automatically change the value in its variants, after all)
-			if( hideReduntantPrefabVariantLinks && depth > 0 )
-			{
-				Object unityObject = referenceNode.UnityObject;
-				if( unityObject && ( unityObject is Component || unityObject is GameObject ) && unityObject.IsAsset() )
-				{
-					List<string> linkDescriptions = parentData.node[siblingIndex].descriptions;
-					if( linkDescriptions.Count > 0 )
-					{
-						Object prefabObject = PrefabUtility.GetCorrespondingObjectFromSource( unityObject );
-						if( prefabObject && parentData.node.HasLinkToObjectWithDescriptions( prefabObject.GetInstanceID(), linkDescriptions ) )
-							return false;
-					}
-				}
-			}
-#endif
-
 			TreeViewItem item = new TreeViewItem( id++, depth, "" );
 			ReferenceNodeData data = new ReferenceNodeData( item, referenceNode, parentData, siblingIndex );
 

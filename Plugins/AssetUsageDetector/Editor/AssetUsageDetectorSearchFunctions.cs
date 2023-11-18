@@ -1451,6 +1451,9 @@ namespace AssetUsageDetectorNamespace
 				if( iterator.Next( true ) )
 				{
 					bool iteratingVisible = iteratorVisible.NextVisible( true );
+#if UNITY_2018_3_OR_NEWER
+					bool searchPrefabOverridesOnly = searchParameters.hideReduntantPrefabVariantLinks && unityObject.IsAsset() && PrefabUtility.GetCorrespondingObjectFromSource( unityObject ) != null;
+#endif
 					bool enterChildren;
 					do
 					{
@@ -1467,6 +1470,10 @@ namespace AssetUsageDetectorNamespace
 
 						if( !isVisible )
 							enterChildren = false;
+#if UNITY_2018_3_OR_NEWER
+						else if( searchPrefabOverridesOnly && !iterator.prefabOverride )
+							enterChildren = false;
+#endif
 						else
 						{
 							Object propertyValue;
