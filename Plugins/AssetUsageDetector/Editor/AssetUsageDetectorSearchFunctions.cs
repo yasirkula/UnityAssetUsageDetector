@@ -1436,15 +1436,16 @@ namespace AssetUsageDetectorNamespace
 		// Search through variables of an object with SerializedObject
 		private void SearchVariablesWithSerializedObject( ReferenceNode referenceNode, bool forceUseSerializedObject = false )
 		{
-			if( !isInPlayMode || referenceNode.nodeObject.IsAsset() || forceUseSerializedObject )
+			Object unityObject = (Object) referenceNode.nodeObject;
+			if( !isInPlayMode || unityObject.IsAsset() || forceUseSerializedObject )
 			{
 #if ASSET_USAGE_ADDRESSABLES
 				// See: https://github.com/yasirkula/UnityAssetUsageDetector/issues/29
-				if( searchParameters.addressablesSupport && ( (Object) referenceNode.nodeObject ).name == "Deprecated EditorExtensionImpl" )
+				if( searchParameters.addressablesSupport && unityObject.name == "Deprecated EditorExtensionImpl" )
 					return;
 #endif
 
-				SerializedObject so = new SerializedObject( (Object) referenceNode.nodeObject );
+				SerializedObject so = new SerializedObject( unityObject );
 				SerializedProperty iterator = so.GetIterator();
 				SerializedProperty iteratorVisible = so.GetIterator();
 				if( iterator.Next( true ) )
@@ -1456,90 +1457,91 @@ namespace AssetUsageDetectorNamespace
 						// Iterate over NextVisible properties AND the properties that have corresponding FieldInfos (internal Unity
 						// properties don't have FieldInfos so we are skipping them, which is good because search results found in
 						// those properties aren't interesting and mostly confusing)
-						bool isVisible = iteratingVisible && SerializedProperty.EqualContents( iterator, iteratorVisible );
-						if( isVisible )
-							iteratingVisible = iteratorVisible.NextVisible( iteratorVisible.propertyType == SerializedPropertyType.Generic );
-						else
+						bool shouldMoveVisibleIterator = iteratingVisible && SerializedProperty.EqualContents( iterator, iteratorVisible );
+						bool isVisible = shouldMoveVisibleIterator || iterator.type == "Array";
+						if( !isVisible )
 						{
 							Type propFieldType;
-							isVisible = iterator.type == "Array" || fieldInfoGetter( iterator, out propFieldType ) != null;
+							isVisible = fieldInfoGetter( iterator, out propFieldType ) != null;
 						}
 
 						if( !isVisible )
-						{
 							enterChildren = false;
-							continue;
-						}
-
-						Object propertyValue;
-						ReferenceNode searchResult;
-						switch( iterator.propertyType )
+						else
 						{
-							case SerializedPropertyType.ObjectReference:
-								propertyValue = iterator.objectReferenceValue;
-								searchResult = SearchObject( PreferablyGameObject( propertyValue ) );
-								enterChildren = false;
-								break;
-							case SerializedPropertyType.ExposedReference:
-								propertyValue = iterator.exposedReferenceValue;
-								searchResult = SearchObject( PreferablyGameObject( propertyValue ) );
-								enterChildren = false;
-								break;
-#if UNITY_2019_3_OR_NEWER
-							case SerializedPropertyType.ManagedReference:
-								object managedReferenceValue = GetRawSerializedPropertyValue( iterator );
-								propertyValue = managedReferenceValue as Object;
-								searchResult = SearchObject( PreferablyGameObject( managedReferenceValue ) );
-								enterChildren = false;
-								break;
-#endif
-							case SerializedPropertyType.Generic:
-#if ASSET_USAGE_ADDRESSABLES
-								if( searchParameters.addressablesSupport && iterator.type.StartsWithFast( "AssetReference" ) && GetRawSerializedPropertyValue( iterator ) is AssetReference assetReference )
-								{
-									propertyValue = GetAddressablesAssetReferenceValue( assetReference );
+							Object propertyValue;
+							ReferenceNode searchResult;
+							switch( iterator.propertyType )
+							{
+								case SerializedPropertyType.ObjectReference:
+									propertyValue = iterator.objectReferenceValue;
 									searchResult = SearchObject( PreferablyGameObject( propertyValue ) );
 									enterChildren = false;
-								}
-								else
+									break;
+								case SerializedPropertyType.ExposedReference:
+									propertyValue = iterator.exposedReferenceValue;
+									searchResult = SearchObject( PreferablyGameObject( propertyValue ) );
+									enterChildren = false;
+									break;
+#if UNITY_2019_3_OR_NEWER
+								case SerializedPropertyType.ManagedReference:
+									object managedReferenceValue = GetRawSerializedPropertyValue( iterator );
+									propertyValue = managedReferenceValue as Object;
+									searchResult = SearchObject( PreferablyGameObject( managedReferenceValue ) );
+									enterChildren = false;
+									break;
+#endif
+								case SerializedPropertyType.Generic:
+#if ASSET_USAGE_ADDRESSABLES
+									if( searchParameters.addressablesSupport && iterator.type.StartsWithFast( "AssetReference" ) && GetRawSerializedPropertyValue( iterator ) is AssetReference assetReference )
+									{
+										propertyValue = GetAddressablesAssetReferenceValue( assetReference );
+										searchResult = SearchObject( PreferablyGameObject( propertyValue ) );
+										enterChildren = false;
+									}
+									else
 #endif
 #if ASSET_USAGE_VFX_GRAPH
-								if( vfxSerializableObjectValueGetter != null && iterator.type == "VFXSerializableObject" && GetRawSerializedPropertyValue( iterator ) is object vfxSerializableObject )
-								{
-									object vfxSerializableObjectValue = vfxSerializableObjectValueGetter.Invoke( vfxSerializableObject, null );
-									propertyValue = vfxSerializableObjectValue as Object;
-									searchResult = SearchObject( PreferablyGameObject( vfxSerializableObjectValue ) );
-									enterChildren = false;
-								}
-								else
+									if( vfxSerializableObjectValueGetter != null && iterator.type == "VFXSerializableObject" && GetRawSerializedPropertyValue( iterator ) is object vfxSerializableObject )
+									{
+										object vfxSerializableObjectValue = vfxSerializableObjectValueGetter.Invoke( vfxSerializableObject, null );
+										propertyValue = vfxSerializableObjectValue as Object;
+										searchResult = SearchObject( PreferablyGameObject( vfxSerializableObjectValue ) );
+										enterChildren = false;
+									}
+									else
 #endif
-								{
+									{
+										propertyValue = null;
+										searchResult = null;
+										enterChildren = true;
+									}
+
+									break;
+								default:
 									propertyValue = null;
 									searchResult = null;
-									enterChildren = true;
-								}
+									enterChildren = false;
+									break;
+							}
 
-								break;
-							default:
-								propertyValue = null;
-								searchResult = null;
-								enterChildren = false;
-								break;
-						}
-
-						if( searchResult != null && searchResult != referenceNode )
-						{
-							string propertyPath = iterator.propertyPath;
-
-							// m_RD.texture is a redundant reference that shows up when searching sprites
-							if( !propertyPath.EndsWithFast( "m_RD.texture" ) )
+							if( searchResult != null && searchResult != referenceNode )
 							{
-								referenceNode.AddLinkTo( searchResult, "Variable: " + propertyPath.Replace( ".Array.data[", "[" ) ); // "arrayVariable.Array.data[0]" becomes "arrayVariable[0]"
+								string propertyPath = iterator.propertyPath;
 
-								if( searchParameters.searchRefactoring != null && objectsToSearchSet.Contains( propertyValue ) )
-									searchParameters.searchRefactoring( new SerializedPropertyMatch( (Object) referenceNode.nodeObject, propertyValue, iterator ) );
+								// m_RD.texture is a redundant reference that shows up when searching sprites
+								if( !propertyPath.EndsWithFast( "m_RD.texture" ) )
+								{
+									referenceNode.AddLinkTo( searchResult, "Variable: " + propertyPath.Replace( ".Array.data[", "[" ) ); // "arrayVariable.Array.data[0]" becomes "arrayVariable[0]"
+
+									if( searchParameters.searchRefactoring != null && objectsToSearchSet.Contains( propertyValue ) )
+										searchParameters.searchRefactoring( new SerializedPropertyMatch( unityObject, propertyValue, iterator ) );
+								}
 							}
 						}
+
+						if( shouldMoveVisibleIterator )
+							iteratingVisible = iteratorVisible.NextVisible( enterChildren );
 					} while( iterator.Next( enterChildren ) );
 
 					return;
