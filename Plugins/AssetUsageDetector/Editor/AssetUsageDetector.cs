@@ -514,17 +514,28 @@ namespace AssetUsageDetectorNamespace
 						}
 					}
 
+					// Search scenes for references
 					foreach( string scenePath in scenesToSearch )
 					{
 						if( EditorUtility.DisplayCancelableProgressBar( "Please wait...", "Searching scene: " + scenePath, (float) ++searchProgress / searchTotalProgress ) )
 							throw new Exception( "Search aborted" );
 
-						// Search scene for references
 						if( string.IsNullOrEmpty( scenePath ) )
 							continue;
 
 						if( excludedScenesPathsSet.Contains( scenePath ) )
 							continue;
+
+#if UNITY_2019_2_OR_NEWER
+						// Skip scenes in read-only packages (Issue #36)
+						// Credit: https://forum.unity.com/threads/check-if-asset-inside-package-is-readonly.900902/#post-5990822
+						if( !scenePath.StartsWithFast( "Assets/" ) )
+						{
+							var packageInfo = UnityEditor.PackageManager.PackageInfo.FindForAssetPath( scenePath );
+							if( packageInfo != null && packageInfo.source != UnityEditor.PackageManager.PackageSource.Embedded && packageInfo.source != UnityEditor.PackageManager.PackageSource.Local )
+								continue;
+						}
+#endif
 
 						SearchScene( scenePath, searchResult, searchParameters, initialSceneSetup );
 					}
