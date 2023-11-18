@@ -99,7 +99,7 @@ namespace AssetUsageDetectorNamespace
 		private static bool? m_showRootAssetName = null;
 		public static bool ShowRootAssetName
 		{
-			get { if( m_showRootAssetName == null ) m_showRootAssetName = EditorPrefs.GetBool( "AUD_ShowRootAssetName", false ); return m_showRootAssetName.Value; }
+			get { if( m_showRootAssetName == null ) m_showRootAssetName = EditorPrefs.GetBool( "AUD_ShowRootAssetName", true ); return m_showRootAssetName.Value; }
 			set { if( m_showRootAssetName == value ) return; m_showRootAssetName = value; EditorPrefs.SetBool( "AUD_ShowRootAssetName", value ); }
 		}
 

@@ -1232,7 +1232,7 @@ namespace AssetUsageDetectorNamespace
 				{
 					string mainAssetName = Path.GetFileNameWithoutExtension( AssetDatabase.GetAssetPath( unityObject ) );
 					if( unityObject.name != mainAssetName )
-						Label += " <" + mainAssetName + ">";
+						Label += " <in " + mainAssetName + ">";
 				}
 			}
 			else if( nodeObject != null )
