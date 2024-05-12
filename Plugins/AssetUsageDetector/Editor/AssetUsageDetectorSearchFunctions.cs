@@ -217,8 +217,9 @@ namespace AssetUsageDetectorNamespace
 #endif
 
 #if ASSET_USAGE_VFX_GRAPH
-		private readonly Func<string, object> vfxResourceGetter = (Func<string, object>) Delegate.CreateDelegate( typeof( Func<string, object> ), typeof( Editor ).Assembly.GetType( "UnityEditor.VFX.VisualEffectResource" ).GetMethod( "GetResourceAtPath", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static ) );
-		private readonly MethodInfo vfxResourceContentsGetter = typeof( Editor ).Assembly.GetType( "UnityEditor.VFX.VisualEffectResource" ).GetMethod( "GetContents", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance );
+		private static Type vfxResourceType => typeof( Editor ).Assembly.GetType( "UnityEditor.VFX.VisualEffectResource" ) ?? Array.Find( AppDomain.CurrentDomain.GetAssemblies(), ( assembly ) => assembly.GetName().Name == "UnityEditor.VFXModule" ).GetType( "UnityEditor.VFX.VisualEffectResource" );
+		private readonly Func<string, object> vfxResourceGetter = (Func<string, object>) Delegate.CreateDelegate( typeof( Func<string, object> ), vfxResourceType.GetMethod( "GetResourceAtPath", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static ) );
+		private readonly MethodInfo vfxResourceContentsGetter = vfxResourceType.GetMethod( "GetContents", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance );
 		private readonly MethodInfo vfxSerializableObjectValueGetter = Array.Find( Array.Find( AppDomain.CurrentDomain.GetAssemblies(), ( assembly ) => assembly.GetName().Name == "Unity.VisualEffectGraph.Editor" ).GetType( "UnityEditor.VFX.VFXSerializableObject" ).GetMethods( BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance ), ( methodInfo ) => methodInfo.Name == "Get" && !methodInfo.IsGenericMethod );
 #endif
 
