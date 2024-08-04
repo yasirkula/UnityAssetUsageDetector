@@ -863,6 +863,9 @@ namespace AssetUsageDetectorNamespace
 						if( searchResult != null && searchResult.SearchParameters.dontSearchInSourceAssets && searchResult.SearchParameters.objectsToSearch.Length > 1 )
 							EditorGUILayout.HelpBox( "'Don't search \"SEARCHED OBJECTS\" themselves for references' is enabled, some of these objects might be used by \"SEARCHED OBJECTS\".", MessageType.Warning );
 
+						if( !AssetUsageDetectorSettings.MarkUsedAssetsSubAssetsAsUsed )
+							EditorGUILayout.HelpBox( "'Hide unused sub-assets in \"Unused Objects\" list if their parent assets are used' is disabled, unused sub-assets' parent assets might be used.", MessageType.Warning );
+
 						EditorGUILayout.HelpBox( "Although no references to these objects are found, they might still be used somewhere (e.g. via Resources.Load). If you intend to delete these objects, consider creating a backup of your project first.", MessageType.Info );
 					}
 

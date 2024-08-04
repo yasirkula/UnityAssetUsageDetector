@@ -41,7 +41,7 @@ namespace AssetUsageDetectorNamespace
 		private static readonly GUIContent windowTitle = new GUIContent( "Asset Usage Detector" );
 		private static readonly Vector2 windowMinSize = new Vector2( 325f, 220f );
 
-		private readonly GUILayoutOption GL_WIDTH_12 = GUILayout.Width( 12f );
+		private static readonly GUILayoutOption GL_WIDTH_12 = GUILayout.Width( 12f );
 
 		private GUIStyle lockButtonStyle;
 
@@ -674,7 +674,7 @@ namespace AssetUsageDetectorNamespace
 				objectsToSearchDrawer.Draw( objectsToSearch );
 		}
 
-		private bool WordWrappingToggleLeft( string label, bool value )
+		public static bool WordWrappingToggleLeft( string label, bool value )
 		{
 			GUILayout.BeginHorizontal();
 			bool result = EditorGUILayout.ToggleLeft( GUIContent.none, value, GL_WIDTH_12 );

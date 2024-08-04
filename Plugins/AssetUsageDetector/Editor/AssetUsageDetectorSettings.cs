@@ -124,6 +124,13 @@ namespace AssetUsageDetectorNamespace
 			set { if( m_selectDoubleClickedObjects == value ) return; m_selectDoubleClickedObjects = value; EditorPrefs.SetBool( "AUD_SelectDoubleClickedObj", value ); }
 		}
 
+		private static bool? m_markUsedAssetsSubAssetsAsUsed = null;
+		public static bool MarkUsedAssetsSubAssetsAsUsed
+		{
+			get { if( m_markUsedAssetsSubAssetsAsUsed == null ) m_markUsedAssetsSubAssetsAsUsed = EditorPrefs.GetBool( "AUD_MarkUsedAssetsSubAssetsAsUsed", true ); return m_markUsedAssetsSubAssetsAsUsed.Value; }
+			set { if( m_markUsedAssetsSubAssetsAsUsed == value ) return; m_markUsedAssetsSubAssetsAsUsed = value; EditorPrefs.SetBool( "AUD_MarkUsedAssetsSubAssetsAsUsed", value ); }
+		}
+
 		private static bool? m_showUnityTooltip = null;
 		public static bool ShowUnityTooltip
 		{
@@ -186,20 +193,22 @@ namespace AssetUsageDetectorNamespace
 
 			EditorGUI.BeginChangeCheck();
 
-			EditorGUIUtility.labelWidth += 140f;
-			ShowRootAssetName = EditorGUILayout.Toggle( "Show Root Asset's Name For Sub-Assets (Requires Refresh)", ShowRootAssetName );
-			EditorGUIUtility.labelWidth -= 140f;
+			ShowRootAssetName = AssetUsageDetectorWindow.WordWrappingToggleLeft( "Show Root Asset's Name For Sub-Assets (Requires Refresh)", ShowRootAssetName );
 
 			EditorGUILayout.Space();
 
-			PingClickedObjects = EditorGUILayout.Toggle( "Ping Clicked Objects", PingClickedObjects );
-			SelectClickedObjects = EditorGUILayout.Toggle( "Select Clicked Objects", SelectClickedObjects );
-			SelectDoubleClickedObjects = EditorGUILayout.Toggle( "Select Double Clicked Objects", SelectDoubleClickedObjects );
+			PingClickedObjects = AssetUsageDetectorWindow.WordWrappingToggleLeft( "Ping Clicked Objects", PingClickedObjects );
+			SelectClickedObjects = AssetUsageDetectorWindow.WordWrappingToggleLeft( "Select Clicked Objects", SelectClickedObjects );
+			SelectDoubleClickedObjects = AssetUsageDetectorWindow.WordWrappingToggleLeft( "Select Double Clicked Objects", SelectDoubleClickedObjects );
 
 			EditorGUILayout.Space();
 
-			ShowUnityTooltip = EditorGUILayout.Toggle( "Show Unity Tooltip", ShowUnityTooltip );
-			ShowCustomTooltip = EditorGUILayout.Toggle( "Show Custom Tooltip", ShowCustomTooltip );
+			MarkUsedAssetsSubAssetsAsUsed = AssetUsageDetectorWindow.WordWrappingToggleLeft( "Hide unused sub-assets in \"Unused Objects\" list if their parent assets are used (Requires Refresh)", MarkUsedAssetsSubAssetsAsUsed );
+
+			EditorGUILayout.Space();
+
+			ShowUnityTooltip = AssetUsageDetectorWindow.WordWrappingToggleLeft( "Show Unity Tooltip", ShowUnityTooltip );
+			ShowCustomTooltip = AssetUsageDetectorWindow.WordWrappingToggleLeft( "Show Custom Tooltip", ShowCustomTooltip );
 			EditorGUI.indentLevel++;
 			CustomTooltipDelay = FloatField( "Delay", CustomTooltipDelay, 0.7f );
 			EditorGUI.indentLevel--;
@@ -223,7 +232,7 @@ namespace AssetUsageDetectorNamespace
 			SelectedRowOccurrencesColor = ColorField( "Selected Row All Occurrences Tint", SelectedRowOccurrencesColor, EditorGUIUtility.isProSkin ? new Color( 0f, 0.3f, 0.75f, 1f ) : new Color( 0.25f, 0.75f, 1f, 1f ) );
 			SearchMatchingTextColor = ColorField( "Matching Search Text Color", SearchMatchingTextColor, Color.red );
 
-			ShowTreeLines = EditorGUILayout.Toggle( "Show Tree Lines", ShowTreeLines );
+			ShowTreeLines = AssetUsageDetectorWindow.WordWrappingToggleLeft( "Show Tree Lines", ShowTreeLines );
 			EditorGUI.indentLevel++;
 			TreeLinesColor = ColorField( "Normal Color", TreeLinesColor, EditorGUIUtility.isProSkin ? new Color( 0.65f, 0.65f, 0.65f, 1f ) : new Color( 0.375f, 0.375f, 0.375f, 1f ) );
 			HighlightedTreeLinesColor = ColorField( "Highlighted Color", HighlightedTreeLinesColor, Color.cyan );

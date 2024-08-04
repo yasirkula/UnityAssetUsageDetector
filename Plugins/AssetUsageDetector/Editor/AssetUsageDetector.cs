@@ -711,6 +711,19 @@ namespace AssetUsageDetectorNamespace
 					continue;
 
 				string assetPath = AssetDatabase.GetAssetPath( obj );
+
+				// Omit unused sub-assets whose parent assets are used (configurable via Settings)
+				if( AssetUsageDetectorSettings.MarkUsedAssetsSubAssetsAsUsed && AssetDatabase.IsSubAsset( obj ) && usedObjectsSet.Contains( AssetDatabase.LoadMainAssetAtPath( assetPath ) ) )
+					continue;
+
+				// Omit meshes of an imported model asset
+				if( obj is Mesh && !string.IsNullOrEmpty( assetPath ) && AssetDatabase.GetMainAssetTypeAtPath( assetPath ) == typeof( GameObject ) && objectsToSearchSet.Contains( AssetDatabase.LoadMainAssetAtPath( assetPath ) ) )
+					continue;
+
+				// Omit MonoScripts whose types can't be determined
+				if( obj is MonoScript && ( (MonoScript) obj ).GetClass() == null )
+					continue;
+
 				GameObject searchedTopmostGameObject = null;
 				if( obj is GameObject )
 				{
@@ -737,14 +750,6 @@ namespace AssetUsageDetectorNamespace
 					if( searchedTopmostGameObject && !string.IsNullOrEmpty( assetPath ) ) // Omit GameObject assets if their parent objects are already included in search
 						continue;
 				}
-
-				// Omit meshes of an imported model asset
-				if( obj is Mesh && !string.IsNullOrEmpty( assetPath ) && AssetDatabase.GetMainAssetTypeAtPath( assetPath ) == typeof( GameObject ) && objectsToSearchSet.Contains( AssetDatabase.LoadMainAssetAtPath( assetPath ) ) )
-					continue;
-
-				// Omit MonoScripts whose types can't be determined
-				if( obj is MonoScript && ( (MonoScript) obj ).GetClass() == null )
-					continue;
 
 				// Use new ReferenceNodes in UnusedObjects search result group because we don't want these nodes to be linked to the actual ReferenceNodes in any way
 				// (i.e. we don't use actual ReferenceNodes of these objects (GetReferenceNode) because these may have links to other nodes in unknown circumstances)
