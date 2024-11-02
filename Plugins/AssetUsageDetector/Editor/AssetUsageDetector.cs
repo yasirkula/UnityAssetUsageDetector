@@ -53,7 +53,8 @@ namespace AssetUsageDetectorNamespace
 #endif
 			public bool calculateUnusedObjects = false;
 			public bool hideDuplicateRows = true;
-			public bool hideReduntantPrefabVariantLinks = true;
+			public bool hideNonOverriddenPrefabVariablesInAssets = true;
+			public bool hideNonOverriddenPrefabVariablesInScenes = false;
 			public bool noAssetDatabaseChanges = false;
 			public bool showDetailedProgressBar = true;
 		}

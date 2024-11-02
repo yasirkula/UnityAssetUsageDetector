@@ -1453,7 +1453,7 @@ namespace AssetUsageDetectorNamespace
 				{
 					bool iteratingVisible = iteratorVisible.NextVisible( true );
 #if UNITY_2018_3_OR_NEWER
-					bool searchPrefabOverridesOnly = searchParameters.hideReduntantPrefabVariantLinks && unityObject.IsAsset() && PrefabUtility.GetCorrespondingObjectFromSource( unityObject ) != null;
+					bool searchPrefabOverridesOnly = ( ( searchParameters.hideNonOverriddenPrefabVariablesInAssets && unityObject.IsAsset() ) || ( searchParameters.hideNonOverriddenPrefabVariablesInScenes && !unityObject.IsAsset() ) ) && PrefabUtility.GetCorrespondingObjectFromSource( unityObject ) != null;
 #endif
 					bool enterChildren;
 					do
