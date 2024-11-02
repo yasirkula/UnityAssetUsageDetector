@@ -881,7 +881,7 @@ namespace AssetUsageDetectorNamespace
 						if( shouldUpdateInitialTreeViewNodeId )
 							treeViewState.initialNodeId = searchResult.nextTreeViewId;
 
-						treeView = new SearchResultTreeView( treeViewState, references, ( Type == GroupType.UnusedObjects ) ? SearchResultTreeView.TreeType.UnusedObjects : SearchResultTreeView.TreeType.Normal, searchResult != null ? searchResult.UsedObjects : null, searchResult != null && searchResult.SearchParameters.hideDuplicateRows, searchResult != null && searchResult.SearchParameters.hideReduntantPrefabVariantLinks, true );
+						treeView = new SearchResultTreeView( treeViewState, references, ( Type == GroupType.UnusedObjects ) ? SearchResultTreeView.TreeType.UnusedObjects : SearchResultTreeView.TreeType.Normal, searchResult != null ? searchResult.UsedObjects : null, searchResult != null && searchResult.SearchParameters.hideDuplicateRows, true );
 
 						if( isFirstInitialization )
 						{
