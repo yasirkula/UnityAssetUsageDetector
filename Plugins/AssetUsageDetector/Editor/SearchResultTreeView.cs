@@ -991,7 +991,7 @@ namespace AssetUsageDetectorNamespace
 				return referenceNodes.Contains( GetDataFromId( item.id ).node );
 		}
 
-		private void HideItems( IList<int> ids )
+		public void HideItems( IList<int> ids )
 		{
 			if( ids.Count > 0 )
 			{
