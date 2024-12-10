@@ -446,6 +446,15 @@ namespace AssetUsageDetectorNamespace
 			return stringBuilder.ToString();
 		}
 
+		// Draw header inside OnGUI
+		public static void DrawHeader( string label )
+		{
+			Color c = GUI.backgroundColor;
+			GUI.backgroundColor = AssetUsageDetectorSettings.SettingsHeaderColor;
+			GUILayout.Box( label, BoxGUIStyle, GL_EXPAND_WIDTH );
+			GUI.backgroundColor = c;
+		}
+
 		// Draw horizontal line inside OnGUI
 		public static void DrawSeparatorLine()
 		{

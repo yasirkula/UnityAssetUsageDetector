@@ -502,10 +502,7 @@ namespace AssetUsageDetectorNamespace
 
 				GUILayout.Space( 10f );
 
-				Color c = GUI.backgroundColor;
-				GUI.backgroundColor = AssetUsageDetectorSettings.SettingsHeaderColor;
-				GUILayout.Box( "<b>SEARCH IN</b>", Utilities.BoxGUIStyle, Utilities.GL_EXPAND_WIDTH );
-				GUI.backgroundColor = c;
+				Utilities.DrawHeader( "<b>SEARCH IN</b>" );
 
 				searchInAssetsFolder = WordWrappingToggleLeft( "Project window (Assets folder)", searchInAssetsFolder );
 
@@ -573,9 +570,7 @@ namespace AssetUsageDetectorNamespace
 
 				GUILayout.Space( 10f );
 
-				GUI.backgroundColor = AssetUsageDetectorSettings.SettingsHeaderColor;
-				GUILayout.Box( "<b>SETTINGS</b>", Utilities.BoxGUIStyle, Utilities.GL_EXPAND_WIDTH );
-				GUI.backgroundColor = c;
+				Utilities.DrawHeader( "<b>SETTINGS</b>" );
 
 #if ASSET_USAGE_ADDRESSABLES
 				EditorGUI.BeginDisabledGroup( addressablesSupport );
@@ -664,10 +659,7 @@ namespace AssetUsageDetectorNamespace
 
 		private void DrawObjectsToSearchSection()
 		{
-			Color c = GUI.backgroundColor;
-			GUI.backgroundColor = AssetUsageDetectorSettings.SettingsHeaderColor;
-			GUILayout.Box( "<b>SEARCHED OBJECTS</b>", Utilities.BoxGUIStyle, Utilities.GL_EXPAND_WIDTH );
-			GUI.backgroundColor = c;
+			Utilities.DrawHeader( "<b>SEARCHED OBJECTS</b>" );
 
 			Rect searchedObjectsHeaderRect = GUILayoutUtility.GetLastRect();
 			searchedObjectsHeaderRect.x += 5f;
