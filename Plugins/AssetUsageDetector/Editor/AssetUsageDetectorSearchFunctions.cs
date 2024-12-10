@@ -397,16 +397,21 @@ namespace AssetUsageDetectorNamespace
 			// Check if this GameObject's prefab is one of the selected assets
 			if( searchPrefabConnections )
 			{
-#if UNITY_2018_3_OR_NEWER
-				Object prefab = go;
-				while( prefab = PrefabUtility.GetCorrespondingObjectFromSource( prefab ) )
-#else
-				Object prefab = PrefabUtility.GetPrefabParent( go );
-				if( prefab )
-#endif
+				bool? skipFurtherPrefabReferences = null;
+				for( GameObject goPrefab = go.GetPrefabParent(), prefab = goPrefab; prefab != null; prefab = prefab.GetPrefabParent() )
 				{
-					if( objectsToSearchSet.Contains( prefab ) && assetsToSearchRootPrefabs.ContainsFast( prefab as GameObject ) )
+					if( objectsToSearchSet.Contains( prefab ) && assetsToSearchRootPrefabs.ContainsFast( prefab ) )
 					{
+						if( goPrefab != prefab && !skipFurtherPrefabReferences.HasValue )
+						{
+							skipFurtherPrefabReferences = ShouldExcludeRedundantPrefabReferences( go ) && !go.HasAnyPrefabOverrides();
+							if( skipFurtherPrefabReferences.Value )
+							{
+								currentSearchResultGroup.NumberOfRedundantReferences++;
+								break;
+							}
+						}
+
 						referenceNode.AddLinkTo( GetReferenceNode( prefab ), "Prefab object" );
 
 						if( searchParameters.searchRefactoring != null )
@@ -440,10 +445,15 @@ namespace AssetUsageDetectorNamespace
 				MonoScript script = MonoScript.FromMonoBehaviour( (MonoBehaviour) component );
 				if( objectsToSearchSet.Contains( script ) )
 				{
-					referenceNode.AddLinkTo( GetReferenceNode( script ) );
+					if( ShouldExcludeRedundantPrefabReferences( component ) && !component.HasAnyPrefabOverrides() )
+						currentSearchResultGroup.NumberOfRedundantReferences++;
+					else
+					{
+						referenceNode.AddLinkTo( GetReferenceNode( script ) );
 
-					if( searchParameters.searchRefactoring != null )
-						searchParameters.searchRefactoring( new BehaviourUsageMatch( component.gameObject, script, component ) );
+						if( searchParameters.searchRefactoring != null )
+							searchParameters.searchRefactoring( new BehaviourUsageMatch( component.gameObject, script, component ) );
+					}
 				}
 			}
 
@@ -1452,9 +1462,7 @@ namespace AssetUsageDetectorNamespace
 				if( iterator.Next( true ) )
 				{
 					bool iteratingVisible = iteratorVisible.NextVisible( true );
-#if UNITY_2018_3_OR_NEWER
-					bool searchPrefabOverridesOnly = ( ( searchParameters.hideNonOverriddenPrefabVariablesInAssets && unityObject.IsAsset() ) || ( searchParameters.hideNonOverriddenPrefabVariablesInScenes && !unityObject.IsAsset() ) ) && PrefabUtility.GetCorrespondingObjectFromSource( unityObject ) != null;
-#endif
+					bool searchPrefabOverridesOnly = ShouldExcludeRedundantPrefabReferences( unityObject );
 					bool enterChildren;
 					do
 					{
@@ -1471,10 +1479,6 @@ namespace AssetUsageDetectorNamespace
 
 						if( !isVisible )
 							enterChildren = false;
-#if UNITY_2018_3_OR_NEWER
-						else if( searchPrefabOverridesOnly && !iterator.prefabOverride )
-							enterChildren = false;
-#endif
 						else
 						{
 							Object propertyValue;
@@ -1542,10 +1546,18 @@ namespace AssetUsageDetectorNamespace
 								// m_RD.texture is a redundant reference that shows up when searching sprites
 								if( !propertyPath.EndsWithFast( "m_RD.texture" ) )
 								{
-									referenceNode.AddLinkTo( searchResult, "Variable: " + propertyPath.Replace( ".Array.data[", "[" ) ); // "arrayVariable.Array.data[0]" becomes "arrayVariable[0]"
+									if( searchPrefabOverridesOnly && !iterator.prefabOverride )
+									{
+										currentSearchResultGroup.NumberOfRedundantReferences++;
+										enterChildren = false;
+									}
+									else
+									{
+										referenceNode.AddLinkTo( searchResult, "Variable: " + propertyPath.Replace( ".Array.data[", "[" ) ); // "arrayVariable.Array.data[0]" becomes "arrayVariable[0]"
 
-									if( searchParameters.searchRefactoring != null && objectsToSearchSet.Contains( propertyValue ) )
-										searchParameters.searchRefactoring( new SerializedPropertyMatch( unityObject, propertyValue, iterator ) );
+										if( searchParameters.searchRefactoring != null && objectsToSearchSet.Contains( propertyValue ) )
+											searchParameters.searchRefactoring( new SerializedPropertyMatch( unityObject, propertyValue, iterator ) );
+									}
 								}
 							}
 						}
@@ -1923,6 +1935,11 @@ namespace AssetUsageDetectorNamespace
 			return result;
 		}
 #endif
+
+		private bool ShouldExcludeRedundantPrefabReferences( Object obj )
+		{
+			return ( ( searchParameters.hideRedundantPrefabReferencesInAssets && obj.IsAsset() ) || ( searchParameters.hideRedundantPrefabReferencesInScenes && !obj.IsAsset() ) ) && obj.GetPrefabParent() != null;
+		}
 
 		// Iterates over all occurrences of specific key-value pairs in string
 		// Example1: #include "VALUE"  valuePrefix=#include, valueWrapperChar="

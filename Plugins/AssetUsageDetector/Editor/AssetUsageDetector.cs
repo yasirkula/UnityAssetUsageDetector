@@ -53,8 +53,8 @@ namespace AssetUsageDetectorNamespace
 #endif
 			public bool calculateUnusedObjects = false;
 			public bool hideDuplicateRows = true;
-			public bool hideNonOverriddenPrefabVariablesInAssets = true;
-			public bool hideNonOverriddenPrefabVariablesInScenes = false;
+			public bool hideRedundantPrefabReferencesInAssets = false;
+			public bool hideRedundantPrefabReferencesInScenes = false;
 			public bool noAssetDatabaseChanges = false;
 			public bool showDetailedProgressBar = true;
 		}
@@ -454,7 +454,7 @@ namespace AssetUsageDetectorNamespace
 					}
 
 					// If a reference is found in the Project view, save the results
-					if( currentSearchResultGroup.NumberOfReferences > 0 )
+					if( currentSearchResultGroup.AnyReferencesFound )
 						searchResult.Add( currentSearchResultGroup );
 				}
 
@@ -479,7 +479,7 @@ namespace AssetUsageDetectorNamespace
 						}
 					}
 
-					if( currentSearchResultGroup.NumberOfReferences > 0 )
+					if( currentSearchResultGroup.AnyReferencesFound )
 						searchResult.Add( currentSearchResultGroup );
 				}
 
@@ -554,7 +554,7 @@ namespace AssetUsageDetectorNamespace
 					for( int i = 0; i < rootGameObjects.Length; i++ )
 						SearchGameObjectRecursively( rootGameObjects[i] );
 
-					if( currentSearchResultGroup.NumberOfReferences > 0 )
+					if( currentSearchResultGroup.AnyReferencesFound )
 						searchResult.Add( currentSearchResultGroup );
 				}
 
@@ -663,7 +663,7 @@ namespace AssetUsageDetectorNamespace
 				searchResult[i].InitializeNodes( objectsToSearchSet );
 
 				// Remove empty search result groups
-				if( !searchResult[i].PendingSearch && searchResult[i].NumberOfReferences == 0 )
+				if( !searchResult[i].PendingSearch && !searchResult[i].AnyReferencesFound )
 					searchResult.RemoveAt( i-- );
 			}
 		}
@@ -982,11 +982,9 @@ namespace AssetUsageDetectorNamespace
 						EditorSceneManager.CloseScene( scene, true );
 				}
 			}
-			else
-			{
-				// Some references are found in this scene, save the results
+
+			if( currentSearchResultGroup.AnyReferencesFound )
 				searchResult.Add( currentSearchResultGroup );
-			}
 		}
 
 		// Search a GameObject and its children for references recursively

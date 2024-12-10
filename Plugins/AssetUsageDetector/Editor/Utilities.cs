@@ -51,6 +51,10 @@ namespace AssetUsageDetectorNamespace
 
 		private static MethodInfo screenFittedRectGetter;
 
+#if UNITY_2018_3_OR_NEWER
+		private static readonly Func<Object, bool, bool> prefabHasAnyOverridesGetter = (Func<Object, bool, bool>) Delegate.CreateDelegate( typeof( Func<Object, bool, bool> ), typeof( PrefabUtility ).GetMethod( "HasObjectOverride", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static ) );
+#endif
+
 		private static readonly HashSet<string> folderContentsSet = new HashSet<string>();
 
 		internal static readonly StringBuilder stringBuilder = new StringBuilder( 400 );
@@ -112,6 +116,97 @@ namespace AssetUsageDetectorNamespace
 		public static bool IsFolder( this Object obj )
 		{
 			return obj is DefaultAsset && AssetDatabase.IsValidFolder( AssetDatabase.GetAssetPath( obj ) );
+		}
+
+		public static T GetPrefabParent<T>( this T obj ) where T : Object
+		{
+#if UNITY_2018_3_OR_NEWER
+			return PrefabUtility.GetCorrespondingObjectFromSource( obj );
+#else
+			return PrefabUtility.GetPrefabParent( obj ) as T;
+#endif
+		}
+
+		public static bool HasAnyPrefabOverrides( this Object obj )
+		{
+			if( obj.GetPrefabParent() == null )
+				return false;
+
+#if UNITY_2018_3_OR_NEWER
+			return prefabHasAnyOverridesGetter( obj, false );
+#else
+			SerializedProperty iterator = new SerializedObject( obj ).GetIterator();
+			if( iterator.Next( true ) )
+			{
+				do
+				{
+					if( iterator.prefabOverride )
+						return true;
+				} while( iterator.NextVisible( false ) );
+			}
+
+			return false;
+#endif
+		}
+
+		public static bool HasAnyPrefabOverrides( this GameObject gameObject )
+		{
+			if( gameObject.GetPrefabParent() == null )
+				return false;
+
+#if UNITY_2018_3_OR_NEWER
+			if( !PrefabUtility.HasPrefabInstanceAnyOverrides( gameObject, false ) )
+				return false;
+#endif
+
+			Transform rootTransform = gameObject.transform;
+			List<Component> components = new List<Component>( 8 );
+			Stack<Transform> stack = new Stack<Transform>( 8 );
+			stack.Push( rootTransform );
+
+			while( stack.Count > 0 )
+			{
+				Transform transform = stack.Pop();
+				Transform prefab = transform.GetPrefabParent();
+				if( prefab == null ) // GameObject is added as override
+					return true;
+
+				if( transform.childCount != prefab.childCount ) // Has some added/destroyed children as override
+					return true;
+
+				bool isRootTransform = ReferenceEquals( transform, rootTransform );
+				if( !isRootTransform && ( transform.gameObject as Object ).HasAnyPrefabOverrides() ) // GameObject's properties are modified (e.g. name or tag) (excluding root GameObject)
+					return true;
+
+				components.Clear();
+				transform.GetComponents( components );
+				foreach( Component component in components )
+				{
+					if( component == null )
+						continue;
+
+					if( component.GetPrefabParent() == null ) // Component is added as override
+						return true;
+
+					if( ( !isRootTransform || !( component is Transform ) ) && component.HasAnyPrefabOverrides() ) // Component is modified (excluding root Transform)
+						return true;
+				}
+
+				int componentCount = components.Count;
+				components.Clear();
+				prefab.GetComponents( components );
+				if( components.Count != componentCount ) // Has some destroyed components as override
+					return true;
+
+				for( int i = 0, childCount = transform.childCount; i < childCount; i++ )
+				{
+					Transform child = transform.GetChild( i );
+					if( child != null )
+						stack.Push( child );
+				}
+			}
+
+			return false;
 		}
 
 		// Returns an enumerator to iterate through all asset paths in the folder

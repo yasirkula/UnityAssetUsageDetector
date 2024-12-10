@@ -23,6 +23,7 @@ namespace AssetUsageDetectorNamespace
 			public SearchResultGroup.GroupType type;
 			public bool isExpanded;
 			public bool pendingSearch;
+			public int redundantReferences;
 			public SearchResultTreeViewState treeViewState;
 
 			public List<int> initialSerializedNodes;
@@ -576,6 +577,9 @@ namespace AssetUsageDetectorNamespace
 		public int NumberOfReferences { get { return references.Count; } }
 		public ReferenceNode this[int index] { get { return references[index]; } }
 
+		public int NumberOfRedundantReferences { get; internal set; }
+		public bool AnyReferencesFound { get { return NumberOfReferences > 0 || NumberOfRedundantReferences > 0; } }
+
 		public SearchResultGroup( string title, GroupType type, bool isExpanded = true, bool pendingSearch = false )
 		{
 			Title = title.StartsWith( "<b>" ) ? title : string.Concat( "<b>", title, "</b>" );
@@ -869,6 +873,9 @@ namespace AssetUsageDetectorNamespace
 
 			if( IsExpanded )
 			{
+				if( NumberOfRedundantReferences > 0 )
+					EditorGUILayout.HelpBox( string.Concat( NumberOfRedundantReferences.ToString(), " redundant prefab reference(s) were skipped. Disable \"Hide redundant prefab references in ", ( Type == GroupType.Scene || Type == GroupType.DontDestroyOnLoad ) ? "Scenes" : "Assets", "\" to see them." ), MessageType.Info );
+
 				if( PendingSearch )
 					GUILayout.Box( "Lazy Search: this scene potentially has some references, hit Refresh to find them", Utilities.BoxGUIStyle );
 				else if( references.Count == 0 )
@@ -1065,6 +1072,7 @@ namespace AssetUsageDetectorNamespace
 				type = Type,
 				isExpanded = IsExpanded,
 				pendingSearch = PendingSearch,
+				redundantReferences = NumberOfRedundantReferences,
 				treeViewState = treeViewState
 			};
 
@@ -1082,6 +1090,7 @@ namespace AssetUsageDetectorNamespace
 		// Deserialize this result group from the serialized data
 		internal void Deserialize( SearchResult.SerializableResultGroup serializedResultGroup, List<ReferenceNode> allNodes )
 		{
+			NumberOfRedundantReferences = serializedResultGroup.redundantReferences;
 			treeViewState = serializedResultGroup.treeViewState;
 
 			if( serializedResultGroup.initialSerializedNodes != null )

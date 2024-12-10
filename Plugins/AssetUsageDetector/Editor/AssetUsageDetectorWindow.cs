@@ -37,14 +37,24 @@ namespace AssetUsageDetectorNamespace
 #endif
 		private const string PREFS_CALCULATE_UNUSED_OBJECTS = "AUD_FindUnusedObjs";
 		private const string PREFS_HIDE_DUPLICATE_ROWS = "AUD_HideDuplicates";
-		private const string PREFS_HIDE_NON_OVERRIDDEN_PREFAB_VARIABLES_IN_ASSETS = "AUD_HideRedundantPVariantLinks";
-		private const string PREFS_HIDE_NON_OVERRIDDEN_PREFAB_VARIABLES_IN_SCENES = "AUD_HideRedundantPVarsInScenes";
+		private const string PREFS_HIDE_REDUNDANT_PREFAB_REFERENCES_IN_ASSETS = "AUD_HideRedundantPRefsInAssets";
+		private const string PREFS_HIDE_REDUNDANT_PREFAB_REFERENCES_IN_SCENES = "AUD_HideRedundantPRefsInScenes";
 		private const string PREFS_SHOW_PROGRESS = "AUD_Progress";
 
 		private static readonly GUIContent windowTitle = new GUIContent( "Asset Usage Detector" );
 		private static readonly Vector2 windowMinSize = new Vector2( 325f, 220f );
 
 		private static readonly GUILayoutOption GL_WIDTH_12 = GUILayout.Width( 12f );
+
+		private static readonly GUIContent sharedGUIContent = new GUIContent();
+
+		private readonly GUIContent hideRedundantPrefabReferencesInAssetsLabel = new GUIContent( "Hide redundant prefab references in Assets", "Hides redundant/non-overridden references in prefab variants and nested prefabs. " +
+			"This will help focus on only the references that actually matter. For example:\n\n" +
+			"- Material CloudMat is assigned to prefab Cloud and its variant CloudBig. Since changing Cloud's material will also affect CloudBig, search results won't show CloudBig's reference" );
+		private readonly GUIContent hideRedundantPrefabReferencesInScenesLabel = new GUIContent( "Hide redundant prefab references in Scenes", "Hides redundant/non-overridden references in prefab instances. " +
+			"This will help focus on only the references that actually matter. For example:\n\n" +
+			"- Prefab Healthbar is nested inside prefab Player. An instance of Player exists in the current scene and its Healthbar isn't modified. Since modifying Healthbar in Player prefab will also affect " +
+			"the instance in the scene, search results won't show the instance in the scene while searching for Healthbar's references" );
 
 		private GUIStyle lockButtonStyle;
 
@@ -96,8 +106,8 @@ namespace AssetUsageDetectorNamespace
 		private bool searchUnusedMaterialProperties = true;
 		private bool calculateUnusedObjects = false;
 		private bool hideDuplicateRows = true;
-		private bool hideNonOverriddenPrefabVariablesInAssets = true;
-		private bool hideNonOverriddenPrefabVariablesInScenes = false;
+		private bool hideRedundantPrefabReferencesInAssets = false;
+		private bool hideRedundantPrefabReferencesInScenes = false;
 		private bool noAssetDatabaseChanges = false;
 		private bool showDetailedProgressBar = true;
 
@@ -335,8 +345,8 @@ namespace AssetUsageDetectorNamespace
 #endif
 				calculateUnusedObjects = searchParameters.calculateUnusedObjects;
 				hideDuplicateRows = searchParameters.hideDuplicateRows;
-				hideNonOverriddenPrefabVariablesInAssets = searchParameters.hideNonOverriddenPrefabVariablesInAssets;
-				hideNonOverriddenPrefabVariablesInScenes = searchParameters.hideNonOverriddenPrefabVariablesInScenes;
+				hideRedundantPrefabReferencesInAssets = searchParameters.hideRedundantPrefabReferencesInAssets;
+				hideRedundantPrefabReferencesInScenes = searchParameters.hideRedundantPrefabReferencesInScenes;
 				noAssetDatabaseChanges = searchParameters.noAssetDatabaseChanges;
 				showDetailedProgressBar = searchParameters.showDetailedProgressBar;
 
@@ -419,8 +429,8 @@ namespace AssetUsageDetectorNamespace
 #endif
 			EditorPrefs.SetBool( PREFS_CALCULATE_UNUSED_OBJECTS, calculateUnusedObjects );
 			EditorPrefs.SetBool( PREFS_HIDE_DUPLICATE_ROWS, hideDuplicateRows );
-			EditorPrefs.SetBool( PREFS_HIDE_NON_OVERRIDDEN_PREFAB_VARIABLES_IN_ASSETS, hideNonOverriddenPrefabVariablesInAssets );
-			EditorPrefs.SetBool( PREFS_HIDE_NON_OVERRIDDEN_PREFAB_VARIABLES_IN_SCENES, hideNonOverriddenPrefabVariablesInScenes );
+			EditorPrefs.SetBool( PREFS_HIDE_REDUNDANT_PREFAB_REFERENCES_IN_ASSETS, hideRedundantPrefabReferencesInAssets );
+			EditorPrefs.SetBool( PREFS_HIDE_REDUNDANT_PREFAB_REFERENCES_IN_SCENES, hideRedundantPrefabReferencesInScenes );
 			EditorPrefs.SetBool( PREFS_SHOW_PROGRESS, showDetailedProgressBar );
 		}
 
@@ -442,8 +452,8 @@ namespace AssetUsageDetectorNamespace
 #endif
 			calculateUnusedObjects = EditorPrefs.GetBool( PREFS_CALCULATE_UNUSED_OBJECTS, false );
 			hideDuplicateRows = EditorPrefs.GetBool( PREFS_HIDE_DUPLICATE_ROWS, true );
-			hideNonOverriddenPrefabVariablesInAssets = EditorPrefs.GetBool( PREFS_HIDE_NON_OVERRIDDEN_PREFAB_VARIABLES_IN_ASSETS, true );
-			hideNonOverriddenPrefabVariablesInScenes = EditorPrefs.GetBool( PREFS_HIDE_NON_OVERRIDDEN_PREFAB_VARIABLES_IN_SCENES, false );
+			hideRedundantPrefabReferencesInAssets = EditorPrefs.GetBool( PREFS_HIDE_REDUNDANT_PREFAB_REFERENCES_IN_ASSETS, hideRedundantPrefabReferencesInAssets );
+			hideRedundantPrefabReferencesInScenes = EditorPrefs.GetBool( PREFS_HIDE_REDUNDANT_PREFAB_REFERENCES_IN_SCENES, hideRedundantPrefabReferencesInScenes );
 			showDetailedProgressBar = EditorPrefs.GetBool( PREFS_SHOW_PROGRESS, true );
 		}
 
@@ -571,10 +581,8 @@ namespace AssetUsageDetectorNamespace
 #endif
 				calculateUnusedObjects = WordWrappingToggleLeft( "Calculate unused objects", calculateUnusedObjects );
 				hideDuplicateRows = WordWrappingToggleLeft( "Hide duplicate rows in search results", hideDuplicateRows );
-#if UNITY_2018_3_OR_NEWER
-				hideNonOverriddenPrefabVariablesInAssets = WordWrappingToggleLeft( "Hide non-overridden prefab variables in assets (references found in non-overridden variables of prefab variants/nested prefabs will be hidden)", hideNonOverriddenPrefabVariablesInAssets );
-				hideNonOverriddenPrefabVariablesInScenes = WordWrappingToggleLeft( "Hide non-overridden prefab variables in scenes (references found in non-overridden variables of prefab instances will be hidden)", hideNonOverriddenPrefabVariablesInScenes );
-#endif
+				hideRedundantPrefabReferencesInAssets = WordWrappingToggleLeft( hideRedundantPrefabReferencesInAssetsLabel, hideRedundantPrefabReferencesInAssets );
+				hideRedundantPrefabReferencesInScenes = WordWrappingToggleLeft( hideRedundantPrefabReferencesInScenesLabel, hideRedundantPrefabReferencesInScenes );
 				noAssetDatabaseChanges = WordWrappingToggleLeft( "I haven't modified any assets/scenes since the last search (faster search)", noAssetDatabaseChanges );
 				showDetailedProgressBar = WordWrappingToggleLeft( "Update search progress bar more often (cancelable search) (slower search)", showDetailedProgressBar );
 
@@ -680,6 +688,13 @@ namespace AssetUsageDetectorNamespace
 
 		public static bool WordWrappingToggleLeft( string label, bool value )
 		{
+			sharedGUIContent.text = label;
+			sharedGUIContent.tooltip = null;
+			return WordWrappingToggleLeft( sharedGUIContent, value );
+		}
+
+		public static bool WordWrappingToggleLeft( GUIContent label, bool value )
+		{
 			GUILayout.BeginHorizontal();
 			bool result = EditorGUILayout.ToggleLeft( GUIContent.none, value, GL_WIDTH_12 );
 			if( GUILayout.Button( label, EditorStyles.wordWrappedLabel ) )
@@ -728,8 +743,8 @@ namespace AssetUsageDetectorNamespace
 #endif
 				calculateUnusedObjects = calculateUnusedObjects,
 				hideDuplicateRows = hideDuplicateRows,
-				hideNonOverriddenPrefabVariablesInAssets = hideNonOverriddenPrefabVariablesInAssets,
-				hideNonOverriddenPrefabVariablesInScenes = hideNonOverriddenPrefabVariablesInScenes,
+				hideRedundantPrefabReferencesInAssets = hideRedundantPrefabReferencesInAssets,
+				hideRedundantPrefabReferencesInScenes = hideRedundantPrefabReferencesInScenes && searchInAssetsFolder,
 				noAssetDatabaseChanges = noAssetDatabaseChanges,
 				showDetailedProgressBar = showDetailedProgressBar
 			} );
