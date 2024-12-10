@@ -508,15 +508,10 @@ namespace AssetUsageDetectorNamespace
 
 				if( searchInAssetsFolder )
 				{
-					GUILayout.BeginHorizontal();
-					GUILayout.Space( 35f );
-					GUILayout.BeginVertical();
-
+					BeginIndentedGUI();
 					searchInAssetsSubsetDrawer.Draw( searchInAssetsSubset );
 					excludedAssetsDrawer.Draw( excludedAssets );
-
-					GUILayout.EndVertical();
-					GUILayout.EndHorizontal();
+					EndIndentedGUI();
 				}
 
 				GUILayout.Space( 5f );
@@ -537,13 +532,10 @@ namespace AssetUsageDetectorNamespace
 
 					if( searchInScenesInBuild )
 					{
-						GUILayout.BeginHorizontal();
-						GUILayout.Space( 35f );
-
+						BeginIndentedGUI( false );
 						searchInScenesInBuildTickedOnly = EditorGUILayout.ToggleLeft( "Ticked only", searchInScenesInBuildTickedOnly, Utilities.GL_WIDTH_100 );
 						searchInScenesInBuildTickedOnly = !EditorGUILayout.ToggleLeft( "All", !searchInScenesInBuildTickedOnly, Utilities.GL_WIDTH_100 );
-
-						GUILayout.EndHorizontal();
+						EndIndentedGUI( false );
 					}
 
 					GUI.enabled = true;
@@ -551,14 +543,9 @@ namespace AssetUsageDetectorNamespace
 					searchInAllScenes = WordWrappingToggleLeft( "All scenes in the project", searchInAllScenes );
 				}
 
-				GUILayout.BeginHorizontal();
-				GUILayout.Space( 35f );
-				GUILayout.BeginVertical();
-
+				BeginIndentedGUI();
 				excludedScenesDrawer.Draw( excludedScenes );
-
-				GUILayout.EndVertical();
-				GUILayout.EndHorizontal();
+				EndIndentedGUI();
 
 				EditorGUI.BeginDisabledGroup( !searchInOpenScenes && !searchInScenesInBuild && !searchInAllScenes );
 				searchInSceneLightingSettings = WordWrappingToggleLeft( "Scene Lighting Settings (WARNING: This may change the active scene during search)", searchInSceneLightingSettings );
@@ -670,6 +657,23 @@ namespace AssetUsageDetectorNamespace
 
 			if( drawObjectsToSearchSection )
 				objectsToSearchDrawer.Draw( objectsToSearch );
+		}
+
+		private void BeginIndentedGUI( bool isVertical = true )
+		{
+			GUILayout.BeginHorizontal();
+			GUILayout.Space( 35f );
+
+			if( isVertical )
+				GUILayout.BeginVertical();
+		}
+
+		private void EndIndentedGUI( bool isVertical = true )
+		{
+			if( isVertical )
+				GUILayout.EndVertical();
+
+			GUILayout.EndHorizontal();
 		}
 
 		public static bool WordWrappingToggleLeft( string label, bool value )
