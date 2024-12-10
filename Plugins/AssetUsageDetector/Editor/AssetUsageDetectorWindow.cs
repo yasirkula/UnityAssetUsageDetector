@@ -32,7 +32,9 @@ namespace AssetUsageDetectorNamespace
 		private const string PREFS_SEARCH_NON_SERIALIZABLES = "AUD_NonSerializables";
 		private const string PREFS_SEARCH_UNUSED_MATERIAL_PROPERTIES = "AUD_SearchUnusedMaterialProps";
 		private const string PREFS_LAZY_SCENE_SEARCH = "AUD_LazySceneSearch";
+#if ASSET_USAGE_ADDRESSABLES
 		private const string PREFS_ADDRESSABLES_SUPPORT = "AUD_AddressablesSupport";
+#endif
 		private const string PREFS_CALCULATE_UNUSED_OBJECTS = "AUD_FindUnusedObjs";
 		private const string PREFS_HIDE_DUPLICATE_ROWS = "AUD_HideDuplicates";
 		private const string PREFS_HIDE_NON_OVERRIDDEN_PREFAB_VARIABLES_IN_ASSETS = "AUD_HideRedundantPVariantLinks";
