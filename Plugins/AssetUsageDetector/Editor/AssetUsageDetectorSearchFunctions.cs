@@ -1500,6 +1500,7 @@ namespace AssetUsageDetectorNamespace
 									break;
 #endif
 								case SerializedPropertyType.Generic:
+								{
 #if ASSET_USAGE_ADDRESSABLES
 									if( searchParameters.addressablesSupport && iterator.type.StartsWithFast( "AssetReference" ) && GetRawSerializedPropertyValue( iterator ) is AssetReference assetReference )
 									{
@@ -1526,6 +1527,7 @@ namespace AssetUsageDetectorNamespace
 									}
 
 									break;
+								}
 								default:
 									propertyValue = null;
 									searchResult = null;
