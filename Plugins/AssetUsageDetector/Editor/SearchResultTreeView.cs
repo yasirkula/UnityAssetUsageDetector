@@ -200,6 +200,13 @@ namespace AssetUsageDetectorNamespace
 				RefreshSelectedNodes( GetSelection() );
 		}
 
+		public void ClearSearch()
+		{
+			string prevSearchTerm = state.searchTerm;
+			state.searchTerm = "";
+			RefreshSearch( prevSearchTerm );
+		}
+
 		public void RefreshSearch( string prevSearchTerm )
 		{
 			bool wasSearchTermEmpty = string.IsNullOrEmpty( prevSearchTerm );

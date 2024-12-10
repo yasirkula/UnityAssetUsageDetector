@@ -816,6 +816,7 @@ namespace AssetUsageDetectorNamespace
 											removedRows.Add( treeViewRows[i].id );
 									}
 
+									treeView.ClearSearch();
 									treeView.HideItems( removedRows );
 								} );
 							}
