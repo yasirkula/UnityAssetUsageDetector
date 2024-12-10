@@ -471,7 +471,7 @@ namespace AssetUsageDetectorNamespace
 
 			for( int i = 0; i < objectsToSearch.Count; i++ )
 			{
-				if( objectsToSearch[i].obj != null && !objectsToSearch[i].obj.Equals( null ) )
+				if( objectsToSearch[i].obj != null )
 					return false;
 			}
 
@@ -479,33 +479,15 @@ namespace AssetUsageDetectorNamespace
 		}
 
 		// Check if all the objects inside the list are null
-		public static bool IsEmpty( this List<Object> objects )
+		public static bool IsEmpty<T>( this List<T> objects ) where T : Object
 		{
 			if( objects == null )
 				return true;
 
 			for( int i = 0; i < objects.Count; i++ )
 			{
-				if( objects[i] != null && !objects[i].Equals( null ) )
+				if( objects[i] != null )
 					return false;
-			}
-
-			return true;
-		}
-
-		// Check if all the objects that are enumerated are null
-		public static bool IsEmpty( this IEnumerable<Object> objects )
-		{
-			if( objects == null )
-				return true;
-
-			using( IEnumerator<Object> enumerator = objects.GetEnumerator() )
-			{
-				while( enumerator.MoveNext() )
-				{
-					if( enumerator.Current != null && !enumerator.Current.Equals( null ) )
-						return false;
-				}
 			}
 
 			return true;
