@@ -95,40 +95,20 @@ namespace AssetUsageDetectorNamespace
 					}
 				}
 
-#if UNITY_2017_1_OR_NEWER
-				// If is an Atlas use get sprites directly as GetSubAssets return the final texture{
-				if (target is UnityEngine.U2D.SpriteAtlas spriteAtlas)
+				// If is an Atlas we get sprites directly as GetSubAssets return the final texture
+				if ( target is UnityEngine.U2D.SpriteAtlas spriteAtlas )
 				{
-					// packable objects cannot be access by API, so we use reflection to access the field // GetSprite returns a copy of the sprite, no a original reference
-					SerializedObject so = new SerializedObject(spriteAtlas);
-					SerializedProperty packablesProp = so.FindProperty("m_EditorData.packables");
-					if (packablesProp != null && packablesProp.isArray) // security in case is changed in another Unity version
+					Sprite[] packedSprites = AssetUsageDetector.spriteAtlasPackedSpritesGetter( spriteAtlas );
+					if( packedSprites != null )
 					{
-						for (int i = 0; i < packablesProp.arraySize; i++)
+						for( int i = 0; i < packedSprites.Length; i++ )
 						{
-							SerializedProperty element = packablesProp.GetArrayElementAtIndex(i);
-							Object textureObjectRef = element.objectReferenceValue;
-							if (textureObjectRef != null)
-							{
-								// Textures have sprites, so we get reference to all.
-								Object[] textureObjects = AssetDatabase.LoadAllAssetsAtPath( AssetDatabase.GetAssetPath(textureObjectRef));
-								for( int j = 0; j < textureObjects.Length; j++ )
-								{	
-									Object asset = textureObjects[j];
-									if (currentSubAssets.Add(asset))
-										subAssets.Add(new SubAsset(asset, shouldSearchChildren ?? true));
-								}
-							}
+							if ( currentSubAssets.Add( packedSprites[i] ) )
+								subAssets.Add( new SubAsset( packedSprites[i], shouldSearchChildren ?? true ) );
 						}
 					}
-					else
-					{
-						Debug.LogError($"Doesn't found packables in {target.name}"); // If this is throw, the variable has change
-					}
-					
 					return;
 				}
-#endif
 
 				// Find sub-asset(s) of the asset (if any)
 				Object[] assets = AssetDatabase.LoadAllAssetsAtPath( AssetDatabase.GetAssetPath( target ) );
