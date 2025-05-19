@@ -103,12 +103,14 @@ namespace AssetUsageDetectorNamespace
 					if( packedSprites != null )
 					{
 						for( int i = 0; i < packedSprites.Length; i++ )
+						{
+							if( packedSprites[i] )
 							{
 								if ( currentSubAssets.Add( packedSprites[i] ) )
 									subAssets.Add( new SubAsset( packedSprites[i], shouldSearchChildren ?? true ) );
 							}
 						}
-					return;
+					}
 				}
 
 				// Find sub-asset(s) of the asset (if any)
