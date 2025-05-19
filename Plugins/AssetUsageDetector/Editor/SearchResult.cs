@@ -980,18 +980,7 @@ namespace AssetUsageDetectorNamespace
 
 					Rect treeViewRect = EditorGUILayout.GetControlRect( false, treeView.totalHeight );
 					if( ev.type == EventType.Repaint )
-					{
 						lastTreeViewRect = treeViewRect;
-
-#if !UNITY_2018_2_OR_NEWER
-						// TreeView calls RowGUI for all rows instead of only the visible rows on early Unity versions which leads to performance issues. Do manual row culling on those versions
-						// Credit: https://github.com/Unity-Technologies/UnityCsReference/blob/a048de916b23331bf6dfe92c4a6c205989b83b4f/Editor/Mono/GUI/TreeView/TreeViewGUI.cs#L273-L276
-						float topPixel = scrollPosition - treeViewRect.y;
-						float heightInPixels = window.position.height;
-						treeView.visibleRowTop = (int) Mathf.Floor( topPixel / treeView.rowHeight );
-						treeView.visibleRowBottom = treeView.visibleRowTop + (int) Mathf.Ceil( heightInPixels / treeView.rowHeight );
-#endif
-					}
 
 					treeView.OnGUI( treeViewRect );
 

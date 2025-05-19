@@ -104,11 +104,7 @@ namespace AssetUsageDetectorNamespace
 		}
 
 		private const float SEARCHED_OBJECTS_BORDER_THICKNESS = 1f;
-#if UNITY_2019_3_OR_NEWER
-		private const float TREE_VIEW_LINES_THICKNESS = 1.5f; // There are inexplicable spaces between the vertical and horizontal lines if we don't change thickness by 0.5f on 2019.3+
-#else
-		private const float TREE_VIEW_LINES_THICKNESS = 2f;
-#endif
+		private const float TREE_VIEW_LINES_THICKNESS = 1.5f; // There are inexplicable spaces between the vertical and horizontal lines if we set this to 2.0f on 2019.3+
 		private const float HIGHLIGHTED_TREE_VIEW_LINES_THICKNESS = TREE_VIEW_LINES_THICKNESS * 2f;
 
 		private readonly new SearchResultTreeViewState state;
@@ -126,10 +122,6 @@ namespace AssetUsageDetectorNamespace
 		private readonly bool hideDuplicateRows;
 
 		private bool isSearching;
-
-#if !UNITY_2018_2_OR_NEWER
-		public int visibleRowTop = 0, visibleRowBottom = int.MaxValue;
-#endif
 
 		private readonly CompareInfo textComparer = new CultureInfo( "en-US" ).CompareInfo;
 		private readonly CompareOptions textCompareOptions = CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace;
@@ -150,13 +142,7 @@ namespace AssetUsageDetectorNamespace
 		public new float rowHeight
 		{
 			get { return base.rowHeight; }
-			set
-			{
-				base.rowHeight = value;
-#if !UNITY_2019_3_OR_NEWER
-				customFoldoutYOffset = ( value - EditorGUIUtility.singleLineHeight ) * 0.5f;
-#endif
-			}
+			set { base.rowHeight = value; }
 		}
 
 		// Avoid using these properties of TreeView by mistake
@@ -183,13 +169,7 @@ namespace AssetUsageDetectorNamespace
 			if( treeType != TreeType.IsolatedView )
 			{
 				// Draw only the visible rows. This requires setting useScrollView to false because we are using an external scroll view: https://docs.unity3d.com/ScriptReference/IMGUI.Controls.TreeView-useScrollView.html
-#if UNITY_2018_2_OR_NEWER
 				useScrollView = false;
-#else
-				// In my tests, SetUseScrollView seems to have no effect unfortunately but let's keep this line in case it fixes some other issues with the external scroll view
-				object treeViewController = typeof( TreeView ).GetField( "m_TreeView", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance ).GetValue( this );
-				treeViewController.GetType().GetMethod( "SetUseScrollView", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance ).Invoke( treeViewController, new object[1] { false } );
-#endif
 			}
 
 			isSearching = !string.IsNullOrEmpty( state.searchTerm );
@@ -423,12 +403,6 @@ namespace AssetUsageDetectorNamespace
 
 		protected override void RowGUI( RowGUIArgs args )
 		{
-#if !UNITY_2018_2_OR_NEWER
-			// Do manual row culling on early Unity versions
-			if( args.row < visibleRowTop || args.row > visibleRowBottom )
-				return;
-#endif
-
 			if( isTreeViewEmpty )
 			{
 				EditorGUI.LabelField( args.rowRect, "No matching results..." );
@@ -666,9 +640,6 @@ namespace AssetUsageDetectorNamespace
 
 				rect.xMin += GetContentIndent( args.item );
 				rect.y += AssetUsageDetectorSettings.ExtraRowHeight * 0.5f;
-#if !UNITY_2019_3_OR_NEWER
-				rect.y -= 2f;
-#endif
 				rect.height += 4f; // Incrementing height fixes cropped icon issue on Unity 2019.2 or earlier
 
 				if( foldoutLabelStyle == null )
@@ -745,7 +716,6 @@ namespace AssetUsageDetectorNamespace
 			isLMBDown = false;
 
 			Object clickedObject = GetDataFromId( id ).node.UnityObject;
-#if UNITY_2018_3_OR_NEWER
 			if( clickedObject && clickedObject.IsAsset() )
 			{
 				GameObject clickedPrefabRoot = null;
@@ -762,16 +732,11 @@ namespace AssetUsageDetectorNamespace
 						// Try to open the prefab stage of this prefab
 						string assetPath = AssetDatabase.GetAssetPath( clickedPrefabRoot );
 						PrefabStage openPrefabStage = PrefabStageUtility.GetCurrentPrefabStage();
-#if UNITY_2020_1_OR_NEWER
 						if( openPrefabStage == null || !openPrefabStage.stageHandle.IsValid() || assetPath != openPrefabStage.assetPath )
-#else
-						if( openPrefabStage == null || !openPrefabStage.stageHandle.IsValid() || assetPath != openPrefabStage.prefabAssetPath )
-#endif
 							AssetDatabase.OpenAsset( clickedPrefabRoot );
 					}
 				}
 			}
-#endif
 
 			// Ping the clicked GameObject in the open prefab stage
 			Object selection, pingTarget;

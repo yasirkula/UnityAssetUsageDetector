@@ -2,9 +2,7 @@
 using System.Collections.Generic;
 using System.Reflection;
 using System.Text;
-#if UNITY_2018_1_OR_NEWER
 using Unity.Collections;
-#endif
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -37,23 +35,17 @@ namespace AssetUsageDetectorNamespace
 			typeof( List<Vector4> ), typeof( List<Vector3> ), typeof( List<Vector2> ), typeof( List<Rect> ),
 			typeof( List<Quaternion> ), typeof( List<Color> ), typeof( List<Color32> ), typeof( List<LayerMask> ), typeof( List<Bounds> ),
 			typeof( List<Matrix4x4> ), typeof( List<AnimationCurve> ), typeof( List<Gradient> ), typeof( List<RectOffset> ),
-#if UNITY_2017_2_OR_NEWER
 			typeof( Vector3Int ), typeof( Vector2Int ), typeof( RectInt ), typeof( BoundsInt ),
 			typeof( Vector3Int[] ), typeof( Vector2Int[] ), typeof( RectInt[] ), typeof( BoundsInt[] ),
 			typeof( List<Vector3Int> ), typeof( List<Vector2Int> ), typeof( List<RectInt> ), typeof( List<BoundsInt> )
-#endif
 		};
 
 		private static readonly string reflectionNamespace = typeof( Assembly ).Namespace;
-#if UNITY_2018_1_OR_NEWER
 		private static readonly string nativeCollectionsNamespace = typeof( NativeArray<int> ).Namespace;
-#endif
 
 		private static MethodInfo screenFittedRectGetter;
 
-#if UNITY_2018_3_OR_NEWER
 		private static readonly Func<Object, bool, bool> prefabHasAnyOverridesGetter = (Func<Object, bool, bool>) Delegate.CreateDelegate( typeof( Func<Object, bool, bool> ), typeof( PrefabUtility ).GetMethod( "HasObjectOverride", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static ) );
-#endif
 
 		private static readonly HashSet<string> folderContentsSet = new HashSet<string>();
 
@@ -89,12 +81,7 @@ namespace AssetUsageDetectorNamespace
 					m_boxGUIStyle.hover.textColor = textColor;
 					m_boxGUIStyle.focused.textColor = textColor;
 					m_boxGUIStyle.active.textColor = textColor;
-
-#if !UNITY_2019_1_OR_NEWER || UNITY_2019_3_OR_NEWER
-					// On 2019.1 and 2019.2 versions, GUI.skin.button.fontSize returns 0 on some devices
-					// https://forum.unity.com/threads/asset-usage-detector-find-references-to-an-asset-object-open-source.408134/page-3#post-7285954
 					m_boxGUIStyle.fontSize = ( m_boxGUIStyle.fontSize + GUI.skin.button.fontSize ) / 2;
-#endif
 				}
 
 				return m_boxGUIStyle;
@@ -120,11 +107,7 @@ namespace AssetUsageDetectorNamespace
 
 		public static T GetPrefabParent<T>( this T obj ) where T : Object
 		{
-#if UNITY_2018_3_OR_NEWER
 			return PrefabUtility.GetCorrespondingObjectFromSource( obj );
-#else
-			return PrefabUtility.GetPrefabParent( obj ) as T;
-#endif
 		}
 
 		public static bool HasAnyPrefabOverrides( this Object obj )
@@ -132,21 +115,7 @@ namespace AssetUsageDetectorNamespace
 			if( obj.GetPrefabParent() == null )
 				return false;
 
-#if UNITY_2018_3_OR_NEWER
 			return prefabHasAnyOverridesGetter( obj, false );
-#else
-			SerializedProperty iterator = new SerializedObject( obj ).GetIterator();
-			if( iterator.Next( true ) )
-			{
-				do
-				{
-					if( iterator.prefabOverride )
-						return true;
-				} while( iterator.NextVisible( false ) );
-			}
-
-			return false;
-#endif
 		}
 
 		public static bool HasAnyPrefabOverrides( this GameObject gameObject )
@@ -154,10 +123,8 @@ namespace AssetUsageDetectorNamespace
 			if( gameObject.GetPrefabParent() == null )
 				return false;
 
-#if UNITY_2018_3_OR_NEWER
 			if( !PrefabUtility.HasPrefabInstanceAnyOverrides( gameObject, false ) )
 				return false;
-#endif
 
 			Transform rootTransform = gameObject.transform;
 			List<Component> components = new List<Component>( 8 );
@@ -246,7 +213,6 @@ namespace AssetUsageDetectorNamespace
 				{
 					// Pinging a prefab only works if the pinged object is the root of the prefab or a direct child of it. Pinging any grandchildren
 					// of the prefab doesn't work; in which case, traverse the parent hierarchy until a pingable parent is reached
-#if UNITY_2018_3_OR_NEWER
 					Transform objTR = ( (GameObject) obj ).transform.root;
 
 					PrefabAssetType prefabAssetType = PrefabUtility.GetPrefabAssetType( objTR.gameObject );
@@ -254,11 +220,7 @@ namespace AssetUsageDetectorNamespace
 					{
 						string assetPath = AssetDatabase.GetAssetPath( objTR.gameObject );
 						PrefabStage openPrefabStage = PrefabStageUtility.GetCurrentPrefabStage();
-#if UNITY_2020_1_OR_NEWER
 						if( openPrefabStage != null && openPrefabStage.stageHandle.IsValid() && assetPath == openPrefabStage.assetPath )
-#else
-						if( openPrefabStage != null && openPrefabStage.stageHandle.IsValid() && assetPath == openPrefabStage.prefabAssetPath )
-#endif
 						{
 							GameObject prefabStageGO = FollowSymmetricHierarchy( (GameObject) obj, ( (GameObject) obj ).transform.root.gameObject, openPrefabStage.prefabContentsRoot );
 							if( prefabStageGO != null )
@@ -267,10 +229,8 @@ namespace AssetUsageDetectorNamespace
 								selection = objTR.gameObject;
 							}
 						}
-#if UNITY_2019_1_OR_NEWER
 						else if( obj != objTR.gameObject )
 							selection = objTR.gameObject;
-#endif
 					}
 					else if( prefabAssetType == PrefabAssetType.Model )
 					{
@@ -278,11 +238,6 @@ namespace AssetUsageDetectorNamespace
 						while( objTR.parent != null && objTR.parent.parent != null )
 							objTR = objTR.parent;
 					}
-#else
-					Transform objTR = ( (GameObject) obj ).transform;
-					while( objTR.parent != null && objTR.parent.parent != null )
-						objTR = objTR.parent;
-#endif
 
 					pingTarget = objTR.gameObject;
 				}
@@ -377,11 +332,9 @@ namespace AssetUsageDetectorNamespace
 			if( fieldInfo.IsInitOnly )
 				return false;
 
-#if UNITY_2019_3_OR_NEWER
 			// SerializeReference makes even System.Object fields serializable
 			if( Attribute.IsDefined( fieldInfo, typeof( SerializeReference ) ) )
 				return true;
-#endif
 
 			if( ( !fieldInfo.IsPublic || fieldInfo.IsNotSerialized ) && !Attribute.IsDefined( fieldInfo, typeof( SerializeField ) ) )
 				return false;
@@ -415,7 +368,6 @@ namespace AssetUsageDetectorNamespace
 			else if( type.IsGenericType )
 			{
 				// Generic types are allowed on 2020.1 and later
-#if UNITY_2020_1_OR_NEWER
 				if( type.GetGenericTypeDefinition() == typeof( List<> ) )
 				{
 					type = type.GetGenericArguments()[0];
@@ -423,21 +375,7 @@ namespace AssetUsageDetectorNamespace
 					if( typeof( Object ).IsAssignableFrom( type ) )
 						return true;
 				}
-#else
-				if( type.GetGenericTypeDefinition() != typeof( List<> ) )
-					return false;
-
-				type = type.GetGenericArguments()[0];
-
-				if( typeof( Object ).IsAssignableFrom( type ) )
-					return true;
-#endif
 			}
-
-#if !UNITY_2020_1_OR_NEWER
-			if( type.IsGenericType )
-				return false;
-#endif
 
 			return Attribute.IsDefined( type, typeof( SerializableAttribute ), false );
 		}
@@ -448,11 +386,9 @@ namespace AssetUsageDetectorNamespace
 			if( type.IsPrimitive || primitiveUnityTypes.Contains( type ) || type.IsEnum )
 				return true;
 
-#if UNITY_2018_1_OR_NEWER
 			// Searching NativeArrays for reference can throw InvalidOperationException if the collection is disposed
 			if( type.Namespace == nativeCollectionsNamespace )
 				return true;
-#endif
 
 			// Searching assembly variables for reference throws InvalidCastException on .NET 4.0 runtime
 			if( typeof( Type ).IsAssignableFrom( type ) || type.Namespace == reflectionNamespace )

@@ -96,7 +96,7 @@ namespace AssetUsageDetectorNamespace
 					}
 				}
 
-				// If is an Atlas we get sprites directly as GetSubAssets return the final texture
+				// Add Sprites of SpriteAtlases to the sub-assets list
 				if( target is SpriteAtlas spriteAtlas )
 				{
 					Sprite[] packedSprites = AssetUsageDetector.spriteAtlasPackedSpritesGetter( spriteAtlas );
@@ -118,13 +118,11 @@ namespace AssetUsageDetectorNamespace
 					if( asset == null || asset.Equals( null ) || asset is Component || asset == target )
 						continue;
 
-#if UNITY_2018_3_OR_NEWER
 					// Nested prefabs in prefab assets add an additional native object of type 'UnityEngine.PrefabInstance' to the prefab. Managed type of that native type
 					// is UnityEngine.Object (i.e. GetType() returns UnityEngine.Object, not UnityEngine.PrefabInstance). There are no possible references to these native
 					// objects so skip them (we're checking for UnityEngine.Prefab because it includes other native types like UnityEngine.PrefabCreation, as well)
 					if( target is GameObject && asset.GetType() == typeof( Object ) && asset.ToString().Contains( "(UnityEngine.Prefab" ) )
 						continue;
-#endif
 
 					if( currentSubAssets.Add( asset ) )
 						subAssets.Add( new SubAsset( asset, shouldSearchChildren ?? true ) );

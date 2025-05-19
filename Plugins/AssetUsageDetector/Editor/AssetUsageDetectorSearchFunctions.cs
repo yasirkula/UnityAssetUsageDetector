@@ -8,19 +8,11 @@ using UnityEditor;
 using UnityEditor.Animations;
 using UnityEngine;
 using UnityEngine.UI;
-#if UNITY_2017_1_OR_NEWER
 using UnityEngine.U2D;
 using UnityEngine.Playables;
-#endif
-#if UNITY_2018_2_OR_NEWER
 using UnityEditor.U2D;
-#endif
-#if UNITY_2017_3_OR_NEWER
 using UnityEditor.Compilation;
-#endif
-#if UNITY_2017_2_OR_NEWER
 using UnityEngine.Tilemaps;
-#endif
 #if ASSET_USAGE_ADDRESSABLES
 using UnityEngine.AddressableAssets;
 #endif
@@ -31,19 +23,13 @@ namespace AssetUsageDetectorNamespace
 	public partial class AssetUsageDetector
 	{
 		#region Helper Classes
-#if UNITY_2017_3_OR_NEWER
-#pragma warning disable 0649 // The fields' values are assigned via JsonUtility
 		[Serializable]
 		private struct AssemblyDefinitionReferences
 		{
 			public string reference; // Used by AssemblyDefinitionReferenceAssets
 			public List<string> references; // Used by AssemblyDefinitionAssets
 		}
-#pragma warning restore 0649
-#endif
 
-#if UNITY_2018_1_OR_NEWER
-#pragma warning disable 0649 // The fields' values are assigned via JsonUtility
 		[Serializable]
 		private struct ShaderGraphReferences // Used by old Shader Graph serialization format
 		{
@@ -156,8 +142,6 @@ namespace AssetUsageDetectorNamespace
 				return null;
 			}
 		}
-#pragma warning restore 0649
-#endif
 		#endregion
 
 		// Dictionary to quickly find the function to search a specific type with
@@ -176,10 +160,8 @@ namespace AssetUsageDetectorNamespace
 		// Path(s) of .cginc, .cg, .hlsl and .glslinc assets in assetsToSearchSet
 		private readonly HashSet<string> shaderIncludesToSearchSet = new HashSet<string>();
 
-#if UNITY_2017_3_OR_NEWER
 		// Path(s) of the Assembly Definition Files in objectsToSearchSet (Value: files themselves)
 		private readonly Dictionary<string, Object> assemblyDefinitionFilesToSearch = new Dictionary<string, Object>( 8 );
-#endif
 
 		// An optimization to fetch an animation clip's curve bindings only once
 		private readonly Dictionary<AnimationClip, EditorCurveBinding[]> animationClipUniqueBindings = new Dictionary<AnimationClip, EditorCurveBinding[]>( 256 );
@@ -187,10 +169,7 @@ namespace AssetUsageDetectorNamespace
 		private bool searchPrefabConnections;
 		private bool searchMonoBehavioursForScript;
 		private bool searchTextureReferences;
-#if UNITY_2018_1_OR_NEWER
 		private bool searchShaderGraphsForSubGraphs;
-#endif
-
 		private bool searchSerializableVariablesOnly;
 		private bool prevSearchSerializableVariablesOnly;
 
@@ -199,12 +178,7 @@ namespace AssetUsageDetectorNamespace
 
 		// Unity's internal function that returns a SerializedProperty's corresponding FieldInfo
 		private delegate FieldInfo FieldInfoGetter( SerializedProperty p, out Type t );
-#if UNITY_2019_3_OR_NEWER
 		private readonly FieldInfoGetter fieldInfoGetter = (FieldInfoGetter) Delegate.CreateDelegate( typeof( FieldInfoGetter ), typeof( Editor ).Assembly.GetType( "UnityEditor.ScriptAttributeUtility" ).GetMethod( "GetFieldInfoAndStaticTypeFromProperty", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static ) );
-#else
-		private readonly FieldInfoGetter fieldInfoGetter = (FieldInfoGetter) Delegate.CreateDelegate( typeof( FieldInfoGetter ), typeof( Editor ).Assembly.GetType( "UnityEditor.ScriptAttributeUtility" ).GetMethod( "GetFieldInfoFromProperty", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static ) );
-#endif
-
 		private readonly Func<Object> lightmapSettingsGetter = (Func<Object>) Delegate.CreateDelegate( typeof( Func<Object> ), typeof( LightmapEditorSettings ).GetMethod( "GetLightmapSettings", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static ) );
 		private readonly Func<Object> renderSettingsGetter = (Func<Object>) Delegate.CreateDelegate( typeof( Func<Object> ), typeof( RenderSettings ).GetMethod( "GetRenderSettings", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static ) );
 #if UNITY_2021_2_OR_NEWER
@@ -244,9 +218,7 @@ namespace AssetUsageDetectorNamespace
 					{ typeof( TerrainData ), SearchTerrainData },
 					{ typeof( LightmapSettings ), SearchLightmapSettings },
 					{ typeof( RenderSettings ), SearchRenderSettings },
-#if UNITY_2017_1_OR_NEWER
 					{ typeof( SpriteAtlas ), SearchSpriteAtlas },
-#endif
 				};
 			}
 
@@ -259,16 +231,10 @@ namespace AssetUsageDetectorNamespace
 					{ "cg", SearchShaderSecondaryAsset },
 					{ "glslinc", SearchShaderSecondaryAsset },
 					{ "hlsl", SearchShaderSecondaryAsset },
-#if UNITY_2017_3_OR_NEWER
 					{ "asmdef", SearchAssemblyDefinitionFile },
-#endif
-#if UNITY_2019_2_OR_NEWER
 					{ "asmref", SearchAssemblyDefinitionFile },
-#endif
-#if UNITY_2018_1_OR_NEWER
 					{ "shadergraph", SearchShaderGraph },
 					{ "shadersubgraph", SearchShaderGraph },
-#endif
 #if ASSET_USAGE_VFX_GRAPH
 					{ "vfx", SearchVFXGraphAsset },
 					{ "vfxoperator", SearchVFXGraphAsset },
@@ -291,9 +257,7 @@ namespace AssetUsageDetectorNamespace
 			searchPrefabConnections = false;
 			searchMonoBehavioursForScript = false;
 			searchTextureReferences = false;
-#if UNITY_2018_1_OR_NEWER
 			searchShaderGraphsForSubGraphs = false;
-#endif
 #if ASSET_USAGE_VFX_GRAPH
 			bool searchVFXGraphs = false;
 #endif
@@ -315,10 +279,8 @@ namespace AssetUsageDetectorNamespace
 				}
 				else if( obj is GameObject )
 					searchPrefabConnections = true;
-#if UNITY_2017_3_OR_NEWER
 				else if( obj is UnityEditorInternal.AssemblyDefinitionAsset )
 					assemblyDefinitionFilesToSearch[AssetDatabase.GetAssetPath( obj )] = obj;
-#endif
 #if ASSET_USAGE_VFX_GRAPH
 				else if( !searchVFXGraphs && ( obj is Shader || obj is Mesh || obj.GetType().Name.StartsWithFast( "PointCache" ) || obj.GetType().Name == "ShaderGraphVfxAsset" ) )
 					searchVFXGraphs = true;
@@ -337,10 +299,8 @@ namespace AssetUsageDetectorNamespace
 				string extension = Utilities.GetFileExtension( path );
 				if( extension == "hlsl" || extension == "cginc" || extension == "cg" || extension == "glslinc" )
 					shaderIncludesToSearchSet.Add( path );
-#if UNITY_2018_1_OR_NEWER
 				else if( extension == "shadersubgraph" )
 					searchShaderGraphsForSubGraphs = true;
-#endif
 			}
 
 			// AssetDatabase.GetDependencies doesn't take #include lines in shader source codes into consideration. If we are searching for references
@@ -355,19 +315,14 @@ namespace AssetUsageDetectorNamespace
 				alwaysSearchedExtensionsSet.Add( "hlsl" );
 			}
 
-#if UNITY_2017_3_OR_NEWER
 			// AssetDatabase.GetDependencies doesn't return references from Assembly Definition Files to their Assembly Definition References,
 			// so if we are searching for an Assembly Definition File's usages, we must search all Assembly Definition Files' references manually.
 			if( assemblyDefinitionFilesToSearch.Count > 0 )
 			{
 				alwaysSearchedExtensionsSet.Add( "asmdef" );
-#if UNITY_2019_2_OR_NEWER
 				alwaysSearchedExtensionsSet.Add( "asmref" );
-#endif
 			}
-#endif
 
-#if UNITY_2018_1_OR_NEWER
 			// AssetDatabase.GetDependencies doesn't work with Shader Graph assets. We must search all Shader Graph assets in the following cases:
 			// searchTextureReferences: to find Texture references used in various nodes and properties
 			// searchShaderGraphsForSubGraphs: to find Shader Sub-graph references in other Shader Graph assets
@@ -377,7 +332,6 @@ namespace AssetUsageDetectorNamespace
 				alwaysSearchedExtensionsSet.Add( "shadergraph" );
 				alwaysSearchedExtensionsSet.Add( "shadersubgraph" );
 			}
-#endif
 
 #if ASSET_USAGE_VFX_GRAPH
 			if( searchTextureReferences || searchVFXGraphs )
@@ -502,7 +456,6 @@ namespace AssetUsageDetectorNamespace
 				// Search the objects that are animated by this Animator component for references
 				SearchAnimatedObjects( referenceNode );
 			}
-#if UNITY_2017_2_OR_NEWER
 			else if( component is Tilemap )
 			{
 				// Search the tiles for references
@@ -520,8 +473,6 @@ namespace AssetUsageDetectorNamespace
 					}
 				}
 			}
-#endif
-#if UNITY_2017_1_OR_NEWER
 			else if( component is PlayableDirector )
 			{
 				// Search the PlayableAsset's scene bindings for references
@@ -538,7 +489,6 @@ namespace AssetUsageDetectorNamespace
 					}
 				}
 			}
-#endif
 			else if( component is ParticleSystemRenderer )
 			{
 				// Search ParticleSystemRenderer's custom meshes for references (at runtime, they can't be searched with reflection, unfortunately)
@@ -575,11 +525,7 @@ namespace AssetUsageDetectorNamespace
 					try
 					{
 						ParticleSystem.CollisionModule collisionModule = particleSystem.collision;
-#if UNITY_2020_2_OR_NEWER
 						for( int i = 0, j = collisionModule.planeCount; i < j; i++ )
-#else
-						for( int i = 0, j = collisionModule.maxPlaneCount; i < j; i++ )
-#endif
 						{
 							Transform plane = collisionModule.GetPlane( i );
 							referenceNode.AddLinkTo( SearchObject( plane ), "Collision Module: Plane" );
@@ -593,11 +539,7 @@ namespace AssetUsageDetectorNamespace
 					try
 					{
 						ParticleSystem.TriggerModule triggerModule = particleSystem.trigger;
-#if UNITY_2020_2_OR_NEWER
 						for( int i = 0, j = triggerModule.colliderCount; i < j; i++ )
-#else
-						for( int i = 0, j = triggerModule.maxColliderCount; i < j; i++ )
-#endif
 						{
 							Component collider = triggerModule.GetCollider( i );
 							referenceNode.AddLinkTo( SearchObject( collider ), "Trigger Module: Collider" );
@@ -608,7 +550,6 @@ namespace AssetUsageDetectorNamespace
 					}
 					catch { }
 
-#if UNITY_2017_1_OR_NEWER
 					try
 					{
 						ParticleSystem.TextureSheetAnimationModule textureSheetAnimationModule = particleSystem.textureSheetAnimation;
@@ -622,9 +563,7 @@ namespace AssetUsageDetectorNamespace
 						}
 					}
 					catch { }
-#endif
 
-#if UNITY_5_5_OR_NEWER
 					try
 					{
 						ParticleSystem.SubEmittersModule subEmittersModule = particleSystem.subEmitters;
@@ -638,7 +577,6 @@ namespace AssetUsageDetectorNamespace
 						}
 					}
 					catch { }
-#endif
 				}
 			}
 
@@ -742,10 +680,8 @@ namespace AssetUsageDetectorNamespace
 						{
 							string propertyName = ShaderUtil.GetPropertyName( shader, i );
 							Texture defaultTexture = shaderImporter.GetDefaultTexture( propertyName );
-#if UNITY_2018_1_OR_NEWER
 							if( !defaultTexture )
 								defaultTexture = shaderImporter.GetNonModifiableTexture( propertyName );
-#endif
 
 							if( objectsToSearchSet.Contains( defaultTexture ) )
 							{
@@ -1056,7 +992,6 @@ namespace AssetUsageDetectorNamespace
 			return referenceNode;
 		}
 
-#if UNITY_2017_1_OR_NEWER
 		private ReferenceNode SearchSpriteAtlas( object obj )
 		{
 			SpriteAtlas spriteAtlas = (SpriteAtlas) obj;
@@ -1089,7 +1024,6 @@ namespace AssetUsageDetectorNamespace
 						searchParameters.searchRefactoring( new SerializedPropertyMatch( spriteAtlas, packedSprite, packedSpriteProperty ) );
 				}
 			}
-#if UNITY_2018_2_OR_NEWER
 			else
 			{
 				Object[] _packables = spriteAtlas.GetPackables();
@@ -1099,7 +1033,6 @@ namespace AssetUsageDetectorNamespace
 						SearchSpriteAtlas( referenceNode, _packables[i] );
 				}
 			}
-#endif
 
 			return referenceNode;
 		}
@@ -1145,9 +1078,7 @@ namespace AssetUsageDetectorNamespace
 				}
 			}
 		}
-#endif
 
-#if UNITY_2017_3_OR_NEWER
 		// Find references from an Assembly Definition File to its Assembly Definition References
 		private ReferenceNode SearchAssemblyDefinitionFile( object obj )
 		{
@@ -1169,11 +1100,7 @@ namespace AssetUsageDetectorNamespace
 			{
 				for( int i = 0; i < assemblyDefinitionFile.references.Count; i++ )
 				{
-#if UNITY_2019_1_OR_NEWER
 					string assemblyPath = CompilationPipeline.GetAssemblyDefinitionFilePathFromAssemblyReference( assemblyDefinitionFile.references[i] );
-#else
-					string assemblyPath = CompilationPipeline.GetAssemblyDefinitionFilePathFromAssemblyName( assemblyDefinitionFile.references[i] );
-#endif
 					if( !string.IsNullOrEmpty( assemblyPath ) )
 					{
 						Object searchedAssemblyDefinitionFile;
@@ -1185,9 +1112,7 @@ namespace AssetUsageDetectorNamespace
 
 			return referenceNode;
 		}
-#endif
 
-#if UNITY_2018_1_OR_NEWER
 		// Searches Shader Graph assets for references
 		private ReferenceNode SearchShaderGraph( object obj )
 		{
@@ -1316,7 +1241,6 @@ namespace AssetUsageDetectorNamespace
 
 			return referenceNode;
 		}
-#endif
 
 #if ASSET_USAGE_VFX_GRAPH
 		private ReferenceNode SearchVFXGraphAsset( object obj )
@@ -1495,14 +1419,12 @@ namespace AssetUsageDetectorNamespace
 									searchResult = SearchObject( PreferablyGameObject( propertyValue ) );
 									enterChildren = false;
 									break;
-#if UNITY_2019_3_OR_NEWER
 								case SerializedPropertyType.ManagedReference:
 									object managedReferenceValue = GetRawSerializedPropertyValue( iterator );
 									propertyValue = managedReferenceValue as Object;
 									searchResult = SearchObject( PreferablyGameObject( managedReferenceValue ) );
 									enterChildren = false;
 									break;
-#endif
 								case SerializedPropertyType.Generic:
 								{
 #if ASSET_USAGE_ADDRESSABLES
@@ -1776,11 +1698,6 @@ namespace AssetUsageDetectorNamespace
 						// Same as above
 						else if( ( propertyName == "material" || propertyName == "materials" ) &&
 							( typeof( Renderer ).IsAssignableFrom( currType ) || typeof( Collider ).IsAssignableFrom( currType ) ||
-#if !UNITY_2019_3_OR_NEWER
-#pragma warning disable 0618
-							typeof( GUIText ).IsAssignableFrom( currType ) ||
-#pragma warning restore 0618
-#endif
 							typeof( Collider2D ).IsAssignableFrom( currType ) ) )
 							continue;
 						// Ignore certain Material properties that are already searched via SearchMaterial function (also, if a material doesn't have a _Color or _BaseColor

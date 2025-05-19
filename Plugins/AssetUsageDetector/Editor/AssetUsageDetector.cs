@@ -1,5 +1,3 @@
-// Asset Usage Detector - by Suleyman Yasir KULA (yasirkula@gmail.com)
-
 using UnityEngine;
 using UnityEditor;
 using UnityEngine.SceneManagement;
@@ -93,13 +91,9 @@ namespace AssetUsageDetectorNamespace
 		private bool searchingSourceAssets;
 		private bool isInPlayMode;
 
-#if UNITY_2018_3_OR_NEWER
 		private PrefabStage openPrefabStage;
 		private GameObject openPrefabStagePrefabAsset;
-#if UNITY_2020_1_OR_NEWER
 		private GameObject openPrefabStageContextObject;
-#endif
-#endif
 
 		private int searchedObjectsCount; // Number of searched objects
 		private double searchStartTime;
@@ -121,7 +115,6 @@ namespace AssetUsageDetectorNamespace
 				return new SearchResult( false, null, null, null, this, searchParameters );
 			}
 
-#if UNITY_2018_3_OR_NEWER
 			openPrefabStagePrefabAsset = null;
 			string openPrefabStageAssetPath = null;
 			openPrefabStage = PrefabStageUtility.GetCurrentPrefabStage();
@@ -138,20 +131,12 @@ namespace AssetUsageDetectorNamespace
 						return new SearchResult( false, null, null, null, this, searchParameters );
 					}
 
-#if UNITY_2020_1_OR_NEWER
 					string prefabAssetPath = openPrefabStage.assetPath;
-#else
-					string prefabAssetPath = openPrefabStage.prefabAssetPath;
-#endif
 					openPrefabStagePrefabAsset = AssetDatabase.LoadAssetAtPath<GameObject>( prefabAssetPath );
 					openPrefabStageAssetPath = prefabAssetPath;
-
-#if UNITY_2020_1_OR_NEWER
 					openPrefabStageContextObject = openPrefabStage.openedFromInstanceRoot;
-#endif
 				}
 			}
-#endif
 
 			List<SearchResultGroup> searchResult = null;
 			isInPlayMode = EditorApplication.isPlaying;
@@ -193,9 +178,7 @@ namespace AssetUsageDetectorNamespace
 				excludedAssetsPathsSet.Clear();
 				alwaysSearchedExtensionsSet.Clear();
 				shaderIncludesToSearchSet.Clear();
-#if UNITY_2017_3_OR_NEWER
 				assemblyDefinitionFilesToSearch.Clear();
-#endif
 
 				if( assetDependencyCache == null )
 				{
@@ -527,7 +510,6 @@ namespace AssetUsageDetectorNamespace
 						if( excludedScenesPathsSet.Contains( scenePath ) )
 							continue;
 
-#if UNITY_2019_2_OR_NEWER
 						// Skip scenes in read-only packages (Issue #36)
 						// Credit: https://forum.unity.com/threads/check-if-asset-inside-package-is-readonly.900902/#post-5990822
 						if( !scenePath.StartsWithFast( "Assets/" ) )
@@ -536,7 +518,6 @@ namespace AssetUsageDetectorNamespace
 							if( packageInfo != null && packageInfo.source != UnityEditor.PackageManager.PackageSource.Embedded && packageInfo.source != UnityEditor.PackageManager.PackageSource.Local )
 								continue;
 						}
-#endif
 
 						SearchScene( scenePath, searchResult, searchParameters, initialSceneSetup );
 					}
@@ -625,11 +606,9 @@ namespace AssetUsageDetectorNamespace
 				if( EditorSceneManager.GetActiveScene() != activeScene )
 					EditorSceneManager.SetActiveScene( activeScene );
 
-#if UNITY_2018_3_OR_NEWER
 				// If a prefab stage was open when the search was triggered, try reopening the prefab stage after the search is completed
 				if( !string.IsNullOrEmpty( openPrefabStageAssetPath ) )
 				{
-#if UNITY_2020_1_OR_NEWER
 					bool shouldOpenPrefabStageWithoutContext = true;
 					if( openPrefabStageContextObject != null && !openPrefabStageContextObject.Equals( null ) )
 					{
@@ -647,12 +626,8 @@ namespace AssetUsageDetectorNamespace
 					}
 
 					if( shouldOpenPrefabStageWithoutContext )
-#endif
-					{
 						AssetDatabase.OpenAsset( AssetDatabase.LoadAssetAtPath<GameObject>( openPrefabStageAssetPath ) );
-					}
 				}
-#endif
 			}
 		}
 
@@ -837,7 +812,6 @@ namespace AssetUsageDetectorNamespace
 
 			objectsToSearchSet.Add( obj );
 
-#if UNITY_2018_3_OR_NEWER
 			// When searching for references of a prefab stage object, try adding its corresponding prefab asset to the searched assets, as well
 			if( openPrefabStage != null && openPrefabStagePrefabAsset != null && obj is GameObject && openPrefabStage.IsPartOfPrefabContents( (GameObject) obj ) )
 			{
@@ -845,7 +819,6 @@ namespace AssetUsageDetectorNamespace
 				if( prefabStageObjectSource != null )
 					AddSearchedObjectToFilteredSets( prefabStageObjectSource, expandGameObjects );
 			}
-#endif
 
 			bool isAsset = obj.IsAsset();
 			if( isAsset )

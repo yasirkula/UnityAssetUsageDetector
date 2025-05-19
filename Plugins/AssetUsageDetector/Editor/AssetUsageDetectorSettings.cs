@@ -167,7 +167,6 @@ namespace AssetUsageDetectorNamespace
 		}
 		#endregion
 
-#if UNITY_2018_3_OR_NEWER
 		[SettingsProvider]
 		public static SettingsProvider CreatePreferencesGUI()
 		{
@@ -177,19 +176,11 @@ namespace AssetUsageDetectorNamespace
 				keywords = new System.Collections.Generic.HashSet<string>() { "Asset", "Usage", "Detector" }
 			};
 		}
-#endif
 
-#if !UNITY_2018_3_OR_NEWER
-		[PreferenceItem( "Asset Usage Detector" )]
-#endif
 		public static void PreferencesGUI()
 		{
 			float labelWidth = EditorGUIUtility.labelWidth;
-#if UNITY_2018_3_OR_NEWER
 			EditorGUIUtility.labelWidth += 60f;
-#else
-			EditorGUIUtility.labelWidth += 20f;
-#endif
 
 			EditorGUI.BeginChangeCheck();
 

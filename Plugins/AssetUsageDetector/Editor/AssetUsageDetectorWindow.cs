@@ -1,5 +1,3 @@
-// Asset Usage Detector - by Suleyman Yasir KULA (yasirkula@gmail.com)
-
 using UnityEngine;
 using UnityEditor;
 using System.Collections.Generic;
@@ -64,7 +62,6 @@ namespace AssetUsageDetectorNamespace
 		// This isn't readonly so that it can be serialized
 		private List<ObjectToSearch> objectsToSearch = new List<ObjectToSearch>() { new ObjectToSearch( null ) };
 
-#pragma warning disable 0649
 		[SerializeField] // Since titleContent persists between Editor sessions, so should the IsLocked property because otherwise, "[L]" in title becomes confusing when the EditorWindow isn't actually locked
 		private bool m_isLocked;
 		private bool IsLocked
@@ -79,7 +76,6 @@ namespace AssetUsageDetectorNamespace
 				}
 			}
 		}
-#pragma warning restore 0649
 
 		private Phase currentPhase = Phase.Setup;
 
@@ -131,37 +127,7 @@ namespace AssetUsageDetectorNamespace
 		{
 			contextMenu.AddItem( new GUIContent( "Lock" ), IsLocked, () => IsLocked = !IsLocked );
 			contextMenu.AddSeparator( "" );
-
-#if UNITY_2018_3_OR_NEWER
 			contextMenu.AddItem( new GUIContent( "Settings" ), false, () => SettingsService.OpenProjectSettings( "Project/yasirkula/Asset Usage Detector" ) );
-#else
-			contextMenu.AddItem( new GUIContent( "Settings" ), false, () =>
-			{
-				System.Type preferencesWindowType = typeof( EditorWindow ).Assembly.GetType( "UnityEditor.PreferencesWindow" );
-				preferencesWindowType.GetMethod( "ShowPreferencesWindow", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static ).Invoke( null, null );
-
-				EditorWindow preferencesWindow = GetWindow( preferencesWindowType );
-				if( (bool) preferencesWindowType.GetField( "m_RefreshCustomPreferences", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance ).GetValue( preferencesWindow ) )
-				{
-					preferencesWindowType.GetMethod( "AddCustomSections", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance ).Invoke( preferencesWindow, null );
-					preferencesWindowType.GetField( "m_RefreshCustomPreferences", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance ).SetValue( preferencesWindow, false );
-				}
-
-				int targetSectionIndex = -1;
-				System.Collections.IList sections = (System.Collections.IList) preferencesWindowType.GetField( "m_Sections", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance ).GetValue( preferencesWindow );
-				for( int i = 0; i < sections.Count; i++ )
-				{
-					if( ( (GUIContent) sections[i].GetType().GetField( "content", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance ).GetValue( sections[i] ) ).text == "Asset Usage Detector" )
-					{
-						targetSectionIndex = i;
-						break;
-					}
-				}
-
-				if( targetSectionIndex >= 0 )
-					preferencesWindowType.GetProperty( "selectedSectionIndex", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance ).SetValue( preferencesWindow, targetSectionIndex, null );
-			} );
-#endif
 
 			if( currentPhase == Phase.Setup )
 			{
@@ -386,17 +352,12 @@ namespace AssetUsageDetectorNamespace
 			if( currentPhase == Phase.Complete && AssetUsageDetectorSettings.ShowCustomTooltip )
 				wantsMouseMove = wantsMouseEnterLeaveWindow = true; // These values aren't preserved during domain reload on Unity 2020.3.0f1
 
-#if UNITY_2018_3_OR_NEWER
-			PrefabStage.prefabStageClosing -= ReplacePrefabStageObjectsWithAssets;
 			PrefabStage.prefabStageClosing += ReplacePrefabStageObjectsWithAssets;
-#endif
 		}
 
 		private void OnDisable()
 		{
-#if UNITY_2018_3_OR_NEWER
 			PrefabStage.prefabStageClosing -= ReplacePrefabStageObjectsWithAssets;
-#endif
 			SearchResultTooltip.Hide();
 		}
 
@@ -712,10 +673,7 @@ namespace AssetUsageDetectorNamespace
 			currentPhase = Phase.Processing;
 
 			SavePrefs();
-
-#if UNITY_2018_3_OR_NEWER
 			ReplacePrefabStageObjectsWithAssets( PrefabStageUtility.GetCurrentPrefabStage() );
-#endif
 
 			// Start searching
 			searchResult = core.Run( new AssetUsageDetector.Parameters()
@@ -758,18 +716,13 @@ namespace AssetUsageDetectorNamespace
 				wantsMouseMove = wantsMouseEnterLeaveWindow = true;
 		}
 
-#if UNITY_2018_3_OR_NEWER
 		// Try replacing searched objects who are part of currently open prefab stage with their corresponding prefab assets
 		public void ReplacePrefabStageObjectsWithAssets( PrefabStage prefabStage )
 		{
 			if( prefabStage == null || !prefabStage.stageHandle.IsValid() )
 				return;
 
-#if UNITY_2020_1_OR_NEWER
 			GameObject prefabAsset = AssetDatabase.LoadAssetAtPath<GameObject>( prefabStage.assetPath );
-#else
-			GameObject prefabAsset = AssetDatabase.LoadAssetAtPath<GameObject>( prefabStage.prefabAssetPath );
-#endif
 			if( prefabAsset == null || prefabAsset.Equals( null ) )
 				return;
 
@@ -796,7 +749,6 @@ namespace AssetUsageDetectorNamespace
 				}
 			}
 		}
-#endif
 
 		private bool ReturnToSetupPhase()
 		{
