@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.U2D;
 using Object = UnityEngine.Object;
 
 namespace AssetUsageDetectorNamespace
@@ -92,6 +93,20 @@ namespace AssetUsageDetectorNamespace
 							AddSubAssets( AssetDatabase.LoadAssetAtPath<Object>( filePath ), true, shouldSearchChildren );
 
 						return;
+					}
+				}
+
+				// If is an Atlas we get sprites directly as GetSubAssets return the final texture
+				if( target is SpriteAtlas spriteAtlas )
+				{
+					Sprite[] packedSprites = AssetUsageDetector.spriteAtlasPackedSpritesGetter( spriteAtlas );
+					if( packedSprites != null )
+					{
+						for( int i = 0; i < packedSprites.Length; i++ )
+						{
+							if( packedSprites[i] != null && currentSubAssets.Add( packedSprites[i] ) )
+								subAssets.Add( new SubAsset( packedSprites[i], shouldSearchChildren ?? true ) );
+						}
 					}
 				}
 
