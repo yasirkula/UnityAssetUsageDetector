@@ -1311,7 +1311,7 @@ namespace AssetUsageDetectorNamespace
 					if( preferredHeight > 10f )
 					{
 						Vector2 size = position.size;
-						position = Utilities.GetScreenFittedRect( new Rect( GUIUtility.GUIToScreenPoint( Event.current.mousePosition ) + new Vector2( size.x * -0.5f, 10f ), size ) );
+                        position = Utilities.GetScreenFittedRect(new Rect(GUIUtility.GUIToScreenPoint(Event.current.mousePosition) + new Vector2(size.x * -0.5f, 10f), size), this);
 
 						shouldRepositionSelf = false;
 						GUIUtility.ExitGUI();
