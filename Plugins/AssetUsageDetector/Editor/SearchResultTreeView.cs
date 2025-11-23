@@ -16,7 +16,7 @@ using PrefabStageUtility = UnityEditor.Experimental.SceneManagement.PrefabStageU
 namespace AssetUsageDetectorNamespace
 {
 	[System.Serializable]
-	public class SearchResultTreeViewState : TreeViewState
+	public class SearchResultTreeViewState : TreeViewState<int>
 	{
 		// - initialNodeId is serialized because we want to preserve the expanded states of the TreeViewItems after domain reload and
 		//   it's only possible if TreeView is reconstructed with the same ids
@@ -36,14 +36,14 @@ namespace AssetUsageDetectorNamespace
 		public List<int> preSearchExpandedIds;
 	}
 
-	public class SearchResultTreeView : TreeView
+	public class SearchResultTreeView : TreeView<int>
 	{
 		public enum TreeType { Normal, UnusedObjects, IsolatedView };
 		public enum SearchMode { SearchedObjectsOnly, ReferencesOnly, All };
 
 		private class ReferenceNodeData
 		{
-			public readonly TreeViewItem item;
+			public readonly TreeViewItem<int> item;
 			public readonly ReferenceNode node;
 			public readonly ReferenceNodeData parent;
 			public readonly int linkIndex;
@@ -63,7 +63,7 @@ namespace AssetUsageDetectorNamespace
 				}
 			}
 
-			public ReferenceNodeData( TreeViewItem item, ReferenceNode node, ReferenceNodeData parent, int linkIndex )
+			public ReferenceNodeData( TreeViewItem<int> item, ReferenceNode node, ReferenceNodeData parent, int linkIndex )
 			{
 				this.item = item;
 				this.node = node;
@@ -217,7 +217,7 @@ namespace AssetUsageDetectorNamespace
 						IList<int> selection = GetSelection();
 						for( int i = 0; i < selection.Count; i++ )
 						{
-							for( TreeViewItem item = GetDataFromId( selection[i] ).item; item != null; item = item.parent )
+							for( TreeViewItem<int> item = GetDataFromId( selection[i] ).item; item != null; item = item.parent )
 							{
 								if( expandedIdsSet.Add( item.id ) )
 									expandedIds.Add( item.id );
@@ -236,9 +236,9 @@ namespace AssetUsageDetectorNamespace
 			}
 		}
 
-		protected override TreeViewItem BuildRoot()
+		protected override TreeViewItem<int> BuildRoot()
 		{
-			TreeViewItem root = new TreeViewItem { id = state.initialNodeId, depth = -1, displayName = "Root" };
+			TreeViewItem<int> root = new TreeViewItem<int> { id = state.initialNodeId, depth = -1, displayName = "Root" };
 			int id = state.initialNodeId + 1;
 
 			idToNodeDataLookup.Clear();
@@ -261,7 +261,7 @@ namespace AssetUsageDetectorNamespace
 
 			isTreeViewEmpty = !root.hasChildren;
 			if( isTreeViewEmpty ) // May happen if all items are hidden inside HideItems function or there are no matching search results. If we don't create a dummy child, Unity throws an exception
-				root.AddChild( new TreeViewItem( state.initialNodeId + 1 ) ); // If we don't give it a valid id, some functions throw exceptions when there are no matching search results
+				root.AddChild( new TreeViewItem<int>( state.initialNodeId + 1 ) ); // If we don't give it a valid id, some functions throw exceptions when there are no matching search results
 			else
 				GetDataFromId( root.children[root.children.Count - 1].id ).isLastLink = true;
 
@@ -270,9 +270,9 @@ namespace AssetUsageDetectorNamespace
 			return root;
 		}
 
-		private bool GenerateRowsRecursive( TreeViewItem parent, ReferenceNode referenceNode, ReferenceNodeData parentData, int siblingIndex, int depth, bool? itemForcedVisibility, List<ReferenceNode> stack, HashSet<ReferenceNode> processedNodes, ref int id )
+		private bool GenerateRowsRecursive( TreeViewItem<int> parent, ReferenceNode referenceNode, ReferenceNodeData parentData, int siblingIndex, int depth, bool? itemForcedVisibility, List<ReferenceNode> stack, HashSet<ReferenceNode> processedNodes, ref int id )
 		{
-			TreeViewItem item = new TreeViewItem( id++, depth, "" );
+			TreeViewItem<int> item = new TreeViewItem<int>( id++, depth, "" );
 			ReferenceNodeData data = new ReferenceNodeData( item, referenceNode, parentData, siblingIndex );
 
 			bool shouldShowItem;
@@ -906,7 +906,7 @@ namespace AssetUsageDetectorNamespace
 			SetExpanded( expandedIds );
 		}
 
-		private bool GetMainReferenceIdsRecursive( TreeViewItem item, List<int> ids )
+		private bool GetMainReferenceIdsRecursive( TreeViewItem<int> item, List<int> ids )
 		{
 			if( item.depth > 0 && GetDataFromId( item.id ).node.IsMainReference )
 				return true;
@@ -926,7 +926,7 @@ namespace AssetUsageDetectorNamespace
 			return shouldExpand;
 		}
 
-		private bool GetMatchingSearchResultIdsRecursive( TreeViewItem item, List<int> ids )
+		private bool GetMatchingSearchResultIdsRecursive( TreeViewItem<int> item, List<int> ids )
 		{
 			bool shouldExpand = false;
 			if( item.hasChildren )
@@ -943,7 +943,7 @@ namespace AssetUsageDetectorNamespace
 			return shouldExpand;
 		}
 
-		private bool GetReferenceNodeOccurrenceIdsRecursive( TreeViewItem item, HashSet<ReferenceNode> referenceNodes, List<int> ids )
+		private bool GetReferenceNodeOccurrenceIdsRecursive( TreeViewItem<int> item, HashSet<ReferenceNode> referenceNodes, List<int> ids )
 		{
 			bool shouldExpand = false;
 			if( item.hasChildren )
@@ -1004,7 +1004,7 @@ namespace AssetUsageDetectorNamespace
 			}
 		}
 
-		private void CalculateNewItemIdsAfterHideRecursive( TreeViewItem item, List<ReferenceNode> hiddenNodes, List<ReferenceNode.Link> hiddenLinks, List<int> newExpandedItemIDs, List<int> newSelectedItemIDs, ref int id )
+		private void CalculateNewItemIdsAfterHideRecursive( TreeViewItem<int> item, List<ReferenceNode> hiddenNodes, List<ReferenceNode.Link> hiddenLinks, List<int> newExpandedItemIDs, List<int> newSelectedItemIDs, ref int id )
 		{
 			ReferenceNodeData data = GetDataFromId( item.id );
 			if( hiddenNodes.Contains( data.node ) || ( data.parent != null && hiddenLinks.Contains( data.parent.node[data.linkIndex] ) ) )
@@ -1051,7 +1051,7 @@ namespace AssetUsageDetectorNamespace
 			}
 		}
 
-		private void FindFirstOccurrencesOfSelectionRecursive( TreeViewItem item, HashSet<ReferenceNode> selectedNodes, List<int> result )
+		private void FindFirstOccurrencesOfSelectionRecursive( TreeViewItem<int> item, HashSet<ReferenceNode> selectedNodes, List<int> result )
 		{
 			ReferenceNodeData data = GetDataFromId( item.id );
 			if( !data.isDuplicate && selectedNodes.Remove( data.node ) )
@@ -1151,12 +1151,12 @@ namespace AssetUsageDetectorNamespace
 				if( data.item.parent == null )
 					continue;
 
-				TreeViewItem linkItem = data.item;
-				for( TreeViewItem parentItem = linkItem.parent; parentItem.depth >= 0; parentItem = parentItem.parent )
+				TreeViewItem<int> linkItem = data.item;
+				for( TreeViewItem<int> parentItem = linkItem.parent; parentItem.depth >= 0; parentItem = parentItem.parent )
 				{
 					selectedReferenceNodesHierarchyIds.Add( parentItem.id );
 
-					List<TreeViewItem> parentItemChildren = parentItem.children;
+					List<TreeViewItem<int>> parentItemChildren = parentItem.children;
 					for( int j = 0; parentItemChildren[j] != linkItem; j++ )
 						selectedReferenceNodesHierarchyIndirectIds.Add( parentItemChildren[j].id );
 
@@ -1191,7 +1191,7 @@ namespace AssetUsageDetectorNamespace
 				return;
 			}
 
-			IList<TreeViewItem> rows = GetRows();
+			IList<TreeViewItem<int>> rows = GetRows();
 			for( int i = 0; i < rows.Count; i++ )
 			{
 				if( rows[i].id == id )
@@ -1210,7 +1210,7 @@ namespace AssetUsageDetectorNamespace
 
 		public bool GetRowRectWithId( int id, out Rect rect )
 		{
-			IList<TreeViewItem> rows = GetRows();
+			IList<TreeViewItem<int>> rows = GetRows();
 			for( int i = 0; i < rows.Count; i++ )
 			{
 				if( rows[i].id == id )
@@ -1232,7 +1232,7 @@ namespace AssetUsageDetectorNamespace
 
 		public Rect SelectLastRowAndReturnRect()
 		{
-			IList<TreeViewItem> rows = GetRows();
+			IList<TreeViewItem<int>> rows = GetRows();
 			SetSelection( new int[1] { rows[rows.Count - 1].id }, TreeViewSelectionOptions.FireSelectionChanged );
 			return GetRowRect( rows.Count - 1 );
 		}
