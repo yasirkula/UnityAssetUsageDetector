@@ -289,34 +289,56 @@ namespace AssetUsageDetectorNamespace
 				List<string> nonModifiableTextureNames = new List<string>( 16 );
 				List<Texture> nonModifiableTextureValues = new List<Texture>( 16 );
 
-				int shaderPropertyCount = shader.GetPropertyCount();
-				for( int i = 0; i < shaderPropertyCount; i++ )
-				{
-					if( shader.GetPropertyType(i) != UnityEngine.Rendering.ShaderPropertyType.Texture )
-						continue;
+#if UNITY_6000_0_OR_NEWER
+                int shaderPropertyCount = shader.GetPropertyCount();
+                for (int i = 0; i < shaderPropertyCount; i++) {
+                    if (shader.GetPropertyType(i) != UnityEngine.Rendering.ShaderPropertyType.Texture)
+                        continue;
 
-					string propertyName = shader.GetPropertyName(i);
-					if( shader.GetPropertyFlags(i) == UnityEngine.Rendering.ShaderPropertyFlags.NonModifiableTextureData)
-					{
-						Texture propertyDefaultValue = shaderImporter.GetNonModifiableTexture( propertyName );
-						if( propertyDefaultValue == Value && propertyName == Variable )
-							propertyDefaultValue = (Texture) newValue;
+                    string propertyName = shader.GetPropertyName(i);
+                    if (shader.GetPropertyFlags(i) == UnityEngine.Rendering.ShaderPropertyFlags.NonModifiableTextureData) {
+                        Texture propertyDefaultValue = shaderImporter.GetNonModifiableTexture(propertyName);
+                        if (propertyDefaultValue == Value && propertyName == Variable)
+                            propertyDefaultValue = (Texture)newValue;
 
-						nonModifiableTextureNames.Add( propertyName );
-						nonModifiableTextureValues.Add( propertyDefaultValue );
-					}
-					else
-					{
-						Texture propertyDefaultValue = shaderImporter.GetDefaultTexture( propertyName );
-						if( propertyDefaultValue == Value && propertyName == Variable )
-							propertyDefaultValue = (Texture) newValue;
+                        nonModifiableTextureNames.Add(propertyName);
+                        nonModifiableTextureValues.Add(propertyDefaultValue);
+                    } else {
+                        Texture propertyDefaultValue = shaderImporter.GetDefaultTexture(propertyName);
+                        if (propertyDefaultValue == Value && propertyName == Variable)
+                            propertyDefaultValue = (Texture)newValue;
 
-						textureNames.Add( propertyName );
-						textureValues.Add( propertyDefaultValue );
-					}
-				}
+                        textureNames.Add(propertyName);
+                        textureValues.Add(propertyDefaultValue);
+                    }
+                }
+#else
+                int shaderPropertyCount = ShaderUtil.GetPropertyCount(shader);
+                for (int i = 0; i < shaderPropertyCount; i++) {
+                    if (ShaderUtil.GetPropertyType(shader, i) != ShaderUtil.ShaderPropertyType.TexEnv)
+                        continue;
 
-				shaderImporter.SetDefaultTextures( textureNames.ToArray(), textureValues.ToArray() );
+                    string propertyName = ShaderUtil.GetPropertyName(shader, i);
+                    if (ShaderUtil.IsShaderPropertyNonModifiableTexureProperty(shader, i)) {
+                        Texture propertyDefaultValue = shaderImporter.GetNonModifiableTexture(propertyName);
+                        if (propertyDefaultValue == Value && propertyName == Variable)
+                            propertyDefaultValue = (Texture)newValue;
+
+                        nonModifiableTextureNames.Add(propertyName);
+                        nonModifiableTextureValues.Add(propertyDefaultValue);
+                    } else {
+                        Texture propertyDefaultValue = shaderImporter.GetDefaultTexture(propertyName);
+                        if (propertyDefaultValue == Value && propertyName == Variable)
+                            propertyDefaultValue = (Texture)newValue;
+
+                        textureNames.Add(propertyName);
+                        textureValues.Add(propertyDefaultValue);
+                    }
+                }
+#endif
+
+
+                shaderImporter.SetDefaultTextures( textureNames.ToArray(), textureValues.ToArray() );
 				shaderImporter.SetNonModifiableTextures( nonModifiableTextureNames.ToArray(), nonModifiableTextureValues.ToArray() );
 				AssetDatabase.ImportAsset( shaderImporter.assetPath );
 			}

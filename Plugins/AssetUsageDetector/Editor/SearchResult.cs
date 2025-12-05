@@ -808,7 +808,11 @@ namespace AssetUsageDetectorNamespace
 								} );
 							}
 
+#if UNITY_6000_0_OR_NEWER
 							IList<TreeViewItem<int>> treeViewRows = treeView.GetRows();
+#else
+							IList<TreeViewItem> treeViewRows = treeView.GetRows();
+#endif
 							if( treeViewRows.Count > 1 ) // References are at depth 1 so if there are any references, at least 2 rows must exist
 							{
 								contextMenu.AddItem( new GUIContent( "Hide Search Results" ), false, () =>
