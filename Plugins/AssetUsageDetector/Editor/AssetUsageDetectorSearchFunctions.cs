@@ -187,7 +187,9 @@ namespace AssetUsageDetectorNamespace
 
 		internal static readonly Func<SpriteAtlas, Sprite[]> spriteAtlasPackedSpritesGetter = (Func<SpriteAtlas, Sprite[]>) Delegate.CreateDelegate( typeof( Func<SpriteAtlas, Sprite[]> ), typeof( SpriteAtlasExtensions ).GetMethod( "GetPackedSprites", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static ) );
 #if ASSET_USAGE_ADDRESSABLES
-		private readonly PropertyInfo assetReferenceSubObjectTypeGetter = typeof( AssetReference ).GetProperty( "SubObjectType", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance );
+		private readonly PropertyInfo assetReferenceSubObjectTypeGetter = 
+			typeof( AssetReference ).GetProperty( "SubObjectType", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance )
+			?? typeof( AssetReference ).GetProperty( "SubOjbectType", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance );
 #endif
 
 #if ASSET_USAGE_VFX_GRAPH
