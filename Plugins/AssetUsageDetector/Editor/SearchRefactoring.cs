@@ -5,6 +5,7 @@ using System.Reflection;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.Rendering;
 using Object = UnityEngine.Object;
 
 namespace AssetUsageDetectorNamespace
@@ -289,14 +290,14 @@ namespace AssetUsageDetectorNamespace
 				List<string> nonModifiableTextureNames = new List<string>( 16 );
 				List<Texture> nonModifiableTextureValues = new List<Texture>( 16 );
 
-				int shaderPropertyCount = ShaderUtil.GetPropertyCount( shader );
+                int shaderPropertyCount = shader.GetPropertyCount();
 				for( int i = 0; i < shaderPropertyCount; i++ )
 				{
-					if( ShaderUtil.GetPropertyType( shader, i ) != ShaderUtil.ShaderPropertyType.TexEnv )
-						continue;
+                    if (shader.GetPropertyType(i) != ShaderPropertyType.Texture)
+                        continue;
 
-					string propertyName = ShaderUtil.GetPropertyName( shader, i );
-					if( ShaderUtil.IsShaderPropertyNonModifiableTexureProperty( shader, i ) )
+                    string propertyName = shader.GetPropertyName(i);
+                    if ((shader.GetPropertyFlags(i) & ShaderPropertyFlags.NonModifiableTextureData) != 0)
 					{
 						Texture propertyDefaultValue = shaderImporter.GetNonModifiableTexture( propertyName );
 						if( propertyDefaultValue == Value && propertyName == Variable )

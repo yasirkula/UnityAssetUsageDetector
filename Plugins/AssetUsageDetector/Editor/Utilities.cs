@@ -174,6 +174,28 @@ namespace AssetUsageDetectorNamespace
 			return false;
 		}
 
+#if UNITY_6000_3_OR_NEWER
+        public static EntityId GetEntityId(this Object obj)
+        {
+            return obj.GetEntityId();
+        }
+
+        public static Object EntityIdToObject(EntityId entityId)
+        {
+            return EditorUtility.EntityIdToObject(entityId);
+        }
+#else
+        public static int GetEntityId(this Object obj)
+        {
+            return obj.GetInstanceID();
+        }
+        
+        public static Object EntityIdToObject(int instanceID)
+        {
+            return EditorUtility.InstanceIDToObject(instanceID);
+        }
+#endif
+
 		// Returns an enumerator to iterate through all asset paths in the folder
 		public static IEnumerable<string> EnumerateFolderContents( Object folderAsset )
 		{

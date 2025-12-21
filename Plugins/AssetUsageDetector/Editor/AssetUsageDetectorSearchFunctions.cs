@@ -12,6 +12,7 @@ using UnityEngine.U2D;
 using UnityEngine.Playables;
 using UnityEditor.U2D;
 using UnityEditor.Compilation;
+using UnityEngine.Rendering;
 using UnityEngine.Tilemaps;
 #if ASSET_USAGE_ADDRESSABLES
 using UnityEngine.AddressableAssets;
@@ -643,12 +644,12 @@ namespace AssetUsageDetectorNamespace
 			if( searchTextureReferences && isInPlayMode && !AssetDatabase.Contains( material ) )
 			{
 				Shader shader = material.shader;
-				int shaderPropertyCount = ShaderUtil.GetPropertyCount( shader );
+                int shaderPropertyCount = shader.GetPropertyCount();
 				for( int i = 0; i < shaderPropertyCount; i++ )
 				{
-					if( ShaderUtil.GetPropertyType( shader, i ) == ShaderUtil.ShaderPropertyType.TexEnv )
+                    if (shader.GetPropertyType(i) == ShaderPropertyType.Texture)
 					{
-						string propertyName = ShaderUtil.GetPropertyName( shader, i );
+                        string propertyName = shader.GetPropertyName(i);
 						Texture assignedTexture = material.GetTexture( propertyName );
 						if( objectsToSearchSet.Contains( assignedTexture ) )
 						{
@@ -675,12 +676,12 @@ namespace AssetUsageDetectorNamespace
 				ShaderImporter shaderImporter = AssetImporter.GetAtPath( AssetDatabase.GetAssetPath( shader ) ) as ShaderImporter;
 				if( shaderImporter != null )
 				{
-					int shaderPropertyCount = ShaderUtil.GetPropertyCount( shader );
+                    int shaderPropertyCount = shader.GetPropertyCount();
 					for( int i = 0; i < shaderPropertyCount; i++ )
 					{
-						if( ShaderUtil.GetPropertyType( shader, i ) == ShaderUtil.ShaderPropertyType.TexEnv )
+                        if (shader.GetPropertyType(i) == ShaderPropertyType.Texture)
 						{
-							string propertyName = ShaderUtil.GetPropertyName( shader, i );
+                            string propertyName = shader.GetPropertyName(i);
 							Texture defaultTexture = shaderImporter.GetDefaultTexture( propertyName );
 							if( !defaultTexture )
 								defaultTexture = shaderImporter.GetNonModifiableTexture( propertyName );
