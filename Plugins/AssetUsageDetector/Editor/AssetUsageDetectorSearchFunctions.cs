@@ -23,6 +23,7 @@ namespace AssetUsageDetectorNamespace
 	public partial class AssetUsageDetector
 	{
 		#region Helper Classes
+#pragma warning disable 0649
 		[Serializable]
 		private struct AssemblyDefinitionReferences
 		{
@@ -142,6 +143,7 @@ namespace AssetUsageDetectorNamespace
 				return null;
 			}
 		}
+#pragma warning restore 0649
 		#endregion
 
 		// Dictionary to quickly find the function to search a specific type with
