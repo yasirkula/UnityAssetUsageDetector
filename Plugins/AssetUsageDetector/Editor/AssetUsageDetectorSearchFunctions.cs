@@ -181,9 +181,7 @@ namespace AssetUsageDetectorNamespace
 		private readonly FieldInfoGetter fieldInfoGetter = (FieldInfoGetter) Delegate.CreateDelegate( typeof( FieldInfoGetter ), typeof( Editor ).Assembly.GetType( "UnityEditor.ScriptAttributeUtility" ).GetMethod( "GetFieldInfoAndStaticTypeFromProperty", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static ) );
 		private readonly Func<Object> lightmapSettingsGetter = (Func<Object>) Delegate.CreateDelegate( typeof( Func<Object> ), typeof( LightmapEditorSettings ).GetMethod( "GetLightmapSettings", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static ) );
 		private readonly Func<Object> renderSettingsGetter = (Func<Object>) Delegate.CreateDelegate( typeof( Func<Object> ), typeof( RenderSettings ).GetMethod( "GetRenderSettings", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static ) );
-#if UNITY_2021_2_OR_NEWER
 		private readonly Func<Cubemap> defaultReflectionProbeGetter = (Func<Cubemap>) Delegate.CreateDelegate( typeof( Func<Cubemap> ), typeof( RenderSettings ).GetProperty( "defaultReflection", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static ).GetGetMethod( true ) );
-#endif
 
 		internal static readonly Func<SpriteAtlas, Sprite[]> spriteAtlasPackedSpritesGetter = (Func<SpriteAtlas, Sprite[]>) Delegate.CreateDelegate( typeof( Func<SpriteAtlas, Sprite[]> ), typeof( SpriteAtlasExtensions ).GetMethod( "GetPackedSprites", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static ) );
 #if ASSET_USAGE_ADDRESSABLES
@@ -985,11 +983,7 @@ namespace AssetUsageDetectorNamespace
 		{
 			ReferenceNode referenceNode = PopReferenceNode( obj );
 
-#if UNITY_2021_2_OR_NEWER
 			referenceNode.AddLinkTo( SearchObject( defaultReflectionProbeGetter() ), "Default Reflection Probe" );
-#else
-			referenceNode.AddLinkTo( SearchObject( ReflectionProbe.defaultTexture ), "Default Reflection Probe" );
-#endif
 			SearchVariablesWithSerializedObject( referenceNode, true );
 			return referenceNode;
 		}
@@ -1625,11 +1619,9 @@ namespace AssetUsageDetectorNamespace
 						if( field.FieldType.IsIgnoredUnityType() )
 							continue;
 
-#if UNITY_2021_2_OR_NEWER
 						// "ref struct"s can't be accessed via reflection
 						if( field.FieldType.IsByRefLike )
 							continue;
-#endif
 
 						// Additional filtering for fields:
 						// 1- Ignore "m_RectTransform", "m_CanvasRenderer" and "m_Canvas" fields of Graphic components
@@ -1665,11 +1657,9 @@ namespace AssetUsageDetectorNamespace
 						if( property.PropertyType.IsIgnoredUnityType() )
 							continue;
 
-#if UNITY_2021_2_OR_NEWER
 						// "ref struct"s can't be accessed via reflection
 						if( property.PropertyType.IsByRefLike )
 							continue;
-#endif
 
 						// Skip properties without a getter function
 						MethodInfo propertyGetter = property.GetGetMethod( true );
