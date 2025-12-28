@@ -37,7 +37,7 @@ namespace AssetUsageDetectorNamespace
 			public bool dontSearchInSourceAssets = true;
 			public bool searchInProjectSettings = true;
 
-			public int searchDepthLimit = 4;
+			public int searchDepthLimit = 32;
 
 			public bool searchUnusedMaterialProperties = true;
 
@@ -84,7 +84,6 @@ namespace AssetUsageDetectorNamespace
 		private readonly List<object> callStack = new List<object>( 64 );
 
 		private Object currentSearchedObject;
-		private int currentDepth;
 
 		private bool searchingSourceAssets;
 		private bool isInPlayMode;
@@ -160,7 +159,6 @@ namespace AssetUsageDetectorNamespace
 				searchResult = new List<SearchResultGroup>(); // Overall search results
 
 				currentSearchedObject = null;
-				currentDepth = 0;
 				searchedObjectsCount = 0;
 				searchStartTime = EditorApplication.timeSinceStartup;
 
@@ -1002,6 +1000,10 @@ namespace AssetUsageDetectorNamespace
 					return cachedResult;
 			}
 
+            // Comply with the recursive search limit
+            if (callStack.Count >= searchParameters.searchDepthLimit)
+                return null;
+
 			searchedObjectsCount++;
 
 			ReferenceNode result;
@@ -1063,17 +1065,11 @@ namespace AssetUsageDetectorNamespace
 			}
 			else
 			{
-				// Comply with the recursive search limit
-				if( currentDepth >= searchParameters.searchDepthLimit )
-					return null;
-
 				callStack.Add( obj );
-				currentDepth++;
 
 				result = PopReferenceNode( obj );
 				SearchVariablesWithReflection( result );
 
-				currentDepth--;
 				callStack.RemoveAt( callStack.Count - 1 );
 			}
 
@@ -1083,10 +1079,9 @@ namespace AssetUsageDetectorNamespace
 				result = null;
 			}
 
-            // Cache the search result if we are skimming through a class (not a struct; i.e. objHash != null)
-            // and if the object is a UnityEngine.Object (if not, cache the result only if we have actually found something
-            // or we are at the root of the search; i.e. currentDepth == 0)
-            if (!(obj is ValueType) && (result != null || unityObject != null || currentDepth == 0))
+            // Cache the search result if we are skimming through a class (not a struct) and if the object is a UnityEngine.Object (if not,
+            // cache the result only if we have actually found something or we are at the root of the search; i.e. callStack.Count == 0)
+            if (obj is not ValueType && (result != null || unityObject != null || callStack.Count == 0))
             {
                 if (!searchingSourceAsset)
                 {
