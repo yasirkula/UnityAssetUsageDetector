@@ -345,61 +345,6 @@ namespace AssetUsageDetectorNamespace
 			return t1.GetSiblingIndex() - t2.GetSiblingIndex();
 		}
 
-		// Check if the field is serializable
-		public static bool IsSerializable( this FieldInfo fieldInfo )
-		{
-			// See Serialization Rules: https://docs.unity3d.com/Manual/script-Serialization.html
-			if( fieldInfo.IsInitOnly )
-				return false;
-
-			// SerializeReference makes even System.Object fields serializable
-			if( Attribute.IsDefined( fieldInfo, typeof( SerializeReference ) ) )
-				return true;
-
-			if( ( !fieldInfo.IsPublic || fieldInfo.IsNotSerialized ) && !Attribute.IsDefined( fieldInfo, typeof( SerializeField ) ) )
-				return false;
-
-			return IsTypeSerializable( fieldInfo.FieldType );
-		}
-
-		// Check if the property is serializable
-		public static bool IsSerializable( this PropertyInfo propertyInfo )
-		{
-			return IsTypeSerializable( propertyInfo.PropertyType );
-		}
-
-		// Check if type is serializable
-		private static bool IsTypeSerializable( Type type )
-		{
-			// see Serialization Rules: https://docs.unity3d.com/Manual/script-Serialization.html
-			if( typeof( Object ).IsAssignableFrom( type ) )
-				return true;
-
-			if( type.IsArray )
-			{
-				if( type.GetArrayRank() != 1 )
-					return false;
-
-				type = type.GetElementType();
-
-				if( typeof( Object ).IsAssignableFrom( type ) )
-					return true;
-			}
-			else if( type.IsGenericType )
-			{
-				// Generic types are allowed on 2020.1 and later
-				if( type.GetGenericTypeDefinition() == typeof( List<> ) )
-				{
-					type = type.GetGenericArguments()[0];
-
-					if( typeof( Object ).IsAssignableFrom( type ) )
-						return true;
-				}
-			}
-
-			return Attribute.IsDefined( type, typeof( SerializableAttribute ), false );
-		}
-
 		// Check if instances of this type should be searched for references
 		public static bool IsIgnoredUnityType( this Type type )
 		{

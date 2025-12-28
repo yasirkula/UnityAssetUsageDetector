@@ -12,25 +12,22 @@ namespace AssetUsageDetectorNamespace
 	public readonly struct VariableGetterHolder
 	{
 		public readonly MemberInfo variable;
-		public readonly bool isSerializable;
 		private readonly VariableGetVal getter;
 
 		public readonly string Name { get { return variable.Name; } }
 		public readonly bool IsProperty { get { return variable is PropertyInfo; } }
 
-		public VariableGetterHolder( FieldInfo fieldInfo, VariableGetVal getter, bool isSerializable )
-		{
-			this.variable = fieldInfo;
-			this.isSerializable = isSerializable;
-			this.getter = getter;
-		}
+        public VariableGetterHolder(FieldInfo fieldInfo, VariableGetVal getter)
+        {
+            this.variable = fieldInfo;
+            this.getter = getter;
+        }
 
-		public VariableGetterHolder( PropertyInfo propertyInfo, VariableGetVal getter, bool isSerializable )
-		{
-			this.variable = propertyInfo;
-			this.isSerializable = isSerializable;
-			this.getter = getter;
-		}
+        public VariableGetterHolder(PropertyInfo propertyInfo, VariableGetVal getter)
+        {
+            this.variable = propertyInfo;
+            this.getter = getter;
+        }
 
 		public readonly object Get( object obj )
 		{

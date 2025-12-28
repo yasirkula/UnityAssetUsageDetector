@@ -38,9 +38,6 @@ namespace AssetUsageDetectorNamespace
 			public bool searchInProjectSettings = true;
 
 			public int searchDepthLimit = 4;
-			public BindingFlags fieldModifiers = BindingFlags.Public | BindingFlags.NonPublic;
-			public BindingFlags propertyModifiers = BindingFlags.Public | BindingFlags.NonPublic;
-			public bool searchNonSerializableVariables = true;
 
 			public bool searchUnusedMaterialProperties = true;
 
@@ -466,10 +463,6 @@ namespace AssetUsageDetectorNamespace
 					if( currentSearchResultGroup.AnyReferencesFound )
 						searchResult.Add( currentSearchResultGroup );
 				}
-
-				// Search non-serializable variables for references while searching a scene in play mode
-				if( isInPlayMode )
-					searchSerializableVariablesOnly = false;
 
 				if( scenesToSearch.Count > 0 )
 				{

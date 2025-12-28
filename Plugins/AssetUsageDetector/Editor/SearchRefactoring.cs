@@ -266,7 +266,7 @@ namespace AssetUsageDetectorNamespace
 
 				for( int i = 0; i < MonoScriptAllVariables.Length; i++ )
 				{
-					if( MonoScriptAllVariables[i].isSerializable && !MonoScriptAllVariables[i].IsProperty )
+                    if (!MonoScriptAllVariables[i].IsProperty)
 					{
 						Object variableDefaultValue = monoImporter.GetDefaultReference( MonoScriptAllVariables[i].Name );
 						if( variableDefaultValue == Value && MonoScriptAllVariables[i].Name == Variable )

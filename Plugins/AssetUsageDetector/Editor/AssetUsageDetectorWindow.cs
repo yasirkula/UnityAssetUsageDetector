@@ -18,10 +18,6 @@ namespace AssetUsageDetectorNamespace
 		private const string PREFS_SEARCH_ASSETS = "AUD_AssetsSearch";
 		private const string PREFS_SEARCH_PROJECT_SETTINGS = "AUD_ProjectSettingsSearch";
 		private const string PREFS_DONT_SEARCH_SOURCE_ASSETS = "AUD_AssetsExcludeSrc";
-		private const string PREFS_SEARCH_DEPTH_LIMIT = "AUD_Depth";
-		private const string PREFS_SEARCH_FIELDS = "AUD_Fields";
-		private const string PREFS_SEARCH_PROPERTIES = "AUD_Properties";
-		private const string PREFS_SEARCH_NON_SERIALIZABLES = "AUD_NonSerializables";
 		private const string PREFS_SEARCH_UNUSED_MATERIAL_PROPERTIES = "AUD_SearchUnusedMaterialProps";
 		private const string PREFS_LAZY_SCENE_SEARCH = "AUD_LazySceneSearch";
 #if ASSET_USAGE_ADDRESSABLES
@@ -86,13 +82,10 @@ namespace AssetUsageDetectorNamespace
 		private List<Object> excludedAssets = new List<Object>() { null }; // These assets won't be searched for references
 		private List<Object> excludedScenes = new List<Object>() { null }; // These scenes won't be searched for references
 
-		private int searchDepthLimit = 4; // Depth limit for recursively searching variables of objects
-
 		private bool lazySceneSearch = true;
 #if ASSET_USAGE_ADDRESSABLES
 		private bool addressablesSupport = false;
 #endif
-		private bool searchNonSerializableVariables = true;
 		private bool searchUnusedMaterialProperties = true;
 		private bool calculateUnusedObjects = false;
 		private bool hideDuplicateRows = true;
@@ -100,8 +93,6 @@ namespace AssetUsageDetectorNamespace
 		private bool hideRedundantPrefabReferencesInScenes = false;
 		private bool noAssetDatabaseChanges = false;
 		private bool showDetailedProgressBar = true;
-
-		private BindingFlags fieldModifiers, propertyModifiers;
 
 		private SearchRefactoring searchRefactoring = null; // Its value can be assigned via ShowAndSearch
 
@@ -293,10 +284,6 @@ namespace AssetUsageDetectorNamespace
 				searchInAssetsFolder = searchParameters.searchInAssetsFolder;
 				dontSearchInSourceAssets = searchParameters.dontSearchInSourceAssets;
 				searchInProjectSettings = searchParameters.searchInProjectSettings;
-				searchDepthLimit = searchParameters.searchDepthLimit;
-				fieldModifiers = searchParameters.fieldModifiers;
-				propertyModifiers = searchParameters.propertyModifiers;
-				searchNonSerializableVariables = searchParameters.searchNonSerializableVariables;
 				searchUnusedMaterialProperties = searchParameters.searchUnusedMaterialProperties;
 				searchRefactoring = searchParameters.searchRefactoring;
 				lazySceneSearch = searchParameters.lazySceneSearch;
@@ -373,10 +360,6 @@ namespace AssetUsageDetectorNamespace
 			EditorPrefs.SetBool( PREFS_SEARCH_ASSETS, searchInAssetsFolder );
 			EditorPrefs.SetBool( PREFS_DONT_SEARCH_SOURCE_ASSETS, dontSearchInSourceAssets );
 			EditorPrefs.SetBool( PREFS_SEARCH_PROJECT_SETTINGS, searchInProjectSettings );
-			EditorPrefs.SetInt( PREFS_SEARCH_DEPTH_LIMIT, searchDepthLimit );
-			EditorPrefs.SetInt( PREFS_SEARCH_FIELDS, (int) fieldModifiers );
-			EditorPrefs.SetInt( PREFS_SEARCH_PROPERTIES, (int) propertyModifiers );
-			EditorPrefs.SetBool( PREFS_SEARCH_NON_SERIALIZABLES, searchNonSerializableVariables );
 			EditorPrefs.SetBool( PREFS_SEARCH_UNUSED_MATERIAL_PROPERTIES, searchUnusedMaterialProperties );
 			EditorPrefs.SetBool( PREFS_LAZY_SCENE_SEARCH, lazySceneSearch );
 #if ASSET_USAGE_ADDRESSABLES
@@ -396,10 +379,6 @@ namespace AssetUsageDetectorNamespace
 			searchInAssetsFolder = EditorPrefs.GetBool( PREFS_SEARCH_ASSETS, true );
 			dontSearchInSourceAssets = EditorPrefs.GetBool( PREFS_DONT_SEARCH_SOURCE_ASSETS, true );
 			searchInProjectSettings = EditorPrefs.GetBool( PREFS_SEARCH_PROJECT_SETTINGS, true );
-			searchDepthLimit = EditorPrefs.GetInt( PREFS_SEARCH_DEPTH_LIMIT, 4 );
-			fieldModifiers = (BindingFlags) EditorPrefs.GetInt( PREFS_SEARCH_FIELDS, (int) ( BindingFlags.Public | BindingFlags.NonPublic ) );
-			propertyModifiers = (BindingFlags) EditorPrefs.GetInt( PREFS_SEARCH_PROPERTIES, (int) ( BindingFlags.Public | BindingFlags.NonPublic ) );
-			searchNonSerializableVariables = EditorPrefs.GetBool( PREFS_SEARCH_NON_SERIALIZABLES, true );
 			searchUnusedMaterialProperties = EditorPrefs.GetBool( PREFS_SEARCH_UNUSED_MATERIAL_PROPERTIES, true );
 			lazySceneSearch = EditorPrefs.GetBool( PREFS_LAZY_SCENE_SEARCH, true );
 #if ASSET_USAGE_ADDRESSABLES
@@ -681,10 +660,6 @@ namespace AssetUsageDetectorNamespace
 				dontSearchInSourceAssets = dontSearchInSourceAssets,
 				excludedScenesFromSearch = !excludedScenes.IsEmpty() ? excludedScenes.ToArray() : null,
 				searchInProjectSettings = searchInProjectSettings,
-				//fieldModifiers = fieldModifiers,
-				//propertyModifiers = propertyModifiers,
-				//searchDepthLimit = searchDepthLimit,
-				//searchNonSerializableVariables = searchNonSerializableVariables,
 				searchUnusedMaterialProperties = searchUnusedMaterialProperties,
 				searchRefactoring = searchRefactoring,
 #if ASSET_USAGE_ADDRESSABLES
