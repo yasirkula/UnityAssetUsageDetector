@@ -1370,6 +1370,7 @@ namespace AssetUsageDetectorNamespace
 				{
 					bool iteratingVisible = iteratorVisible.NextVisible( true );
 					bool searchPrefabOverridesOnly = ShouldExcludeRedundantPrefabReferences( unityObject );
+                    GameObject unityObjectPrefabInstanceRoot = searchPrefabOverridesOnly ? PrefabUtility.GetOutermostPrefabInstanceRoot(unityObject) : null;
 					bool enterChildren;
 					do
 					{
@@ -1451,7 +1452,7 @@ namespace AssetUsageDetectorNamespace
 								// m_RD.texture is a redundant reference that shows up when searching sprites
 								if( !propertyPath.EndsWithFast( "m_RD.texture" ) )
 								{
-									if( searchPrefabOverridesOnly && !iterator.prefabOverride )
+                                    if (searchPrefabOverridesOnly && !iterator.prefabOverride && ObjectBelongsToDifferentPrefabInstance(propertyValue, unityObjectPrefabInstanceRoot))
 									{
 										currentSearchResultGroup.NumberOfRedundantReferences++;
 										enterChildren = false;
@@ -1463,6 +1464,22 @@ namespace AssetUsageDetectorNamespace
 										if( searchParameters.searchRefactoring != null && objectsToSearchSet.Contains( propertyValue ) )
 											searchParameters.searchRefactoring( new SerializedPropertyMatch( unityObject, propertyValue, iterator ) );
 									}
+
+                                    /// Searching for references of a prefab instance's child object in either a scene or prefab mode should show the references coming from
+                                    /// that prefab instance to the child object. That's because even though <see cref="SerializedProperty.prefabOverride"/> returns
+                                    /// false for the variable that points to the child GameObject, that child GameObject is essentially different than its counterpart
+                                    /// in the prefab asset (it's an instance/clone of it after all). So no references will be reported unless we intervene.
+                                    bool ObjectBelongsToDifferentPrefabInstance(Object obj, GameObject prefabInstanceRoot)
+                                    {
+                                        if (obj == null)
+                                            return true;
+
+                                        GameObject objPrefabInstanceRoot = PrefabUtility.GetOutermostPrefabInstanceRoot(obj);
+                                        if (objPrefabInstanceRoot == null)
+                                            return true;
+
+                                        return objPrefabInstanceRoot != prefabInstanceRoot;
+                                    }
 								}
 							}
 						}
