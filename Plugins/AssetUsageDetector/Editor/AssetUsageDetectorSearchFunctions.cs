@@ -5,6 +5,9 @@ using System.IO;
 using System.Reflection;
 using System.Text;
 using UnityEditor;
+#if ASSET_USAGE_ADDRESSABLES
+using UnityEditor.AddressableAssets.Settings;
+#endif
 using UnityEditor.Animations;
 using UnityEngine;
 using UnityEngine.UI;
@@ -217,6 +220,9 @@ namespace AssetUsageDetectorNamespace
 					{ typeof( LightmapSettings ), SearchLightmapSettings },
 					{ typeof( RenderSettings ), SearchRenderSettings },
 					{ typeof( SpriteAtlas ), SearchSpriteAtlas },
+#if ASSET_USAGE_ADDRESSABLES
+                    { typeof(AddressableAssetSettings), SearchAddressableAssetSettings },
+#endif
 				};
 			}
 
@@ -1061,6 +1067,29 @@ namespace AssetUsageDetectorNamespace
 				}
 			}
 		}
+
+#if ASSET_USAGE_ADDRESSABLES
+        private ReferenceNode SearchAddressableAssetSettings(object obj)
+        {
+            AddressableAssetSettings addressableSettings = (AddressableAssetSettings)obj;
+            ReferenceNode referenceNode = PopReferenceNode(addressableSettings);
+
+            // Search Addressable groups
+            foreach (Object asset in assetsToSearchSet)
+            {
+                // Don't check redundant prefab objects
+                if (asset is Component)
+                    continue;
+                if (asset is GameObject gameObject && gameObject.transform.parent != null)
+                    continue;
+
+                if (AssetDatabase.TryGetGUIDAndLocalFileIdentifier(asset, out string guid, out long _) && addressableSettings.FindAssetEntry(guid, true) is AddressableAssetEntry addressableEntry)
+                    referenceNode.AddLinkTo(GetReferenceNode(asset), $"Addressable: \"{addressableEntry.parentGroup.Name}\" -> \"{addressableEntry.address}\"");
+            }
+
+            return referenceNode;
+        }
+#endif
 
 		// Find references from an Assembly Definition File to its Assembly Definition References
 		private ReferenceNode SearchAssemblyDefinitionFile( object obj )
