@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Reflection;
 using System.Text;
+using System.Threading.Tasks;
 using Unity.Collections;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -358,6 +359,10 @@ namespace AssetUsageDetectorNamespace
 			// Searching assembly variables for reference throws InvalidCastException on .NET 4.0 runtime
 			if( typeof( Type ).IsAssignableFrom( type ) || type.Namespace == reflectionNamespace )
 				return true;
+
+			// Searching Tasks for reference may freeze Unity since Task.Result freezes the active thread if Task hasn't completed yet
+            if (typeof(Task).IsAssignableFrom(type))
+                return true;
 
             // Searching pointers, ref variables or ref structs for reference throws ArgumentException
             if (type.IsPointer || type.IsByRef || type.IsByRefLike)
