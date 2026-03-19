@@ -1642,10 +1642,6 @@ namespace AssetUsageDetectorNamespace
 					if( field.FieldType.IsIgnoredUnityType() )
 						continue;
 
-					// "ref struct"s can't be accessed via reflection
-					if( field.FieldType.IsByRefLike )
-						continue;
-
 					// Additional filtering for fields:
 					// 1- Ignore "m_RectTransform", "m_CanvasRenderer" and "m_Canvas" fields of Graphic components
 					string fieldName = field.Name;
@@ -1666,10 +1662,6 @@ namespace AssetUsageDetectorNamespace
 
 					// Skip primitive types
 					if( property.PropertyType.IsIgnoredUnityType() )
-						continue;
-
-					// "ref struct"s can't be accessed via reflection
-					if( property.PropertyType.IsByRefLike )
 						continue;
 
 					// Skip properties without a getter function
