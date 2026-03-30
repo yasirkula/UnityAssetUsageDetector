@@ -1368,13 +1368,8 @@ namespace AssetUsageDetectorNamespace
 			{
 				label = Label,
 				isMainReference = IsMainReference,
-#if UNITY_6000_5_OR_NEWER
-				instanceId = instanceId ?? EntityId.None,
-				isUnityObject = instanceId.HasValue && instanceId.Value.IsValid(),
-#else
-				instanceId = instanceId ?? 0,
+				instanceId = instanceId ?? default,
 				isUnityObject = instanceId.HasValue,
-#endif
 				usedState = usedState
 			};
 
