@@ -1368,7 +1368,7 @@ namespace AssetUsageDetectorNamespace
 			{
 				label = Label,
 				isMainReference = IsMainReference,
-				instanceId = instanceId ?? 0,
+				instanceId = instanceId ?? default,
 				isUnityObject = instanceId.HasValue,
 				usedState = usedState
 			};
