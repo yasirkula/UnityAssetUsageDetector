@@ -6,8 +6,10 @@ using System.Threading.Tasks;
 using Unity.Collections;
 using UnityEditor;
 using UnityEditor.SceneManagement;
+using UnityEditor.U2D;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using UnityEngine.U2D;
 using Object = UnityEngine.Object;
 
 namespace AssetUsageDetectorNamespace
@@ -563,6 +565,43 @@ namespace AssetUsageDetectorNamespace
 			}
 
 			return false;
+		}
+		
+		public static List<Sprite> GetPackedSprites(this SpriteAtlas spriteAtlas)
+		{
+			SpriteAtlas masterAtlas = spriteAtlas.isVariant ? spriteAtlas.GetMasterAtlas() : null;
+			Object[] packables = (masterAtlas != null) ? masterAtlas.GetPackables() : spriteAtlas.GetPackables();
+			List<Sprite> result = new(packables.Length);
+
+			foreach (Object packable in packables)
+			{
+				if (packable == null)
+					continue;
+            
+				if (packable.IsFolder())
+				{
+					foreach (string guid in AssetDatabase.FindAssets("t:Sprite", new[] { AssetDatabase.GetAssetPath(packable) }))
+					{
+						foreach (Object asset in AssetDatabase.LoadAllAssetsAtPath(AssetDatabase.GUIDToAssetPath(guid)))
+						{
+							if (asset is Sprite sprite)
+								result.Add(sprite);
+						}
+					}
+				}
+				else if (packable is Texture2D)
+				{
+					foreach (Object asset in AssetDatabase.LoadAllAssetsAtPath(AssetDatabase.GetAssetPath(packable)))
+					{
+						if (asset is Sprite sprite)
+							result.Add(sprite);
+					}
+				}
+				else if (packable is Sprite sprite)
+					result.Add(sprite);
+			}
+			
+			return result;
 		}
 	}
 }

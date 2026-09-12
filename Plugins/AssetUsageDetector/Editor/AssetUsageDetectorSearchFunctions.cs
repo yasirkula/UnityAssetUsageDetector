@@ -184,11 +184,10 @@ namespace AssetUsageDetectorNamespace
 		private readonly Func<Object> renderSettingsGetter = (Func<Object>) Delegate.CreateDelegate( typeof( Func<Object> ), typeof( RenderSettings ).GetMethod( "GetRenderSettings", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static ) );
 		private readonly Func<Cubemap> defaultReflectionProbeGetter = (Func<Cubemap>) Delegate.CreateDelegate( typeof( Func<Cubemap> ), typeof( RenderSettings ).GetProperty( "defaultReflection", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static ).GetGetMethod( true ) );
 
-		internal static readonly Func<SpriteAtlas, Sprite[]> spriteAtlasPackedSpritesGetter = (Func<SpriteAtlas, Sprite[]>) Delegate.CreateDelegate( typeof( Func<SpriteAtlas, Sprite[]> ), typeof( SpriteAtlasExtensions ).GetMethod( "GetPackedSprites", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static ) );
 #if ASSET_USAGE_ADDRESSABLES
-		private readonly PropertyInfo assetReferenceSubObjectTypeGetter = 
-			typeof( AssetReference ).GetProperty( "SubObjectType", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance )
-			?? typeof( AssetReference ).GetProperty( "SubOjbectType", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance );
+        private readonly Func<AssetReference, Type> assetReferenceSubObjectTypeGetter = (Func<AssetReference, Type>)Delegate.CreateDelegate(typeof(Func<AssetReference, Type>),
+            typeof(AssetReference).GetProperty("SubObjectType", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)?.GetMethod
+            ?? typeof(AssetReference).GetProperty("SubOjbectType", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance).GetMethod);
 #endif
 
 #if ASSET_USAGE_VFX_GRAPH
@@ -1810,41 +1809,39 @@ namespace AssetUsageDetectorNamespace
 		}
 
 #if ASSET_USAGE_ADDRESSABLES
-		private Object GetAddressablesAssetReferenceValue( AssetReference assetReference )
-		{
-			Object result = assetReference.editorAsset;
-			if( !result )
-				return null;
+        private Object GetAddressablesAssetReferenceValue(AssetReference assetReference)
+        {
+            Object result = assetReference.editorAsset;
+            if (result == null)
+                return null;
 
-			string subObjectName = assetReference.SubObjectName;
-			if( !string.IsNullOrEmpty( subObjectName ) )
-			{
-				if( result is SpriteAtlas )
-				{
-					Sprite[] packedSprites = spriteAtlasPackedSpritesGetter( (SpriteAtlas) result );
-					if( packedSprites != null )
-					{
-						for( int i = 0; i < packedSprites.Length; i++ )
-						{
-							if( packedSprites[i] && packedSprites[i].name == subObjectName )
-								return packedSprites[i];
-						}
-					}
-				}
-				else
-				{
-					Type subObjectType = (Type) assetReferenceSubObjectTypeGetter.GetValue( assetReference, null ) ?? typeof( Object );
-					Object[] subAssets = AssetDatabase.LoadAllAssetRepresentationsAtPath( AssetDatabase.GetAssetPath( result ) );
-					for( int k = 0; k < subAssets.Length; k++ )
-					{
-						if( subAssets[k] && subAssets[k].name == subObjectName && subObjectType.IsAssignableFrom( subAssets[k].GetType() ) )
-							return subAssets[k];
-					}
-				}
-			}
+            string subObjectName = assetReference.SubObjectName;
+            if (string.IsNullOrEmpty(subObjectName))
+                return result;
 
-			return result;
-		}
+            Type subObjectType = assetReferenceSubObjectTypeGetter(assetReference) ?? typeof(Object);
+            if (subObjectType.IsAssignableFrom(result.GetType()))
+                return result;
+
+            if (result is SpriteAtlas spriteAtlas)
+            {
+                foreach (Sprite sprite in spriteAtlas.GetPackedSprites())
+                {
+                    if (sprite != null && sprite.name == subObjectName)
+                        return sprite;
+                }
+            }
+            else
+            {
+                foreach (Object subAsset in AssetDatabase.LoadAllAssetsAtPath(AssetDatabase.GetAssetPath(result)))
+                {
+                    if (subAsset != null && subAsset.name == subObjectName && subObjectType.IsAssignableFrom(subAsset.GetType()))
+                        return subAsset;
+                }
+            }
+
+            return result;
+        }
 #endif
 
 		private bool ShouldExcludeRedundantPrefabReferences( Object obj )

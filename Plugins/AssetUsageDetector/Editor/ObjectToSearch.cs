@@ -99,15 +99,11 @@ namespace AssetUsageDetectorNamespace
 				// Add Sprites of SpriteAtlases to the sub-assets list
 				if( target is SpriteAtlas spriteAtlas )
 				{
-					Sprite[] packedSprites = AssetUsageDetector.spriteAtlasPackedSpritesGetter( spriteAtlas );
-					if( packedSprites != null )
-					{
-						for( int i = 0; i < packedSprites.Length; i++ )
-						{
-							if( packedSprites[i] != null && currentSubAssets.Add( packedSprites[i] ) )
-								subAssets.Add( new SubAsset( packedSprites[i], shouldSearchChildren ?? true ) );
-						}
-					}
+                    foreach (Sprite sprite in spriteAtlas.GetPackedSprites())
+                    {
+                        if (sprite != null && currentSubAssets.Add(sprite))
+                            subAssets.Add(new SubAsset(sprite, shouldSearchChildren ?? true));
+                    }
 				}
 
 				// Find sub-asset(s) of the asset (if any)
