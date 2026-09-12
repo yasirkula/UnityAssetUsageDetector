@@ -1818,17 +1818,13 @@ namespace AssetUsageDetectorNamespace
 			string subObjectName = assetReference.SubObjectName;
 			if( !string.IsNullOrEmpty( subObjectName ) )
 			{
-				if(result is SpriteAtlas spriteAtlas)
+				if (result is SpriteAtlas spriteAtlas)
 				{
-					Sprite[] packedSprites = spriteAtlas.GetPackedSprites();
-					if( packedSprites != null )
-					{
-						for( int i = 0; i < packedSprites.Length; i++ )
-						{
-							if( packedSprites[i] && packedSprites[i].name == subObjectName )
-								return packedSprites[i];
-						}
-					}
+                    foreach (Sprite sprite in spriteAtlas.GetPackedSprites())
+                    {
+                        if (sprite != null && sprite.name == subObjectName)
+                            return sprite;
+                    }
 				}
 				else
 				{

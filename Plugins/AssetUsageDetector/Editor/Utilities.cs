@@ -567,71 +567,41 @@ namespace AssetUsageDetectorNamespace
 			return false;
 		}
 		
-		public static Sprite[] GetPackedSprites(this SpriteAtlas spriteAtlas)
+		public static List<Sprite> GetPackedSprites(this SpriteAtlas spriteAtlas)
 		{
-			Object[] packables;
-        
 			SpriteAtlas masterAtlas = spriteAtlas.isVariant ? spriteAtlas.GetMasterAtlas() : null;
-        
-			if (masterAtlas != null)
-			{
-				packables = masterAtlas.GetPackables();
-			}
-			else
-			{
-				packables = spriteAtlas.GetPackables();
-			}
+			Object[] packables = (masterAtlas != null) ? masterAtlas.GetPackables() : spriteAtlas.GetPackables();
+			List<Sprite> result = new(packables.Length);
 
-			List<Sprite> sprites = new();
-
-			for (int i = 0; i < packables.Length; ++i)
+			foreach (Object packable in packables)
 			{
-				Object packable = packables[i];
 				if (packable == null)
 					continue;
             
-				if (packable is DefaultAsset folder)
+				if (packable.IsFolder())
 				{
-					string folderPath = AssetDatabase.GetAssetPath(folder);
-					string[] spriteGuids = AssetDatabase.FindAssets("t:Sprite", new[] { folderPath });
-					for (int j = 0; j < spriteGuids.Length; ++j)
+					foreach (string guid in AssetDatabase.FindAssets("t:Sprite", new[] { AssetDatabase.GetAssetPath(packable) }))
 					{
-						string spritePath = AssetDatabase.GUIDToAssetPath(spriteGuids[j]);
-						Object[] assets = AssetDatabase.LoadAllAssetsAtPath(spritePath);
-                    
-						foreach (Object asset in assets)
+						foreach (Object asset in AssetDatabase.LoadAllAssetsAtPath(AssetDatabase.GUIDToAssetPath(guid)))
 						{
 							if (asset is Sprite sprite)
-							{
-								sprites.Add(sprite);
-							}
+								result.Add(sprite);
 						}
 					}
 				}
 				else if (packable is Texture2D)
 				{
-					string texturePath = AssetDatabase.GetAssetPath(packable);
-					Object[] assets = AssetDatabase.LoadAllAssetsAtPath(texturePath);
-                
-					foreach (Object asset in assets)
+					foreach (Object asset in AssetDatabase.LoadAllAssetsAtPath(AssetDatabase.GetAssetPath(packable)))
 					{
 						if (asset is Sprite sprite)
-						{
-							sprites.Add(sprite);
-						}
+							result.Add(sprite);
 					}
 				}
 				else if (packable is Sprite sprite)
-				{
-					sprites.Add(sprite);
-				}
-				else
-				{
-					Debug.LogError("Packed is " + packable.GetType());
-				}
+					result.Add(sprite);
 			}
 			
-			return sprites.ToArray();
+			return result;
 		}
 	}
 }
