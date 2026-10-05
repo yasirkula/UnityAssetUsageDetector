@@ -10,7 +10,9 @@ using UnityEditor.AddressableAssets.Settings;
 #endif
 using UnityEditor.Animations;
 using UnityEngine;
+#if ASSET_USAGE_UGUI
 using UnityEngine.UI;
+#endif
 using UnityEngine.U2D;
 using UnityEngine.Playables;
 using UnityEditor.U2D;
@@ -1642,11 +1644,13 @@ namespace AssetUsageDetectorNamespace
 						continue;
 
 					// Additional filtering for fields:
+#if ASSET_USAGE_UGUI
 					// 1- Ignore "m_RectTransform", "m_CanvasRenderer" and "m_Canvas" fields of Graphic components
 					string fieldName = field.Name;
 					if( typeof( Graphic ).IsAssignableFrom( currType ) &&
 						( fieldName == "m_RectTransform" || fieldName == "m_CanvasRenderer" || fieldName == "m_Canvas" ) )
 						continue;
+#endif
 
 					VariableGetVal getter = field.CreateGetter( type );
                     if (getter != null)
@@ -1682,10 +1686,12 @@ namespace AssetUsageDetectorNamespace
 					if( typeof( Component ).IsAssignableFrom( currType ) && ( propertyName == "gameObject" ||
 						propertyName == "transform" || propertyName == "attachedRigidbody" || propertyName == "rectTransform" ) )
 						continue;
+#if ASSET_USAGE_UGUI
 					// Ignore "canvasRenderer" and "canvas" properties of Graphic components to get more useful results
 					else if( typeof( Graphic ).IsAssignableFrom( currType ) &&
 						( propertyName == "canvasRenderer" || propertyName == "canvas" ) )
 						continue;
+#endif
 					// Prevent accessing properties of Unity that instantiate an existing resource (causing memory leak)
 					else if( typeof( MeshFilter ).IsAssignableFrom( currType ) && propertyName == "mesh" )
 						continue;

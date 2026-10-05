@@ -24,6 +24,11 @@
             "name": "com.unity.visualeffectgraph",
             "expression": "0.0.0",
             "define": "ASSET_USAGE_VFX_GRAPH"
+        },
+        {
+            "name": "com.unity.ugui",
+            "expression": "0.0.0",
+            "define": "ASSET_USAGE_UGUI"
         }
     ],
     "noEngineReferences": false
